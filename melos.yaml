@@ -1,0 +1,15 @@
+name: butterfly
+
+packages:
+  - butterfly
+  - packages/**
+
+scripts:
+  analyze:
+    exec: dart analyze .
+  build:
+    exec: dart build
+  build_runner:
+    exec: dart run build_runner build
+  format:
+    exec: dart format --set-exit-if-changed .
