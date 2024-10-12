@@ -2,6 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
+      <module fileurl="file://$PROJECT_DIR$/butterfly_cli/melos_butterfly_cli.iml" filepath="$PROJECT_DIR$/butterfly_cli/melos_butterfly_cli.iml" />
       <module fileurl="file://$PROJECT_DIR$/melos_butterfly.iml" filepath="$PROJECT_DIR$/melos_butterfly.iml" />
     </modules>
   </component>

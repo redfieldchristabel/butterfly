@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:butterfly_cli/extensions/command_helper.dart';
 
 class FrameworkService with ButterflyLogger {
+  bool directoryIsRoot = false;
+
   T askInput<T>({required String question}) {
     assert(T == String || T == int);
     print(question);
@@ -10,7 +12,6 @@ class FrameworkService with ButterflyLogger {
 
     return (T == int ? int.parse(answer!) : answer) as T;
   }
-
 
   /// {@template ensureRootDirectory}
   /// Ensure current working directory are at root of the project.
@@ -22,13 +23,17 @@ class FrameworkService with ButterflyLogger {
   /// try again. This will be continued until it reach the root directory.
   /// {@endtemplate}
   void ensureRootDirectory() {
-    info('Ensure current working directory are at root of the project');
+    if (directoryIsRoot) {
+      detail('Current directory is already at root of the project');
+      return;
+    }
+    detail('Ensure current working directory are at root of the project');
     var current = Directory.current;
     while (true) {
       if (File('${current.path}/pubspec.yaml').existsSync() &&
           Directory('${current.path}/lib').existsSync()) {
         Directory.current = current;
-        alert('Set $current as working directory');
+        info('Set $current as working directory');
         break;
       }
       if (current.path == '/') {
@@ -36,11 +41,22 @@ class FrameworkService with ButterflyLogger {
         logger.err('Unable to find root directory of the project');
         exit(1);
       }
-      info('Current directory seem to not be root project\'s directory');
+      detail('Current directory seem to not be root project\'s directory');
       current = current.parent;
-      info('Trying $current directory');
+      detail('Trying $current directory');
     }
-    info('Found project\'s root directory');
+    detail('Found project\'s root directory');
+    directoryIsRoot = true;
+  }
+
+  void ensureFlutterProject(){
+    ensureRootDirectory();
+
+  }
+
+  void changeWorkingDirectory(String dir) {
+    directoryIsRoot = false;
+    Directory.current = dir;
   }
 }
 

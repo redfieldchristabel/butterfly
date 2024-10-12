@@ -14,9 +14,9 @@ mixin ButterflyLogger {
     level: Level.verbose,
   );
 
-  LoggerMethod get info => logger.info;
+  LoggerMethod get detail => logger.detail;
 
-  LoggerMethod get alert => logger.alert;
+  LoggerMethod get info => logger.info;
 
 
 }

@@ -4,7 +4,6 @@ import 'package:butterfly_cli/extensions/command_helper.dart';
 import 'package:butterfly_cli/models/project_configuration.dart';
 import 'package:butterfly_cli/services/framework.dart';
 import 'package:checked_yaml/checked_yaml.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:yaml_edit/yaml_edit.dart';
 
 class ProjectConfigurationService with ButterflyLogger {
@@ -12,7 +11,7 @@ class ProjectConfigurationService with ButterflyLogger {
 
   bool exists() {
     frameworkService.ensureRootDirectory();
-    return File('pubspec.yaml').existsSync();
+    return File('butterfly_project.yaml').existsSync();
   }
 
   void ensureValid() {
@@ -43,7 +42,6 @@ class ProjectConfigurationService with ButterflyLogger {
   Future<void> init() async {
     frameworkService.ensureRootDirectory();
 
-    PackageInfo packageInfo = await PackageInfo.fromPlatform();
     final useAuth =
         logger.confirm('Do your project need to use auth', defaultValue: true);
     final String? userModelName;
@@ -55,21 +53,25 @@ class ProjectConfigurationService with ButterflyLogger {
       userModelName = null;
     }
 
+    final useRouter = logger.confirm('Do your project need to use router system', defaultValue: true);
+
     final ProjectConfiguration configuration = ProjectConfiguration(
-        version: packageInfo.version,
-        useAuth: useAuth,
-        userModelName: userModelName);
+      version: '0.1.0',
+      useAuth: useAuth,
+      useRouter: useRouter,
+      userModelName: userModelName,
+    );
 
     _configuration = configuration;
 
     final configFile = File('butterfly_project.yaml');
 
     final editor = YamlEditor('');
-    info('Compile project configuration to yaml');
+    detail('Compile project configuration to yaml');
     editor.update([], configuration.toJson());
-    info('Writing project configuration to ${configFile.path}');
+    detail('Writing project configuration to ${configFile.path}');
     configFile.writeAsStringSync(editor.toString());
-    alert('Write project configuration to butterfly_project.yaml\n'
+    info('Write project configuration to butterfly_project.yaml\n'
         'You can find it at ${configFile.path}');
   }
 }
