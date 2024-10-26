@@ -10,12 +10,7 @@ class GenerateCommand extends Command {
   @override
   String get name => 'generate';
 
-  @override
-  String get usage => 'butterfly generate [options] [arguments]';
-
-  @override
-  FutureOr? run() {
-    //  TODO: add model generator command
+  GenerateCommand() {
     addSubcommand(VersionGeneratorCommand());
   }
 }

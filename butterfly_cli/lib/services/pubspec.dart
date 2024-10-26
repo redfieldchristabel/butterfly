@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:butterfly_cli/extensions/command_helper.dart';
 import 'package:butterfly_cli/readable_exception.dart';
 import 'package:butterfly_cli/services/framework.dart';
+import 'package:pub_semver/pub_semver.dart';
 import 'package:pubspec_parse/pubspec_parse.dart';
 import 'package:yaml_edit/yaml_edit.dart';
 
@@ -35,6 +36,11 @@ class PubspecService with ButterflyLogger {
           code: 66,
           hint: 'Try again with flutter project');
     }
+  }
+
+  Version get version {
+    detail('Get version from pubspec.yaml file');
+    return _pubspec.version!;
   }
 }
 
