@@ -9,12 +9,12 @@ import 'package:butterfly_cli/extensions/command_helper.dart';
 import 'package:butterfly_cli/readable_exception.dart';
 import 'package:mason_logger/mason_logger.dart';
 
-bool isDebugMode = false;
+bool kDebugMode = false;
 
 void main(List<String> arguments) {
   assert(() {
-    isDebugMode = true;
-    print("Debug mode: $isDebugMode");
+    kDebugMode = true;
+    print("Debug mode: $kDebugMode");
     return true;
   }());
 
@@ -32,7 +32,7 @@ void main(List<String> arguments) {
     () {
       final result = runner.parse(arguments);
 
-      if(isDebugMode) {
+      if(kDebugMode) {
         ButterflyLogger.level = Level.verbose;
       }else {
         ButterflyLogger.level =
@@ -55,7 +55,7 @@ void main(List<String> arguments) {
         logger.err(error.message);
         logger.info(error.usage);
       } else {
-        if (isDebugMode) {
+        if (kDebugMode) {
           logger.err("Please handle this error, this error"
               " will not show up in production.\n\n");
         } else {
@@ -63,7 +63,7 @@ void main(List<String> arguments) {
         }
       }
 
-      if (isDebugMode) {
+      if (kDebugMode) {
         print('\n\n');
         throw error;
       } else {
