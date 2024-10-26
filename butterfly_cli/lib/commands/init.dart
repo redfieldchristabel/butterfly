@@ -44,7 +44,7 @@ class InitCommand extends Command with ButterflyLogger {
       }
     }
 
-    projectConfigurationService.init(defaultValue);
+    projectConfigurationService.create(defaultValue);
   }
 }
 

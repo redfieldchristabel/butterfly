@@ -47,7 +47,7 @@ class ProjectConfigurationService with ButterflyLogger {
     return _configuration!;
   }
 
-  Future<void> init([ProjectConfiguration? defaultValue]) async {
+  Future<void> create([ProjectConfiguration? defaultValue]) async {
     frameworkService.ensureRootDirectory();
 
     final useAuth = logger.confirm('Do your project need to use auth',
