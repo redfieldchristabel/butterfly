@@ -6,15 +6,6 @@ import 'package:meta/meta.dart';
 extension CommandHelper on Command {
   /// {@macro ensureRootDirectory}
   void ensureRoot() => frameworkService.ensureRootDirectory();
-
-  /// Initialize logger
-  ///
-  /// parse a verbose flag from globalResults
-  /// and set the logger level accordingly
-  initializeLogger() {
-    final verbose = globalResults?.flag('verbose');
-    ButterflyLogger.level = verbose == true ? Level.verbose : Level.info;
-  }
 }
 
 typedef LoggerMethod = void Function(String? message, {LogStyle? style});

@@ -10,6 +10,10 @@ class GenerateCommand extends Command {
   @override
   String get name => 'generate';
 
+  @override
+  // TODO: implement aliases
+  List<String> get aliases => ['gen', 'g'];
+
   GenerateCommand() {
     addSubcommand(VersionGeneratorCommand());
   }
