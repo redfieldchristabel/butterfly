@@ -38,7 +38,7 @@ class ProjectConfigurationService with ButterflyLogger {
 
     _configuration = configuration;
 
-    pubspecService.ensureFlutter();
+    // pubspecService.ensureFlutter();
   }
 
   ProjectConfiguration get configuration {
@@ -82,7 +82,7 @@ class ProjectConfigurationService with ButterflyLogger {
     detail('Writing project configuration to ${_file.path}');
     _file.writeAsStringSync(editor.toString());
     info('Write project configuration to butterfly_project.yaml\n'
-        'You can find it at ${_file.path}');
+        'You can find it at ${Uri.file(_file.absolute.path)}');
   }
 }
 

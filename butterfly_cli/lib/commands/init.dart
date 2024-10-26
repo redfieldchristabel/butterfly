@@ -18,7 +18,7 @@ class InitCommand extends Command with ButterflyLogger {
   void run() {
     ensureRoot();
 
-    late final ProjectConfiguration? defaultValue;
+    ProjectConfiguration? defaultValue;
 
     if (projectConfigurationService.exists()) {
       projectConfigurationService.ensureValid();

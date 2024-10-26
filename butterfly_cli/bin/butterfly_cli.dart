@@ -35,6 +35,8 @@ void main(List<String> arguments) {
         if (isDebugMode) {
           print("Please handle this error, this error"
               " will not show up in production.\n\n");
+        } else {
+          Logger().err('Something went wrong. Please try again.');
         }
       }
 
@@ -42,9 +44,7 @@ void main(List<String> arguments) {
         print('\n\n');
         throw error;
       } else {
-        if (error is ReadableException) {
-          exit(error.code);
-        }
+        exit(error is ReadableException ? error.code : 1);
       }
     },
   );
