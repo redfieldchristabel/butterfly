@@ -14,12 +14,23 @@ class CommitCommand extends Command with ButterflyLogger {
   @override
   List<String> get aliases => ['c', 'comit', 'commits', 'cm'];
 
+  CommitCommand() {
+    argParser.addOption('action',
+        abbr: 'a',
+        help: 'Commit actions',
+        allowed: ConventionalCommit.values.map((e) => e.name).toList());
+  }
+
   @override
   run() async {
-    final action = logger.chooseOne<ConventionalCommit>(
-        'What is your commit type',
-        choices: ConventionalCommit.values,
-        display: (choice) => choice.name);
+    final ConventionalCommit action;
+    final argsAction = argResults?.option('action');
+    if (argsAction != null) {
+      action = ConventionalCommit.fromName(argsAction);
+    } else {
+      action = logger.chooseOne<ConventionalCommit>('What is your commit type',
+          choices: ConventionalCommit.values, display: (choice) => choice.name);
+    }
 
     final message = logger.prompt('What is your commit message?');
 
@@ -57,4 +68,7 @@ enum ConventionalCommit {
   build,
   ci,
   chore;
+
+  factory ConventionalCommit.fromName(String name) =>
+      values.firstWhere((e) => e.name == name);
 }
