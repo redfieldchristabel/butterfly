@@ -20,6 +20,21 @@ class CommitCommand extends Command with ButterflyLogger {
 
     final message = logger.prompt('What is your commit message?');
 
+    detail('Run git status to see if any staged changes');
+    final statusRes = await Process.run('git', ['status']);
+    if (statusRes.stdout.contains('no changes added to commit')) {
+      final stageAll = logger.confirm(
+          'No changes to commit, commit all changes instead?',
+          defaultValue: true);
+      if (stageAll) {
+        detail('Run git add -A to stage all changes');
+        await Process.run('git', ['add', '.']);
+      } else {
+        info('No changes to commit, exiting');
+        exit(2);
+      }
+    }
+
     final res =
         await Process.run('git', ['commit', '-m', '${action.name}: $message']);
 
