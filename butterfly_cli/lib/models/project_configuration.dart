@@ -27,6 +27,7 @@ class ProjectConfiguration {
     if (version.isEmpty) {
       throw ArgumentError.value(version, 'name', 'Cannot be empty.');
     }
+
   }
 
   factory ProjectConfiguration.fromJson(Map json) =>

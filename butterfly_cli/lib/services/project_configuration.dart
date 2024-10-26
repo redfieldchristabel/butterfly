@@ -54,11 +54,7 @@ class ProjectConfigurationService with ButterflyLogger {
         defaultValue: defaultValue?.useAuth ?? true);
     final String? userModelName;
     if (useAuth) {
-      userModelName = logger.prompt(
-          'What is the name of your user model?\n'
-          'Cant use User because it is a reserved keyword\n'
-          'Example : [Customer, Employee, Manager, etc...]',
-          defaultValue: defaultValue?.userModelName);
+      userModelName = _askUserModel(defaultValue?.userModelName);
     } else {
       userModelName = null;
     }
@@ -79,10 +75,34 @@ class ProjectConfigurationService with ButterflyLogger {
     final editor = YamlEditor('');
     detail('Compile project configuration to yaml');
     editor.update([], configuration.toJson());
+    detail('check if project configuration is exist');
+
+    if (exists()) {
+      final backupFile = File('.butterfly_project.yaml.bak');
+      detail(
+          'make a backup for last config to ${Uri.file(backupFile.absolute.path)}');
+      backupFile.writeAsStringSync(_file.readAsStringSync());
+      detail('delete previous config file');
+      _file.deleteSync();
+    }
+
     detail('Writing project configuration to ${_file.path}');
     _file.writeAsStringSync(editor.toString());
     info('Write project configuration to butterfly_project.yaml\n'
         'You can find it at ${Uri.file(_file.absolute.path)}');
+  }
+
+  String _askUserModel(String? defaultValue) {
+    final String answer = logger.prompt(
+        'What is the name of your user model?\n'
+        'Cant use User because it is a reserved keyword\n'
+        'Example : [Customer, Employee, Manager, etc...]',
+        defaultValue: defaultValue);
+    if (answer.isEmpty) {
+      logger.alert('User model name cannot be empty');
+      return _askUserModel(defaultValue);
+    }
+    return answer;
   }
 }
 

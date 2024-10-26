@@ -32,9 +32,11 @@ class InitCommand extends Command with ButterflyLogger {
 
       switch (action) {
         case ConfigExistAction.skip:
+          info('Skipping initialization, exiting...');
           exit(0);
         case ConfigExistAction.overwrite:
           defaultValue = projectConfigurationService.configuration;
+          detail('Use default value for new initialization');
           break;
         case ConfigExistAction.replace:
           defaultValue = null;
