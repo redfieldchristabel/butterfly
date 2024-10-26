@@ -50,6 +50,15 @@ class ProjectConfigurationService with ButterflyLogger {
   Future<void> create([ProjectConfiguration? defaultValue]) async {
     frameworkService.ensureRootDirectory();
 
+    info('Butterfly Core help you handle Flutter project easily\n'
+        'It will help you like manage error handler, loading mechanism, locking mechanism'
+        'and so much more');
+
+    // TODO: add a url to view what Butterfly core can help with
+
+    final useCore = logger.confirm('Do your project need to use Butterfly core',
+        defaultValue: true);
+
     final useAuth = logger.confirm('Do your project need to use auth',
         defaultValue: defaultValue?.useAuth ?? true);
     final String? userModelName;
@@ -66,6 +75,7 @@ class ProjectConfigurationService with ButterflyLogger {
     final ProjectConfiguration configuration = ProjectConfiguration(
       version: '0.1.0',
       useAuth: useAuth,
+      useCore: useCore,
       useRouter: useRouter,
       userModelName: userModelName,
     );

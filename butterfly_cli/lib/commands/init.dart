@@ -45,6 +45,8 @@ class InitCommand extends Command with ButterflyLogger {
     }
 
     projectConfigurationService.create(defaultValue);
+
+    // TODO: add butterfly core to pubspec yaml.
   }
 }
 

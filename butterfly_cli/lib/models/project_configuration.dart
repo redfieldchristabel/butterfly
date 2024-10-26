@@ -12,6 +12,8 @@ class ProjectConfiguration {
   final String version;
   @JsonKey(required: true)
   final bool useAuth;
+  @JsonKey(required: true)
+  final bool useCore;
   final bool useRouter;
   final String? userModelName;
 
@@ -20,6 +22,7 @@ class ProjectConfiguration {
   ProjectConfiguration({
     required this.version,
     required this.useAuth,
+    required this.useCore,
     required this.useRouter,
     this.userModelName,
   }) {
@@ -27,7 +30,6 @@ class ProjectConfiguration {
     if (version.isEmpty) {
       throw ArgumentError.value(version, 'name', 'Cannot be empty.');
     }
-
   }
 
   factory ProjectConfiguration.fromJson(Map json) =>
