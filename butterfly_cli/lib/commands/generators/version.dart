@@ -15,6 +15,7 @@ class VersionGeneratorCommand extends Command with ButterflyLogger {
 
   @override
   FutureOr? run() {
+    initializeLogger();
     ensureRoot();
 
     final version = pubspecService.version;

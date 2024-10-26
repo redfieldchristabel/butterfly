@@ -12,6 +12,9 @@ class CommitCommand extends Command with ButterflyLogger {
   String get name => 'commit';
 
   @override
+  List<String> get aliases => ['c', 'comit', 'commits', 'cm'];
+
+  @override
   run() async {
     final action = logger.chooseOne<ConventionalCommit>(
         'What is your commit type',

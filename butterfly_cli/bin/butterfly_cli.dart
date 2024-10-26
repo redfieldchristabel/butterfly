@@ -18,11 +18,13 @@ void main(List<String> arguments) {
   }());
 
   var runner =
-      CommandRunner('butterfly_cli', 'A CLI tool for butterfly project');
+      CommandRunner('butterfly', 'A CLI tool for butterfly project');
 
   runner.addCommand(InitCommand());
   runner.addCommand(CommitCommand());
   runner.addCommand(GenerateCommand());
+
+  runner.argParser.addFlag('verbose', abbr: 'v', help: 'Print verbose output');
 
   runZonedGuarded(
     () => runner.run(arguments),
