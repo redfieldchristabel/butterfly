@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:args/command_runner.dart';
+import 'package:butterfly_cli/commands/commit.dart';
 import 'package:butterfly_cli/commands/init.dart';
 import 'package:butterfly_cli/readable_exception.dart';
 import 'package:mason_logger/mason_logger.dart';
@@ -19,6 +20,7 @@ void main(List<String> arguments) {
       CommandRunner('butterfly_cli', 'A CLI tool for butterfly project');
 
   runner.addCommand(InitCommand());
+  runner.addCommand(CommitCommand());
 
   runZonedGuarded(
     () => runner.run(arguments),
