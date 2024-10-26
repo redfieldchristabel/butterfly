@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:butterfly_cli/extensions/command_helper.dart';
@@ -29,6 +30,7 @@ class ProjectConfigurationService with ButterflyLogger {
     }
 
     var configContent = _file.readAsStringSync();
+
 
     final configuration = checkedYamlDecode<ProjectConfiguration>(
       configContent,
