@@ -1,8 +1,7 @@
+library auth_management_firebase;
 
-import 'auth_management_firebase_platform_interface.dart';
-
-class AuthManagementFirebase {
-  Future<String?> getPlatformVersion() {
-    return AuthManagementFirebasePlatform.instance.getPlatformVersion();
-  }
+/// A Calculator.
+class Calculator {
+  /// Returns [value] plus 1.
+  int addOne(int value) => value + 1;
 }
