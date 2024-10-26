@@ -21,7 +21,7 @@ class VersionGeneratorCommand extends Command with ButterflyLogger {
     final File file = File('lib/version.dart');
 
     detail('Generating version.dart');
-    final String context = "const String version = '$version';";
+    final String context = "const String kVersion = '$version';";
 
     detail('Generate file version.dart');
     file.writeAsStringSync(context);
