@@ -19,12 +19,14 @@ class CommitCommand extends Command with ButterflyLogger {
         abbr: 'a',
         help: 'Commit actions',
         allowed: ConventionalCommit.values.map((e) => e.name).toList());
+    argParser.addOption('message', abbr: 'm');
   }
 
   @override
   run() async {
     final ConventionalCommit action;
     final argsAction = argResults?.option('action');
+    final argsMessage = argResults?.option('message');
     if (argsAction != null) {
       action = ConventionalCommit.fromName(argsAction);
     } else {
@@ -32,7 +34,8 @@ class CommitCommand extends Command with ButterflyLogger {
           choices: ConventionalCommit.values, display: (choice) => choice.name);
     }
 
-    final message = logger.prompt('What is your commit message?');
+    final String message =
+        argsMessage ?? logger.prompt('What is your commit message?');
 
     detail('Run git status to see if any staged changes');
     final statusRes = await Process.run('git', ['status']);
