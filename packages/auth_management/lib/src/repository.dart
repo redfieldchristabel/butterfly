@@ -9,4 +9,3 @@ abstract interface class AuthServiceRepository<T> {
 
   FutureOr<T?> getUser();
 }
-
