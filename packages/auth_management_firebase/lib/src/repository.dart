@@ -7,12 +7,8 @@ abstract class FirebaseAuthManagementRepository<T>
     implements AuthServiceRepository<T> {
   final FirebaseAuth auth = FirebaseAuth.instance;
   final AuthManagementDatabaseRepository<T> localDatabase;
-  final AuthManagementDatabaseRepository<T>? remoteDatabase;
 
-  FirebaseAuthManagementRepository({
-    required this.localDatabase,
-    this.remoteDatabase,
-  });
+  FirebaseAuthManagementRepository(this.localDatabase);
 
   /// ALso see [FirebaseAuth.signInWithEmailAndPassword]
   Future<UserCredential> signInWithEmailAndPassword(
@@ -95,19 +91,5 @@ abstract class FirebaseAuthManagementRepository<T>
   /// This method is used to manually fetch user data from the database.
   /// It is called by the [AuthManagement] when the user data is not available
   /// from local storage.
-  Future<T> fetchUser() async {
-    assert(remoteDatabase != null);
-
-    final user = await remoteDatabase!.getUser();
-
-    if (user != null) {
-      return user;
-    }
-
-    throw AuthManagementException(
-        title: 'User not found',
-        message: 'User not found in the remote database '
-            'from ${remoteDatabase.runtimeType}',
-        code: 404);
-  }
+  Future<T> fetchUser();
 }
