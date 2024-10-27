@@ -6,13 +6,15 @@ import 'package:flutter/material.dart';
 import 'package:auth_management/auth_management.dart';
 import 'package:isar/isar.dart';
 
+part 'main.g.dart';
+
 final dbRepo = AuthManagementIsarRepository<MyUser>();
 final authManagement = MockAuthManagement(dbRepo);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await dbRepo.initialize();
+  await dbRepo.initialize(MyUserSchema);
 
   runApp(const MyApp());
 }
@@ -57,14 +59,16 @@ class IsarExample extends StatelessWidget {
     return Scaffold(
       body: Center(
         child: StreamBuilder<MyUser?>(
-            stream: dbRepo.streamUser(),
+            stream: authManagement.streamUser(),
             builder: (context, snapshot) {
-              print("object ${snapshot.data}");
               return Text('Isar Example, ${snapshot.data?.id}');
             }),
       ),
-      floatingActionButton:
-          FloatingActionButton(onPressed: authManagement.signIn),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          authManagement.signIn();
+        },
+      ),
     );
   }
 }
@@ -90,15 +94,11 @@ class MockAuthManagement implements AuthServiceRepository {
 
   @override
   FutureOr<void> signOut() {
-    // TODO: implement signOut
-    throw UnimplementedError();
+    dbRepo.clearUser();
   }
 
   @override
   Stream<MyUser?> streamUser() {
-    return dbRepo.streamUser().map((event) {
-      print("bypass dulu ${event}");
-      return event;
-    });
+    return dbRepo.streamUser();
   }
 }
