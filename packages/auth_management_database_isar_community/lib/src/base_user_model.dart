@@ -1,5 +1,3 @@
-import 'package:isar/isar.dart';
-
 // part 'base_user_model.g.dart';
 
 // @collection

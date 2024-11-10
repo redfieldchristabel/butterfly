@@ -18,7 +18,7 @@ void main(List<String> arguments) {
     return true;
   }());
 
-  var runner = CommandRunner('butterfly', 'A CLI tool for butterfly project');
+  final runner = CommandRunner('butterfly', 'A CLI tool for butterfly project');
 
   runner.addCommand(InitCommand());
   runner.addCommand(CommitCommand());
@@ -32,11 +32,11 @@ void main(List<String> arguments) {
     () {
       final result = runner.parse(arguments);
 
-      if(kDebugMode) {
+      if (kDebugMode) {
         ButterflyLogger.level = Level.verbose;
-      }else {
+      } else {
         ButterflyLogger.level =
-          result.flag('verbose') == true ? Level.verbose : Level.info;
+            result.flag('verbose') == true ? Level.verbose : Level.info;
       }
 
       return runner.run(arguments);

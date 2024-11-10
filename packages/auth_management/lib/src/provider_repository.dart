@@ -1,8 +1,9 @@
 import 'dart:async';
 
-import 'package:auth_management/auth_management.dart';
-
-abstract interface class AuthServiceProviderRepository<T>
-    implements AuthServiceRepository<T> {
+abstract interface class AuthServiceProviderRepository<T> {
   FutureOr<void> bindUserToProvider(T user);
+
+  FutureOr<T?> getUser();
+
+  FutureOr<void> clearUser();
 }

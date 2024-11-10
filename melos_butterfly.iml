@@ -10,6 +10,9 @@
       <excludeFolder url="file://$MODULE_DIR$/packages/auth_management_firebase_google/.dart_tool" />
       <excludeFolder url="file://$MODULE_DIR$/packages/auth_management_firebase_google/.pub" />
       <excludeFolder url="file://$MODULE_DIR$/packages/auth_management_firebase_google/build" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/auth_management_provider_riverpod/.dart_tool" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/auth_management_provider_riverpod/.pub" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/auth_management_provider_riverpod/build" />
     </content>
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="library" name="Dart SDK" level="project" />

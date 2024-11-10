@@ -6,4 +6,6 @@ abstract interface class AuthManagementDatabaseRepository<T> {
   FutureOr<void> addUser(T user);
 
   FutureOr<void> clearUser();
+
+  Stream<T?> streamUser();
 }
