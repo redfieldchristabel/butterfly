@@ -1,11 +1,9 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:butterfly_cli/extensions/command_helper.dart';
 import 'package:butterfly_cli/models/project_configuration.dart';
 import 'package:butterfly_cli/readable_exception.dart';
 import 'package:butterfly_cli/services/framework.dart';
-import 'package:butterfly_cli/services/pubspec.dart';
 import 'package:checked_yaml/checked_yaml.dart';
 import 'package:yaml_edit/yaml_edit.dart';
 
@@ -30,7 +28,6 @@ class ProjectConfigurationService with ButterflyLogger {
     }
 
     var configContent = _file.readAsStringSync();
-
 
     final configuration = checkedYamlDecode<ProjectConfiguration>(
       configContent,

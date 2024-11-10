@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:args/command_runner.dart';
 import 'package:butterfly_cli/commands/generators/version.dart';
 
