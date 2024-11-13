@@ -4,6 +4,8 @@ import 'package:args/command_runner.dart';
 import 'package:butterfly_cli/extensions/command_helper.dart';
 import 'package:butterfly_cli/models/project_configuration.dart';
 import 'package:butterfly_cli/services/project_configuration.dart';
+import 'package:butterfly_cli/services/pubspec.dart';
+import 'package:pubspec_parse/pubspec_parse.dart';
 
 class InitCommand extends Command with ButterflyLogger {
   @override
@@ -14,7 +16,7 @@ class InitCommand extends Command with ButterflyLogger {
   String get name => 'init';
 
   @override
-  void run() {
+  Future<void> run() async {
     ensureRoot();
 
     ProjectConfiguration? defaultValue;
@@ -43,7 +45,34 @@ class InitCommand extends Command with ButterflyLogger {
       }
     }
 
-    projectConfigurationService.create(defaultValue);
+    await projectConfigurationService.create(defaultValue);
+
+    info('Project initialized successfully');
+
+    detail(
+        'Add butterfly dependency to pubspec according to configuration file');
+
+    final Uri gitUrl =
+        Uri.parse('git@github.com:redfieldchristabel/butterfly.git');
+
+    // if(projectConfigurationService.configuration.useCore){
+    //   detail('Add butterfly core dependency to pubspec according to configuration file');
+    //   pubspecService.addDependency('', option: GitDependency(gitUrl, path: 'packages/auth_management' ));
+    // }
+
+    if (projectConfigurationService.configuration.useAuth) {
+      detail(
+          'Add Butterfly auth dependency to pubspec according to configuration file');
+      pubspecService.addDependency('auth_management',
+          option: GitDependency(gitUrl, path: 'packages/auth_management'));
+    }
+
+    if(projectConfigurationService.configuration.useRouter){
+      detail(
+          'Add Butterfly router dependency to pubspec according to configuration file');
+      pubspecService.addDependency('router_management',
+          option: GitDependency(gitUrl, path: 'packages/router_management'));
+    }
 
     // TODO: add butterfly core to pubspec yaml.
   }

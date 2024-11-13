@@ -20,7 +20,7 @@ class PubspecService with ButterflyLogger {
     return Pubspec.parse(_pubspecFile.readAsStringSync());
   }
 
-  void addDependency(String dependency) {
+  void addDependency(final String dependency, {final Dependency? option}) {
     final editor = YamlEditor(_pubspecFile.readAsStringSync());
     editor.update(['dependencies'], dependency);
     detail('Add dependency $dependency');
