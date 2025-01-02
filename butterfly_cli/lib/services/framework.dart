@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:butterfly_cli/extensions/command_helper.dart';
+import 'package:butterfly_cli/models/project_configuration.dart';
+import 'package:butterfly_cli/services/mason.dart';
 
 class FrameworkService with ButterflyLogger {
   bool directoryIsRoot = false;
@@ -49,14 +51,67 @@ class FrameworkService with ButterflyLogger {
     directoryIsRoot = true;
   }
 
-  void ensureFlutterProject(){
+  void ensureFlutterProject() {
     ensureRootDirectory();
-
   }
 
   void changeWorkingDirectory(String dir) {
     directoryIsRoot = false;
     Directory.current = dir;
+  }
+
+  Future<void> createFrameworkService() async {
+    info('Creating framework service');
+    detail('Check if framework.dart file already exist in services directory');
+
+    final dir = Directory('services');
+    if (!dir.existsSync()) {
+      info('Directory not exist, creating');
+      dir.createSync();
+    }
+
+    final file = File('services/framework_service.dart');
+    if (!file.existsSync()) {
+      info('File not exist, creating');
+      //   TODO: use mason generator
+      await masonService.generateFrameworkService();
+    }
+
+    info('Framework service created');
+  }
+
+  Future<void> createAuthService() async {
+    info('Creating framework service');
+    detail('Check if auth.dart file already exist in services directory');
+
+    final dir = Directory('services');
+    if (!dir.existsSync()) {
+      info('Directory not exist, creating');
+      dir.createSync();
+    }
+
+    final file = File('services/auth_service.dart');
+    if (!file.existsSync()) {
+      info('File not exist, creating');
+      //   TODO: use mason generator
+      await masonService.generateFrameworkService();
+    }
+
+    info('Auth service created');
+  }
+
+  Future<void> createRouteFile(RouterType type) async {
+    info('Creating route file');
+    detail('Check if route.dart file already exist in lib directory');
+
+    final file = File('route.dart');
+    if (!file.existsSync()) {
+      info('File not exist, creating');
+      //   TODO: use mason generator
+      await masonService.generateRouteFile(type);
+    }
+
+    info('Route file created');
   }
 }
 

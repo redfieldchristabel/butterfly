@@ -13,16 +13,14 @@ ProjectConfiguration _$ProjectConfigurationFromJson(Map json) => $checkedCreate(
         $checkKeys(
           json,
           allowedKeys: const [
-            'version',
             'useAuth',
             'useCore',
             'useRouter',
             'userModelName'
           ],
-          requiredKeys: const ['version', 'useAuth', 'useCore'],
+          requiredKeys: const ['useAuth', 'useCore'],
         );
         final val = ProjectConfiguration(
-          version: $checkedConvert('version', (v) => v as String),
           useAuth: $checkedConvert('useAuth', (v) => v as bool),
           useCore: $checkedConvert('useCore', (v) => v as bool),
           useRouter: $checkedConvert('useRouter', (v) => v as bool),
@@ -35,7 +33,6 @@ ProjectConfiguration _$ProjectConfigurationFromJson(Map json) => $checkedCreate(
 Map<String, dynamic> _$ProjectConfigurationToJson(
         ProjectConfiguration instance) =>
     <String, dynamic>{
-      'version': instance.version,
       'useAuth': instance.useAuth,
       'useCore': instance.useCore,
       'useRouter': instance.useRouter,
