@@ -13,6 +13,9 @@
       <excludeFolder url="file://$MODULE_DIR$/packages/auth_management_provider_riverpod/.dart_tool" />
       <excludeFolder url="file://$MODULE_DIR$/packages/auth_management_provider_riverpod/.pub" />
       <excludeFolder url="file://$MODULE_DIR$/packages/auth_management_provider_riverpod/build" />
+      <excludeFolder url="file://$MODULE_DIR$/.dart_tool" />
+      <excludeFolder url="file://$MODULE_DIR$/.pub" />
+      <excludeFolder url="file://$MODULE_DIR$/build" />
     </content>
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="library" name="Dart SDK" level="project" />
