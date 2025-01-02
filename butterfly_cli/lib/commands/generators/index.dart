@@ -1,4 +1,5 @@
 import 'package:args/command_runner.dart';
+import 'package:butterfly_cli/commands/generators/model.dart';
 import 'package:butterfly_cli/commands/generators/version.dart';
 
 class GenerateCommand extends Command {
@@ -14,5 +15,6 @@ class GenerateCommand extends Command {
 
   GenerateCommand() {
     addSubcommand(VersionGeneratorCommand());
+    addSubcommand(ModelGeneratorCommand());
   }
 }
