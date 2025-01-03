@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:butterfly_cli/extensions/command_helper.dart';
 import 'package:butterfly_cli/readable_exception.dart';
 import 'package:butterfly_cli/services/framework.dart';
-import 'package:pub_semver/pub_semver.dart';
 import 'package:pubspec_manager/pubspec_manager.dart';
 import 'package:yaml_edit/yaml_edit.dart';
 
@@ -52,7 +51,7 @@ class PubspecService with ButterflyLogger {
   }
 
   void ensureFlutter() {
-    if (_pubspec.flutter == null) {
+    if (!_pubspec.dependencies.exists('flutter')) {
       throw ReadableException(
           title: 'Not Flutter Project',
           message: 'Flutter SDK not found in pubspec.yaml',
