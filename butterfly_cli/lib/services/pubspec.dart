@@ -28,6 +28,15 @@ class PubspecService with ButterflyLogger {
     detail('Write to pubspec.yaml file');
   }
 
+  void addDependencyX(String name, {Dependency? dependency}) {
+    dependency ??= HostedDependency();
+    detail('Add dependency $name');
+    final pubspec = Pubspec.parse(_pubspecFile.readAsStringSync());
+    pubspec.dependencies.addEntries([MapEntry(name, dependency)]);
+    _pubspecFile.writeAsStringSync(pubspec.toString());
+    detail('Write to pubspec.yaml file');
+  }
+
   void ensureFlutter() {
     if (_pubspec.flutter == null) {
       throw ReadableException(
