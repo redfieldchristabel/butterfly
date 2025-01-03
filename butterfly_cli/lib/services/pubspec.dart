@@ -29,12 +29,22 @@ class PubspecService with ButterflyLogger {
   }
 
   void addDependencyX(String name, {Dependency? dependency}) {
+    final curDir = Directory.current.path;
+    frameworkService.ensureRootDirectory();
+
+    print("cur dir ${Directory.current.path}");
+    // exit(99);
+    // ensureFlutter();
+
     dependency ??= HostedDependency();
     detail('Add dependency $name');
     final pubspec = Pubspec.parse(_pubspecFile.readAsStringSync());
     pubspec.dependencies.addEntries([MapEntry(name, dependency)]);
     _pubspecFile.writeAsStringSync(pubspec.toString());
     detail('Write to pubspec.yaml file');
+
+    detail('Change working directory back to $curDir');
+    frameworkService.changeWorkingDirectory(curDir);
   }
 
   void ensureFlutter() {

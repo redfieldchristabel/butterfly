@@ -56,6 +56,7 @@ class FrameworkService with ButterflyLogger {
   }
 
   void changeWorkingDirectory(String dir) {
+    detail('Changing directory to $dir');
     directoryIsRoot = false;
     Directory.current = dir;
   }
@@ -79,6 +80,7 @@ class FrameworkService with ButterflyLogger {
 
     info('Framework service created');
   }
+
   Future<void> createThemeService() async {
     info('Creating theme service');
     detail('Check if theme.dart file already exist in services directory');
