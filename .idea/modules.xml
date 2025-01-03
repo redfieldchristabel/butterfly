@@ -8,6 +8,7 @@
       <module fileurl="file://$PROJECT_DIR$/packages/auth_management_firebase_google/melos_auth_management_firebase_google.iml" filepath="$PROJECT_DIR$/packages/auth_management_firebase_google/melos_auth_management_firebase_google.iml" />
       <module fileurl="file://$PROJECT_DIR$/packages/auth_management_provider_riverpod/melos_auth_management_provider_riverpod.iml" filepath="$PROJECT_DIR$/packages/auth_management_provider_riverpod/melos_auth_management_provider_riverpod.iml" />
       <module fileurl="file://$PROJECT_DIR$/butterfly_cli/melos_butterfly_cli.iml" filepath="$PROJECT_DIR$/butterfly_cli/melos_butterfly_cli.iml" />
+      <module fileurl="file://$PROJECT_DIR$/packages/core_management/melos_core_management.iml" filepath="$PROJECT_DIR$/packages/core_management/melos_core_management.iml" />
       <module fileurl="file://$PROJECT_DIR$/packages/auth_management_database_isar_community/example/melos_example.iml" filepath="$PROJECT_DIR$/packages/auth_management_database_isar_community/example/melos_example.iml" />
       <module fileurl="file://$PROJECT_DIR$/melos_butterfly.iml" filepath="$PROJECT_DIR$/melos_butterfly.iml" />
     </modules>
