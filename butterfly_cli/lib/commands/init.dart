@@ -27,8 +27,7 @@ class InitCommand extends Command with ButterflyLogger {
 
     info("Creating project Structure");
 
-    detail('Changing directory to lib');
-    Directory.current = '${Directory.current.path}/lib';
+    frameworkService.changeWorkingDirectory('lib');
 
     detail("Check if models directory exist");
 
@@ -46,7 +45,7 @@ class InitCommand extends Command with ButterflyLogger {
       pubspecService.addDependencyX(
         "core_management",
         dependency: GitDependency(
-          Uri.parse('git@github.com:redfieldchristabel/butterfly.git'),
+          Uri.parse('https://github.com/redfieldchristabel/butterfly.git'),
           path: 'packages/core_management',
           ref: 'master',
         ),
