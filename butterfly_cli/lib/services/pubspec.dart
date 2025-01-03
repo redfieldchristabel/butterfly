@@ -4,7 +4,7 @@ import 'package:butterfly_cli/extensions/command_helper.dart';
 import 'package:butterfly_cli/readable_exception.dart';
 import 'package:butterfly_cli/services/framework.dart';
 import 'package:pub_semver/pub_semver.dart';
-import 'package:pubspec_parse/pubspec_parse.dart';
+import 'package:pubspec_manager/pubspec_manager.dart';
 import 'package:yaml_edit/yaml_edit.dart';
 
 class PubspecService with ButterflyLogger {
@@ -15,9 +15,10 @@ class PubspecService with ButterflyLogger {
     _pubspecFile = File('pubspec.yaml');
   }
 
-  Pubspec get _pubspec {
+  PubSpec get _pubspec {
     detail('Read pubspec.yaml file');
-    return Pubspec.parse(_pubspecFile.readAsStringSync());
+    return PubSpec.load();
+    // return Pubspec.parse(_pubspecFile.readAsStringSync());
   }
 
   void addDependency(final String dependency, {final Dependency? option}) {
@@ -28,22 +29,25 @@ class PubspecService with ButterflyLogger {
     detail('Write to pubspec.yaml file');
   }
 
-  void addDependencyX(String name, {Dependency? dependency}) {
+  void addDependencyX(String name) {
     final curDir = Directory.current.path;
     frameworkService.ensureRootDirectory();
 
     print("cur dir ${Directory.current.path}");
-    // exit(99);
     // ensureFlutter();
 
-    dependency ??= HostedDependency();
     detail('Add dependency $name');
-    final pubspec = Pubspec.parse(_pubspecFile.readAsStringSync());
-    pubspec.dependencies.addEntries([MapEntry(name, dependency)]);
-    _pubspecFile.writeAsStringSync(pubspec.toString());
+    final pubspec = PubSpec.load();
+    final builder = DependencyBuilderGit(
+      name: name,
+      url: 'git@github.com:redfieldchristabel/butterfly.git',
+      path: 'packages/$name',
+      ref: 'develop',
+    );
+    pubspec.dependencies.add(builder);
     detail('Write to pubspec.yaml file');
+    pubspec.save();
 
-    detail('Change working directory back to $curDir');
     frameworkService.changeWorkingDirectory(curDir);
   }
 
