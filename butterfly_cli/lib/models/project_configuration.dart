@@ -11,27 +11,23 @@ part 'project_configuration.g.dart';
 )
 class ProjectConfiguration {
   @JsonKey(required: true)
-  final String version;
-  @JsonKey(required: true)
   final bool useAuth;
   @JsonKey(required: true)
   final bool useCore;
   final bool useRouter;
+  final RouterType? routerType;
   final String? userModelName;
 
   // TODO: Add router config
 
   ProjectConfiguration({
-    required this.version,
     required this.useAuth,
     required this.useCore,
     required this.useRouter,
+    this.routerType,
     this.userModelName,
   }) {
     assert(useAuth && userModelName != null);
-    if (version.isEmpty) {
-      throw ArgumentError.value(version, 'name', 'Cannot be empty.');
-    }
   }
 
   factory ProjectConfiguration.fromJson(Map json) {
@@ -54,4 +50,9 @@ class ProjectConfiguration {
 
   @override
   String toString() => 'Configuration: ${toJson()}';
+}
+
+enum RouterType {
+  goRouter,
+  other
 }
