@@ -6,7 +6,6 @@ import 'package:butterfly_cli/models/project_configuration.dart';
 import 'package:butterfly_cli/services/framework.dart';
 import 'package:butterfly_cli/services/project_configuration.dart';
 import 'package:butterfly_cli/services/pubspec.dart';
-import 'package:pubspec_parse/pubspec_parse.dart';
 
 class InitCommand extends Command with ButterflyLogger {
   @override
@@ -42,14 +41,7 @@ class InitCommand extends Command with ButterflyLogger {
 
     if (config.useCore) {
       // TODO: import code library
-      pubspecService.addDependencyX(
-        "core_management",
-        dependency: GitDependency(
-          Uri.parse('https://github.com/redfieldchristabel/butterfly.git'),
-          path: 'packages/core_management',
-          ref: 'master',
-        ),
-      );
+      pubspecService.addDependencyX("core_management");
       frameworkService.createFrameworkService();
       frameworkService.createThemeService();
     }
