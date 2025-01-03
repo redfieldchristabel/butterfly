@@ -63,6 +63,16 @@ class MasonService with ButterflyLogger {
     info('service generated successfully at ${Uri.file(files.first.path)}');
   }
 
+  Future<void> generateThemeService() async {
+    final generator = await _getGenerator('mason/theme_service');
+    detail('generating directory to create this service');
+    final target = DirectoryGeneratorTarget(Directory('services'));
+    detail('generating service using mason');
+    final files = await generator.generate(target);
+
+    info('service generated successfully at ${Uri.file(files.first.path)}');
+  }
+
   Future<void> generateAuthService() async {
     detail('fetching model from github');
     final brick = Brick.git(
@@ -84,7 +94,6 @@ class MasonService with ButterflyLogger {
   }
 
   Future<void> generateRouteFile(RouterType type) async {
-    detail('fetching model from github');
     final generator = await switch (type) {
       RouterType.goRouter => _getGenerator('mason/got_router_route_file'),
       RouterType.other => throw UnimplementedError(),
@@ -100,6 +109,7 @@ class MasonService with ButterflyLogger {
   }
 
   Future<MasonGenerator> _getGenerator(String path) async {
+    detail('fetching $path mason from github');
     final brick = Brick.git(
       GitPath(
         'https://github.com/redfieldchristabel/butterfly',
