@@ -34,19 +34,16 @@ class PubspecService with ButterflyLogger {
 
     print("cur dir ${Directory.current.path}");
     // ensureFlutter();
-
     detail('Add dependency $name');
-    final pubspec = PubSpec.load();
-    final builder = DependencyBuilderGit(
+    final pubspec = PubSpec.loadFromPath(_pubspecFile.path);
+    pubspec.dependencies.add(DependencyBuilderGit(
       name: name,
       url: 'git@github.com:redfieldchristabel/butterfly.git',
       path: 'packages/$name',
       ref: 'develop',
-    );
-    pubspec.dependencies.add(builder);
+    ));
     detail('Write to pubspec.yaml file');
     pubspec.save();
-
     frameworkService.changeWorkingDirectory(curDir);
   }
 
