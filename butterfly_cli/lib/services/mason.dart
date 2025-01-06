@@ -7,13 +7,8 @@ import 'package:mason/mason.dart';
 
 class MasonService with ButterflyLogger {
   Future<void> generateModel(ModelGenParams params) async {
-    detail('fetching model from github');
-    final brick = Brick.git(
-      const GitPath('https://github.com/redfieldchristabel/butterfly',
-          path: 'mason/model', ref: 'feature/mason'),
-    );
+    final generator = await _getGenerator('mason/model');
 
-    final generator = await MasonGenerator.fromBrick(brick);
     detail('generating directory to create this model');
 
     if (!params.path.existsSync()) {
@@ -114,7 +109,7 @@ class MasonService with ButterflyLogger {
       GitPath(
         'https://github.com/redfieldchristabel/butterfly',
         path: path,
-        ref: 'feature/mason',
+        ref: 'develop',
       ),
     );
     return await MasonGenerator.fromBrick(brick);
