@@ -1,3 +1,12 @@
+## 0.0.3
+
+ - **FEAT**: add.
+ - **FEAT**: make.
+ - **FEAT**(riverpod): add auth management provider riverpod.
+ - **DOCS**: add.
+ - **DOCS**: wip.
+ - **DOCS**: wip.
+
 ## 0.0.2
 
  - **REFACTOR**: change to kDebugMode so more dart style.

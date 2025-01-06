@@ -3,6 +3,71 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## 2025-01-06
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`auth_management` - `v0.0.2`](#auth_management---v002)
+ - [`auth_management_database_isar_community` - `v0.0.2`](#auth_management_database_isar_community---v002)
+ - [`auth_management_firebase` - `v0.0.2`](#auth_management_firebase---v002)
+ - [`auth_management_firebase_google` - `v0.0.2`](#auth_management_firebase_google---v002)
+ - [`auth_management_provider_riverpod` - `v0.0.2`](#auth_management_provider_riverpod---v002)
+ - [`butterfly_cli` - `v0.0.3`](#butterfly_cli---v003)
+ - [`example` - `v1.1.0`](#example---v110)
+
+---
+
+#### `auth_management` - `v0.0.2`
+
+ - **FEAT**(riverpod): add auth management provider riverpod.
+ - **FEAT**: add repo class for manageging auth management via provider and non provider like firebase.
+ - **FEAT**: add version.
+
+#### `auth_management_database_isar_community` - `v0.0.2`
+
+ - **FEAT**(riverpod): add auth management provider riverpod.
+ - **DOCS**: add.
+ - **DOCS**: make example for isar repo.
+
+#### `auth_management_firebase` - `v0.0.2`
+
+ - **FEAT**(riverpod): add auth management provider riverpod.
+ - **FEAT**: add sign in with google mixin for native and web.
+ - **FEAT**: add sign in with google mixin for native and web.
+
+#### `auth_management_firebase_google` - `v0.0.2`
+
+ - **FEAT**: add sign in with google mixin for native and web.
+ - **FEAT**: add sign in with google mixin for native and web.
+
+#### `auth_management_provider_riverpod` - `v0.0.2`
+
+ - **FEAT**(riverpod): add auth management provider riverpod.
+
+#### `butterfly_cli` - `v0.0.3`
+
+ - **FEAT**: add.
+ - **FEAT**: make.
+ - **FEAT**(riverpod): add auth management provider riverpod.
+ - **DOCS**: add.
+ - **DOCS**: wip.
+ - **DOCS**: wip.
+
+#### `example` - `v1.1.0`
+
+ - **FEAT**(riverpod): add auth management provider riverpod.
+ - **DOCS**: add.
+ - **DOCS**: make example for isar repo.
+
+
 ## 2024-10-26
 
 ### Changes
