@@ -1,9 +1,6 @@
-## 0.0.2
+## 1.1.0
 
  - **FEAT**(riverpod): add auth management provider riverpod.
  - **DOCS**: add.
  - **DOCS**: make example for isar repo.
 
-## 0.0.1
-
-* TODO: Describe initial release.
