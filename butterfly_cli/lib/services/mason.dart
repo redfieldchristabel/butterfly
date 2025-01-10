@@ -38,6 +38,38 @@ class MasonService with ButterflyLogger {
     generatedFile.writeAsStringSync(formatedFile);
   }
 
+  Future<void> generateImmutableModel(ModelGenParams params) async {
+    final generator = await _getGenerator('mason/immutable_model');
+
+    detail('generating directory to create this model');
+
+    if (!params.path.existsSync()) {
+      detail("Directory not exist, creating");
+      await params.path.create(recursive: true);
+    }
+    final target = DirectoryGeneratorTarget(params.path);
+    detail('generating model using mason');
+    final files = await generator.generate(
+      target,
+      vars: <String, dynamic>{
+        'name': params.name,
+        'fileName': params.fileName,
+        'isSerializable': params.serializable
+      },
+    );
+
+    info('model generated successfully');
+
+    final generatedFile = File(files.first.path);
+    String generatedFileRaw = generatedFile.readAsStringSync();
+
+    final formatedFile =
+        DartFormatter(languageVersion: DartFormatter.latestLanguageVersion)
+            .format(generatedFileRaw);
+
+    generatedFile.writeAsStringSync(formatedFile);
+  }
+
   Future<void> generateFrameworkService() async {
     detail('fetching model from github');
     final brick = Brick.git(
