@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:built_value/built_value.dart';
 {{#isSerializable}}import 'package:built_value/serializer.dart';{{/isSerializable}}
 
-part '../../imutable_model/__brick__/{{fileName.snakeCase()}}.g.dart';
+part '{{fileName.snakeCase()}}.g.dart';
 
 @immutable
 abstract
