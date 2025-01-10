@@ -21,14 +21,16 @@ class ModelGeneratorCommand extends Command with ButterflyLogger {
   ModelGeneratorCommand() {
     argParser.addFlag('serializable',
         abbr: 's', help: 'Generate serializable version', defaultsTo: true);
+    argParser.addFlag('immutable',
+        abbr: 'i',
+        help: 'Generate immutable model using built_value package',
+        defaultsTo: false);
     argParser.addOption('path',
         abbr: 'p',
         help: 'Path to generate this model,\n'
             'will start from "project_root/lib/models" directory.\n'
             'If provided, "auth" as param, the directory will be\n'
             '"project_root/lib/models/auth".');
-
-    //   TODO: support immutable model
   }
 
   @override
@@ -37,6 +39,7 @@ class ModelGeneratorCommand extends Command with ButterflyLogger {
 
     var className = argResults!.rest.firstOrNull;
     final serializable = argResults!.flag('serializable');
+    final immutable = argResults!.flag('immutable');
     final path = argResults!.option('path');
 
     if (className == null) {
@@ -97,6 +100,10 @@ class ModelGeneratorCommand extends Command with ButterflyLogger {
       fileName: fileName.snakeCase, // Use the adjusted filename
     );
 
-    await masonService.generateModel(params);
+    if (immutable) {
+      await masonService.generateImmutableModel(params);
+    } else {
+      await masonService.generateModel(params);
+    }
   }
 }
