@@ -3,6 +3,27 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## 2025-01-10
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`butterfly_cli` - `v0.0.4`](#butterfly_cli---v004)
+
+---
+
+#### `butterfly_cli` - `v0.0.4`
+
+ - **FEAT**(Model Generator): Add support for imutable model.
+
+
 ## 2025-01-06
 
 ### Changes

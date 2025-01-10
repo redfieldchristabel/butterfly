@@ -1,3 +1,7 @@
+## 0.0.4
+
+ - **FEAT**(Model Generator): Add support for imutable model.
+
 ## 0.0.3
 
  - **FEAT**: add.
