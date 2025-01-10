@@ -1,3 +1,7 @@
+## 0.0.4+1
+
+ - **FIX**: bump.
+
 ## 0.0.4
 
  - **FEAT**(Model Generator): Add support for imutable model.
