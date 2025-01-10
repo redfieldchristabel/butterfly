@@ -15,6 +15,27 @@ Packages with breaking changes:
 
 Packages with other changes:
 
+ - [`butterfly_cli` - `v0.0.4+1`](#butterfly_cli---v0041)
+
+---
+
+#### `butterfly_cli` - `v0.0.4+1`
+
+ - **FIX**: bump.
+
+
+## 2025-01-10
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
  - [`butterfly_cli` - `v0.0.4`](#butterfly_cli---v004)
 
 ---
