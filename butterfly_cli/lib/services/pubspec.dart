@@ -28,14 +28,22 @@ class PubspecService with ButterflyLogger {
     detail('Write to pubspec.yaml file');
   }
 
-  void addDependencyX(String name) {
+  void addButterflyDependency(String name) {
     final curDir = Directory.current.path;
     frameworkService.ensureRootDirectory();
 
     print("cur dir ${Directory.current.path}");
+
+    final pubspec = PubSpec.loadFromPath(_pubspecFile.path);
+
+    detail('Check if $name dependency exist');
+    if (pubspec.dependencies.exists(name)) {
+      detail('$name dependency already exist, skip');
+      return;
+    }
+
     // ensureFlutter();
     detail('Add dependency $name');
-    final pubspec = PubSpec.loadFromPath(_pubspecFile.path);
     pubspec.dependencies.add(DependencyBuilderGit(
       name: name,
       url: 'git@github.com:redfieldchristabel/butterfly.git',

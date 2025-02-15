@@ -69,13 +69,20 @@ class ProjectConfigurationService with ButterflyLogger {
     final useRouter = logger.confirm(
         'Do your project need to use router system',
         defaultValue: defaultValue?.useRouter ?? true);
+    RouterType? routerType;
+
+    if (useRouter) {
+      routerType = logger.chooseOne<RouterType>('Choose your router type',
+          choices: RouterType.values,
+          defaultValue: defaultValue?.routerType ?? RouterType.goRouter);
+    }
 
     final ProjectConfiguration configuration = ProjectConfiguration(
-      useAuth: useAuth,
-      useCore: useCore,
-      useRouter: useRouter,
-      userModelName: userModelName,
-    );
+        useAuth: useAuth,
+        useCore: useCore,
+        useRouter: useRouter,
+        userModelName: userModelName,
+        routerType: routerType);
 
     _configuration = configuration;
 

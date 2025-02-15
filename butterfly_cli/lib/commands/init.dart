@@ -41,13 +41,13 @@ class InitCommand extends Command with ButterflyLogger {
 
     if (config.useCore) {
       // TODO: import code library
-      pubspecService.addDependencyX("core_management");
+      pubspecService.addButterflyDependency("core_management");
       frameworkService.createFrameworkService();
       frameworkService.createThemeService();
     }
 
     if (config.useAuth) {
-      // TODO: import auth library
+      pubspecService.addButterflyDependency("auth_management");
       frameworkService.createAuthService();
     }
 
