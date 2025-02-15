@@ -19,7 +19,7 @@ class InitCommand extends Command with ButterflyLogger {
   String get name => 'init';
 
   @override
-  void run() {
+  Future<void> run() async {
     ensureRoot();
 
     final config = projectConfigurationService.create();
@@ -42,18 +42,18 @@ class InitCommand extends Command with ButterflyLogger {
     if (config.useCore) {
       // TODO: import code library
       pubspecService.addButterflyDependency("core_management");
-      frameworkService.createFrameworkService();
-      frameworkService.createThemeService();
+      await frameworkService.createFrameworkService();
+      await frameworkService.createThemeService();
     }
 
     if (config.useAuth) {
       pubspecService.addButterflyDependency("auth_management");
-      frameworkService.createAuthService();
+      await frameworkService.createAuthService();
     }
 
     if (config.useRouter && config.routerType != RouterType.other) {
       // TODO: import router type library
-      frameworkService.createRouteFile(config.routerType!);
+      await frameworkService.createRouteFile(config.routerType!);
     }
 
     info('Initial files created successfully');
