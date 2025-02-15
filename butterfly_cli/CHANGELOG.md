@@ -1,3 +1,7 @@
+## 0.0.6
+
+ - **FEAT**: add version command.
+
 ## 0.0.5
 
  - **REFACTOR**: remove non-null assertion for pubspec version.
