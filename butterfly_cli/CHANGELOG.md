@@ -1,3 +1,7 @@
+## 0.0.8+2
+
+ - **FIX**: change go router mason file path.
+
 ## 0.0.8+1
 
  - **FIX**: add dev mode flag to butterfly CLI.
