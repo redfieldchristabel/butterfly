@@ -22,7 +22,7 @@ void main(List<String> arguments) {
   final runner = CommandRunner('butterfly', 'A CLI tool for butterfly project');
 
   runner.argParser.addFlag('verbose', abbr: 'v', help: 'Print verbose output');
-  runner.argParser.addFlag('dev mode',
+  runner.argParser.addFlag('dev',
       abbr: 'D', help: 'Run in dev mode', defaultsTo: false);
 
   runner.addCommand(VersionCommand());
