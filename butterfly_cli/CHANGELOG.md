@@ -1,3 +1,7 @@
+## 0.0.7
+
+ - **FEAT**: add dev mode flag to butterfly CLI.
+
 ## 0.0.6
 
  - **FEAT**: add version command.
