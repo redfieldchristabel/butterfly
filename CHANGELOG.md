@@ -15,6 +15,27 @@ Packages with breaking changes:
 
 Packages with other changes:
 
+ - [`butterfly_cli` - `v0.0.6`](#butterfly_cli---v006)
+
+---
+
+#### `butterfly_cli` - `v0.0.6`
+
+ - **FEAT**: add version command.
+
+
+## 2025-02-15
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
  - [`butterfly_cli` - `v0.0.5`](#butterfly_cli---v005)
 
 ---
