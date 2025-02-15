@@ -15,6 +15,29 @@ Packages with breaking changes:
 
 Packages with other changes:
 
+ - [`butterfly_cli` - `v0.0.8+4`](#butterfly_cli---v0084)
+
+---
+
+#### `butterfly_cli` - `v0.0.8+4`
+
+ - **REFACTOR**: move services and generated files to lib folder.
+ - **REFACTOR**: ensure lib folder when creating files.
+ - **FIX**: await some process.
+
+
+## 2025-02-15
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
  - [`butterfly_cli` - `v0.0.8+3`](#butterfly_cli---v0083)
 
 ---
