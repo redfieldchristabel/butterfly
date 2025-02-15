@@ -74,7 +74,7 @@ class MasonService with ButterflyLogger {
     final generator = await _getGenerator('mason/framework_service');
     detail('generating directory to create this service');
 
-    final target = DirectoryGeneratorTarget(Directory('services'));
+    final target = DirectoryGeneratorTarget(Directory('lib/services'));
     detail('generating service using mason');
     final files = await generator.generate(target);
 
@@ -84,7 +84,7 @@ class MasonService with ButterflyLogger {
   Future<void> generateThemeService() async {
     final generator = await _getGenerator('mason/theme_service');
     detail('generating directory to create this service');
-    final target = DirectoryGeneratorTarget(Directory('services'));
+    final target = DirectoryGeneratorTarget(Directory('lib/services'));
     detail('generating service using mason');
     final files = await generator.generate(target);
 
@@ -104,7 +104,7 @@ class MasonService with ButterflyLogger {
     final generator = await MasonGenerator.fromBrick(brick);
     detail('generating directory to create this service');
 
-    final target = DirectoryGeneratorTarget(Directory('services'));
+    final target = DirectoryGeneratorTarget(Directory('lib/services'));
     detail('generating service using mason');
     final files = await generator.generate(target);
 
@@ -119,7 +119,7 @@ class MasonService with ButterflyLogger {
 
     detail('generating directory to create this service');
 
-    final target = DirectoryGeneratorTarget(Directory('./'));
+    final target = DirectoryGeneratorTarget(Directory('lib'));
     detail('generating service using mason');
     final files = await generator.generate(target);
 

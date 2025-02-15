@@ -26,7 +26,8 @@ class InitCommand extends Command with ButterflyLogger {
 
     info("Creating project Structure");
 
-    frameworkService.changeWorkingDirectory('lib');
+    // frameworkService.changeWorkingDirectory('lib');
+    frameworkService.ensureLibFolder();
 
     detail("Check if models directory exist");
 
@@ -42,19 +43,17 @@ class InitCommand extends Command with ButterflyLogger {
     if (config.useCore) {
       // TODO: import code library
       pubspecService.addButterflyDependency("core_management");
-      frameworkService.ensureLibFolder();
       await frameworkService.createFrameworkService();
       await frameworkService.createThemeService();
     }
 
     if (config.useAuth) {
       pubspecService.addButterflyDependency("auth_management");
-      frameworkService.ensureLibFolder();
       await frameworkService.createAuthService();
     }
 
+    // TODO: create even for other type
     if (config.useRouter && config.routerType != RouterType.other) {
-      frameworkService.ensureLibFolder();
       await frameworkService.createRouteFile(config.routerType!);
     }
 
