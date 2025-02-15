@@ -15,6 +15,27 @@ Packages with breaking changes:
 
 Packages with other changes:
 
+ - [`butterfly_cli` - `v0.0.8`](#butterfly_cli---v008)
+
+---
+
+#### `butterfly_cli` - `v0.0.8`
+
+ - **FEAT**: update dev mode flag to use uppercase 'D'.
+
+
+## 2025-02-15
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
  - [`butterfly_cli` - `v0.0.7`](#butterfly_cli---v007)
 
 ---

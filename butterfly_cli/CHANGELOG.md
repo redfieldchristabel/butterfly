@@ -1,3 +1,7 @@
+## 0.0.8
+
+ - **FEAT**: update dev mode flag to use uppercase 'D'.
+
 ## 0.0.7
 
  - **FEAT**: add dev mode flag to butterfly CLI.
