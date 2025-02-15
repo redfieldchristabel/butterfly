@@ -15,6 +15,27 @@ Packages with breaking changes:
 
 Packages with other changes:
 
+ - [`butterfly_cli` - `v0.0.8+2`](#butterfly_cli---v0082)
+
+---
+
+#### `butterfly_cli` - `v0.0.8+2`
+
+ - **FIX**: change go router mason file path.
+
+
+## 2025-02-15
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
  - [`butterfly_cli` - `v0.0.8+1`](#butterfly_cli---v0081)
 
 ---
