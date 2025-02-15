@@ -1,3 +1,8 @@
+## 0.0.5
+
+ - **REFACTOR**: remove non-null assertion for pubspec version.
+ - **FEAT**: add butterfly dependency and router type to project config.
+
 ## 0.0.4+1
 
  - **FIX**: bump.

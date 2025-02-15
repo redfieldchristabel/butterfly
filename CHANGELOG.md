@@ -3,6 +3,28 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## 2025-02-15
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`butterfly_cli` - `v0.0.5`](#butterfly_cli---v005)
+
+---
+
+#### `butterfly_cli` - `v0.0.5`
+
+ - **REFACTOR**: remove non-null assertion for pubspec version.
+ - **FEAT**: add butterfly dependency and router type to project config.
+
+
 ## 2025-01-10
 
 ### Changes
