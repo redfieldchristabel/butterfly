@@ -55,6 +55,11 @@ class FrameworkService with ButterflyLogger {
     ensureRootDirectory();
   }
 
+  void ensureLibFolder() {
+    ensureRootDirectory();
+    changeWorkingDirectory('lib');
+  }
+
   void changeWorkingDirectory(String dir) {
     detail('Changing directory to $dir');
     directoryIsRoot = false;

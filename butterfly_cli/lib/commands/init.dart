@@ -42,17 +42,19 @@ class InitCommand extends Command with ButterflyLogger {
     if (config.useCore) {
       // TODO: import code library
       pubspecService.addButterflyDependency("core_management");
+      frameworkService.ensureLibFolder();
       await frameworkService.createFrameworkService();
       await frameworkService.createThemeService();
     }
 
     if (config.useAuth) {
       pubspecService.addButterflyDependency("auth_management");
+      frameworkService.ensureLibFolder();
       await frameworkService.createAuthService();
     }
 
     if (config.useRouter && config.routerType != RouterType.other) {
-      // TODO: import router type library
+      frameworkService.ensureLibFolder();
       await frameworkService.createRouteFile(config.routerType!);
     }
 
