@@ -22,18 +22,18 @@ void main(List<String> arguments) {
   final runner = CommandRunner('butterfly', 'A CLI tool for butterfly project');
 
   runner.argParser.addFlag('verbose', abbr: 'v', help: 'Print verbose output');
+  runner.argParser.addFlag('dev mode',
+      abbr: 'dev', help: 'Run in dev mode', defaultsTo: false);
 
   runner.addCommand(VersionCommand());
   runner.addCommand(InitCommand());
   runner.addCommand(CommitCommand());
   runner.addCommand(GenerateCommand());
 
-  // final argsParser = runner.argParser;
+  final result = runner.parse(arguments);
 
   runZonedGuarded(
     () {
-      final result = runner.parse(arguments);
-
       if (kDebugMode) {
         ButterflyLogger.level = Level.verbose;
       } else {
@@ -65,7 +65,7 @@ void main(List<String> arguments) {
         }
       }
 
-      if (kDebugMode) {
+      if (kDebugMode || result.flag('dev')) {
         print('\n\n');
         throw error;
       } else {
