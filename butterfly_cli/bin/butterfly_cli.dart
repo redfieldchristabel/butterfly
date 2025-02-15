@@ -5,6 +5,7 @@ import 'package:args/command_runner.dart';
 import 'package:butterfly_cli/commands/commit.dart';
 import 'package:butterfly_cli/commands/generators/index.dart';
 import 'package:butterfly_cli/commands/init.dart';
+import 'package:butterfly_cli/commands/version.dart';
 import 'package:butterfly_cli/extensions/command_helper.dart';
 import 'package:butterfly_cli/readable_exception.dart';
 import 'package:mason_logger/mason_logger.dart';
@@ -22,6 +23,7 @@ void main(List<String> arguments) {
 
   runner.argParser.addFlag('verbose', abbr: 'v', help: 'Print verbose output');
 
+  runner.addCommand(VersionCommand());
   runner.addCommand(InitCommand());
   runner.addCommand(CommitCommand());
   runner.addCommand(GenerateCommand());
