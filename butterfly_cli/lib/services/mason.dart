@@ -122,7 +122,7 @@ class MasonService with ButterflyLogger {
 
   Future<void> generateRouteFile(RouterType type) async {
     final generator = await switch (type) {
-      RouterType.goRouter => _getGenerator('mason/got_router_route_file'),
+      RouterType.goRouter => _getGenerator('mason/go_router_route_file'),
       RouterType.other => throw UnimplementedError(),
     };
 
