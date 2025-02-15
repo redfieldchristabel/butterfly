@@ -71,16 +71,7 @@ class MasonService with ButterflyLogger {
   }
 
   Future<void> generateFrameworkService() async {
-    detail('fetching model from github');
-    final brick = Brick.git(
-      const GitPath(
-        'https://github.com/redfieldchristabel/butterfly',
-        path: 'mason/framework_service',
-        ref: 'feature/mason',
-      ),
-    );
-
-    final generator = await MasonGenerator.fromBrick(brick);
+    final generator = await _getGenerator('mason/framework_service');
     detail('generating directory to create this service');
 
     final target = DirectoryGeneratorTarget(Directory('services'));
