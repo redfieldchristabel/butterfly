@@ -23,7 +23,7 @@ void main(List<String> arguments) {
 
   runner.argParser.addFlag('verbose', abbr: 'v', help: 'Print verbose output');
   runner.argParser.addFlag('dev mode',
-      abbr: 'dev', help: 'Run in dev mode', defaultsTo: false);
+      abbr: 'D', help: 'Run in dev mode', defaultsTo: false);
 
   runner.addCommand(VersionCommand());
   runner.addCommand(InitCommand());
