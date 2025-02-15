@@ -59,7 +59,7 @@ class PubspecService with ButterflyLogger {
 
   Version get version {
     detail('Get version from pubspec.yaml file');
-    return _pubspec.version!;
+    return _pubspec.version;
   }
 }
 

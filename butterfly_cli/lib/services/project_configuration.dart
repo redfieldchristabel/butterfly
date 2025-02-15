@@ -5,7 +5,6 @@ import 'package:butterfly_cli/models/project_configuration.dart';
 import 'package:butterfly_cli/readable_exception.dart';
 import 'package:butterfly_cli/services/framework.dart';
 import 'package:checked_yaml/checked_yaml.dart';
-import 'package:yaml_edit/yaml_edit.dart';
 
 class ProjectConfigurationService with ButterflyLogger {
   ProjectConfiguration? _configuration;
