@@ -1,3 +1,9 @@
+## 0.0.8+4
+
+ - **REFACTOR**: move services and generated files to lib folder.
+ - **REFACTOR**: ensure lib folder when creating files.
+ - **FIX**: await some process.
+
 ## 0.0.8+3
 
  - **FIX**: change mason target branch.
