@@ -1,4 +1,4 @@
-import 'package:core_management/services/base_framework.dart';
+import 'package:core_management/services/base_core.dart';
 
 class CoreService extends BaseCoreService {}
 

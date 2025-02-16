@@ -70,45 +70,25 @@ class MasonService with ButterflyLogger {
     generatedFile.writeAsStringSync(formatedFile);
   }
 
-  Future<void> generateCoreService() async {
-    final generator = await _getGenerator('mason/core_service');
+  Future<void> generateCoreService() =>
+      _generateButterflyService('core_service');
+
+  Future<void> generateThemeService() =>
+      _generateButterflyService('theme_service');
+
+  Future<void> generateAuthService() =>
+      _generateButterflyService('auth_service');
+
+  Future<void> _generateButterflyService(String name) async {
+    final generator = await _getGenerator('mason/$name');
     detail('generating directory to create this service');
 
     final target = DirectoryGeneratorTarget(Directory('lib/services'));
     detail('generating service using mason');
     final files = await generator.generate(target);
 
-    info('service generated successfully at ${Uri.file(files.first.path)}');
-  }
-
-  Future<void> generateThemeService() async {
-    final generator = await _getGenerator('mason/theme_service');
-    detail('generating directory to create this service');
-    final target = DirectoryGeneratorTarget(Directory('lib/services'));
-    detail('generating service using mason');
-    final files = await generator.generate(target);
-
-    info('service generated successfully at ${Uri.file(files.first.path)}');
-  }
-
-  Future<void> generateAuthService() async {
-    detail('fetching model from github');
-    final brick = Brick.git(
-      const GitPath(
-        'https://github.com/redfieldchristabel/butterfly',
-        path: 'mason/auth_service',
-        ref: 'feature/mason',
-      ),
-    );
-
-    final generator = await MasonGenerator.fromBrick(brick);
-    detail('generating directory to create this service');
-
-    final target = DirectoryGeneratorTarget(Directory('lib/services'));
-    detail('generating service using mason');
-    final files = await generator.generate(target);
-
-    info('service generated successfully at ${Uri.file(files.first.path)}');
+    info(
+        'service generated successfully at ${File(files.first.path).absolute.uri}');
   }
 
   Future<void> generateRouteFile(RouterType type) async {
@@ -123,7 +103,8 @@ class MasonService with ButterflyLogger {
     detail('generating service using mason');
     final files = await generator.generate(target);
 
-    info('service generated successfully at ${Uri.file(files.first.path)}');
+    info(
+        'service generated successfully at ${File(files.first.path).absolute.uri}');
   }
 
   Future<MasonGenerator> _getGenerator(String path) async {
