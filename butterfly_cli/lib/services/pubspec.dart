@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:butterfly_cli/extensions/command_helper.dart';
@@ -20,12 +21,60 @@ class PubspecService with ButterflyLogger {
     // return Pubspec.parse(_pubspecFile.readAsStringSync());
   }
 
-  void addDependency(final String dependency, {final Dependency? option}) {
-    final editor = YamlEditor(_pubspecFile.readAsStringSync());
-    editor.update(['dependencies'], dependency);
-    detail('Add dependency $dependency');
-    _pubspecFile.writeAsStringSync(editor.toString());
+  Future<void> addDependency(final String name, {bool dev = false}) async {
+    final curDir = Directory.current.path;
+    frameworkService.ensureRootDirectory();
+
+    info("cur dir ${Directory.current.path}");
+
+    final pubspec = PubSpec.loadFromPath(_pubspecFile.path);
+
+    detail('Check if $name dependency exist');
+    final iDependency = dev ? pubspec.devDependencies : pubspec.devDependencies;
+    if (iDependency.exists(name)) {
+      detail('$name dependency already exist, skip');
+      return;
+    }
+
+    detail('Dependency not exist, asking to add ${iDependency.exists(name)}');
+
+    // ensureFlutter();
+    detail('Add dependency $name');
+
+    final add = logger.confirm('Add $name dependency', defaultValue: true);
+
+    if (add) {
+      final mode = stdout.hasTerminal
+          ? ProcessStartMode.inheritStdio
+          : ProcessStartMode.normal;
+      final process = await Process.start(
+        'flutter',
+        ['pub', 'add', if (dev) '--dev', name],
+        mode: mode,
+        runInShell: true,
+      );
+
+      // Pipe stdout and stderr to the console:
+      process.stdout
+          .transform(utf8.decoder)
+          .listen((data) => stdout.write(data));
+      process.stderr
+          .transform(utf8.decoder)
+          .listen((data) => stderr.write(data));
+
+      await process.exitCode;
+    }
+    return;
+
+    final dependency = DependencyBuilderPubHosted(name: name);
+    if (dev) {
+      pubspec.devDependencies.add(dependency);
+    } else {
+      pubspec.dependencies.add(dependency);
+    }
     detail('Write to pubspec.yaml file');
+    pubspec.save();
+    frameworkService.changeWorkingDirectory(curDir);
   }
 
   void addButterflyDependency(String name) {

@@ -1,4 +1,5 @@
 // TODO: add support for changing the theme in runtime
+// TODO: add support for theme extension (Custom theme)
 import 'package:core_management/core_typography_theme.dart';
 import 'package:flutter/material.dart';
 
@@ -100,8 +101,4 @@ abstract class BaseThemeService {
   TextTheme get textTheme => _theme.textTheme;
 
   InputDecorationTheme get inputDecorationTheme => _theme.inputDecorationTheme;
-}
-
-class Service extends BaseThemeService {
-  Service(super.context);
 }
