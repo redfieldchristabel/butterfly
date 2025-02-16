@@ -15,6 +15,27 @@ Packages with breaking changes:
 
 Packages with other changes:
 
+ - [`butterfly_cli` - `v0.0.10`](#butterfly_cli---v0010)
+
+---
+
+#### `butterfly_cli` - `v0.0.10`
+
+ - **FEAT**: refactor service generation and update core service.
+
+
+## 2025-02-16
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
  - [`butterfly_cli` - `v0.0.9+1`](#butterfly_cli---v0091)
 
 ---
