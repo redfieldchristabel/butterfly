@@ -1,3 +1,7 @@
+## 0.0.9
+
+ - **FEAT**: add dependency management and core service.
+
 ## 0.0.8+4
 
  - **REFACTOR**: move services and generated files to lib folder.

@@ -3,6 +3,32 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## 2025-02-16
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`butterfly_cli` - `v0.0.9`](#butterfly_cli---v009)
+ - [`core_management` - `v0.0.2`](#core_management---v002)
+
+---
+
+#### `butterfly_cli` - `v0.0.9`
+
+ - **FEAT**: add dependency management and core service.
+
+#### `core_management` - `v0.0.2`
+
+ - **FEAT**: add dependency management and core service.
+
+
 ## 2025-02-15
 
 ### Changes
