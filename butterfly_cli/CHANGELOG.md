@@ -1,3 +1,7 @@
+## 0.0.9+1
+
+ - **REFACTOR**: rename framework service to core service.
+
 ## 0.0.9
 
  - **FEAT**: add dependency management and core service.

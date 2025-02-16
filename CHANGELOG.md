@@ -15,6 +15,27 @@ Packages with breaking changes:
 
 Packages with other changes:
 
+ - [`butterfly_cli` - `v0.0.9+1`](#butterfly_cli---v0091)
+
+---
+
+#### `butterfly_cli` - `v0.0.9+1`
+
+ - **REFACTOR**: rename framework service to core service.
+
+
+## 2025-02-16
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
  - [`butterfly_cli` - `v0.0.9`](#butterfly_cli---v009)
  - [`core_management` - `v0.0.2`](#core_management---v002)
 
