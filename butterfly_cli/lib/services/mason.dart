@@ -70,8 +70,8 @@ class MasonService with ButterflyLogger {
     generatedFile.writeAsStringSync(formatedFile);
   }
 
-  Future<void> generateFrameworkService() async {
-    final generator = await _getGenerator('mason/framework_service');
+  Future<void> generateCoreService() async {
+    final generator = await _getGenerator('mason/core_service');
     detail('generating directory to create this service');
 
     final target = DirectoryGeneratorTarget(Directory('lib/services'));

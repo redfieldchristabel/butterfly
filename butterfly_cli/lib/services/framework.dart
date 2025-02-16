@@ -66,9 +66,9 @@ class FrameworkService with ButterflyLogger {
     Directory.current = dir;
   }
 
-  Future<void> createFrameworkService() async {
-    info('Creating framework service');
-    detail('Check if framework.dart file already exist in services directory');
+  Future<void> createCoreService() async {
+    info('Creating core service');
+    detail('Check if core.dart file already exist in services directory');
 
     final dir = Directory('services');
     if (!dir.existsSync()) {
@@ -76,14 +76,13 @@ class FrameworkService with ButterflyLogger {
       dir.createSync();
     }
 
-    final file = File('lib/services/framework.dart');
+    final file = File('lib/services/core.dart');
     if (!file.existsSync()) {
       info('File not exist, creating');
-      //   TODO: use mason generator
-      await masonService.generateFrameworkService();
+      await masonService.generateCoreService();
     }
 
-    info('Framework service created');
+    info('Core service created');
   }
 
   Future<void> createThemeService() async {
@@ -120,7 +119,7 @@ class FrameworkService with ButterflyLogger {
     if (!file.existsSync()) {
       info('File not exist, creating');
       //   TODO: use mason generator
-      await masonService.generateFrameworkService();
+      await masonService.generateCoreService();
     }
 
     info('Auth service created');

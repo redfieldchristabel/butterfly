@@ -43,7 +43,7 @@ class InitCommand extends Command with ButterflyLogger {
     if (config.useCore) {
       // TODO: import code library
       pubspecService.addButterflyDependency("core_management");
-      await frameworkService.createFrameworkService();
+      await frameworkService.createCoreService();
       await frameworkService.createThemeService();
     }
 
