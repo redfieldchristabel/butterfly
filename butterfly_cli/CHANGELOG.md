@@ -1,3 +1,7 @@
+## 0.0.10
+
+ - **FEAT**: refactor service generation and update core service.
+
 ## 0.0.9+1
 
  - **REFACTOR**: rename framework service to core service.
