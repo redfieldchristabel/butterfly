@@ -1,4 +1,4 @@
-name: framework_service
+name: core_service
 description: A new brick created with the Mason CLI.
 
 # The following defines the brick repository url.

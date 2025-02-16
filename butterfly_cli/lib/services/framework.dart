@@ -76,7 +76,7 @@ class FrameworkService with ButterflyLogger {
       dir.createSync();
     }
 
-    final file = File('services/framework.dart');
+    final file = File('lib/services/framework.dart');
     if (!file.existsSync()) {
       info('File not exist, creating');
       //   TODO: use mason generator
@@ -96,7 +96,7 @@ class FrameworkService with ButterflyLogger {
       dir.createSync();
     }
 
-    final file = File('services/theme.dart');
+    final file = File('lib/services/theme.dart');
     if (!file.existsSync()) {
       info('File not exist, creating');
       //   TODO: use mason generator
@@ -116,7 +116,7 @@ class FrameworkService with ButterflyLogger {
       dir.createSync();
     }
 
-    final file = File('services/auth_service.dart');
+    final file = File('lib/services/auth_service.dart');
     if (!file.existsSync()) {
       info('File not exist, creating');
       //   TODO: use mason generator
@@ -130,7 +130,7 @@ class FrameworkService with ButterflyLogger {
     info('Creating route file');
     detail('Check if route.dart file already exist in lib directory');
 
-    final file = File('route.dart');
+    final file = File('lib/route.dart');
     if (!file.existsSync()) {
       info('File not exist, creating');
       //   TODO: use mason generator

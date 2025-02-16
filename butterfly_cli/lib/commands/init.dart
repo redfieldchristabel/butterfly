@@ -54,6 +54,11 @@ class InitCommand extends Command with ButterflyLogger {
 
     // TODO: create even for other type
     if (config.useRouter && config.routerType != RouterType.other) {
+      await pubspecService.addDependency('go_router');
+      await pubspecService.addDependency('build_runner', dev: true);
+      await pubspecService.addDependency('go_router_builder', dev: true);
+
+
       await frameworkService.createRouteFile(config.routerType!);
     }
 

@@ -3,6 +3,6 @@
 // TODO: add queue for build statefull widget
 
 
-abstract class BaseFrameworkService {
+abstract class BaseCoreService {
 
 }
