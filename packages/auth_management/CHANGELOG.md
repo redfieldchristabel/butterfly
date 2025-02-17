@@ -1,3 +1,7 @@
+## 0.0.3
+
+ - **FEAT**: add gen_version command to melos.
+
 ## 0.0.2
 
  - **FEAT**(riverpod): add auth management provider riverpod.

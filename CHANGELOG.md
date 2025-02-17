@@ -15,6 +15,42 @@ Packages with breaking changes:
 
 Packages with other changes:
 
+ - [`auth_management` - `v0.0.3`](#auth_management---v003)
+ - [`auth_management_provider_riverpod` - `v0.0.2+1`](#auth_management_provider_riverpod---v0021)
+ - [`example` - `v1.1.1`](#example---v111)
+ - [`auth_management_database_isar_community` - `v0.0.2+1`](#auth_management_database_isar_community---v0021)
+ - [`auth_management_firebase` - `v0.0.2+1`](#auth_management_firebase---v0021)
+ - [`auth_management_firebase_google` - `v0.0.2+1`](#auth_management_firebase_google---v0021)
+
+Packages with dependency updates only:
+
+> Packages listed below depend on other packages in this workspace that have had changes. Their versions have been incremented to bump the minimum dependency versions of the packages they depend upon in this project.
+
+ - `auth_management_provider_riverpod` - `v0.0.2+1`
+ - `example` - `v1.1.1`
+ - `auth_management_database_isar_community` - `v0.0.2+1`
+ - `auth_management_firebase` - `v0.0.2+1`
+ - `auth_management_firebase_google` - `v0.0.2+1`
+
+---
+
+#### `auth_management` - `v0.0.3`
+
+ - **FEAT**: add gen_version command to melos.
+
+
+## 2025-02-17
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
  - [`core_management` - `v0.0.3`](#core_management---v003)
 
 ---
