@@ -13,3 +13,12 @@ scripts:
     exec: dart run build_runner build
   format:
     exec: dart format --set-exit-if-changed .
+  gen_version:
+    exec: butterfly2 g version
+    packageFilters:
+      scope: butterfly_cli
+
+command:
+  version:
+    hooks:
+      post: melos run gen_version
