@@ -1,3 +1,7 @@
+## 0.0.3
+
+ - **FEAT**(docs): add features page to documentation.
+
 ## 0.0.2+1
 
  - Update a dependency to the latest release.

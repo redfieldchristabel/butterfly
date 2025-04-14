@@ -1,3 +1,7 @@
+## 0.0.11
+
+ - **FEAT**: redirect stdout and stderr from pub commands to the console.
+
 ## 0.0.10
 
  - **FEAT**: refactor service generation and update core service.

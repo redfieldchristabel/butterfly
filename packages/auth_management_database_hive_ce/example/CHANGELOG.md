@@ -1,7 +1,4 @@
-## 0.0.2
+## 1.1.0
 
  - **FEAT**(docs): add features page to documentation.
 
-## 0.0.1
-
-* TODO: Describe initial release.
