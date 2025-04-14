@@ -39,19 +39,36 @@ can be use without Butterfly at all and a little bit copy paste just all you nee
 
 ### Why Butterfly?
 
-Butterfly are created to solve the problem on our internal projects. We notice that each project got some kind of
-boilerplate code that we need to write over and over again. So we create this tool to help us with that. In the first
-version of it, we just create a simple script to help with it, but we notice that having to change a code or update become
-a boilerplate action again, so using the package/library are the way to go since only update once. Then we expand our library
-to handle the authorization logic as well. In the old day, the authorization logic resist in the same library as the core logic.
-But as we grow we notice that not all flutter application need authorization logic, so we separate it out.
+Butterfly was created to solve real problems we faced in our internal projects. We noticed that each
+new Flutter project involved repeating the same boilerplate code over and over again. So we built a
+tool to help streamline that process.
 
-So by then we create a new kinda ecosystem that will help ask start the application faster and more beautiful. But the earlier
-version of it kinda lock the developer from choosing the tech (library) that they want and forcing them to use the library
-that Butterfly do. This mean like using local database as the Butterfly are built with.
+The first version started as a simple script to reduce this repetition. But as projects grew,
+maintaining and updating those scripts became another form of boilerplate. That’s when we decided to
+turn it into a package-based tool — so you only need to update it once, and it works across your
+codebase.
 
-<Info>In old day, We have other name for this tool, only the cli tool are called Butterfly CLI.
-But now we create the hold ecosystem to be named as Butterfly</Info>
+As we expanded, Butterfly began handling common patterns like authorization logic. Initially, all
+logic (core and auth) lived in the same package, but we realized not every app needs authentication
+— so we split it out to keep things flexible.
+
+Butterfly is now a lightweight ecosystem to help you start building beautiful, maintainable apps
+faster. Earlier versions locked developers into using specific libraries
+(like a default local database), but we've learned from that. The current Butterfly gives you more
+freedom to choose the tech you prefer.
+
+
+<Info>In the early days, only the CLI tool was called "Butterfly CLI." But now, the entire ecosystem
+shares the name: **Butterfly**.</Info>
+
+#### Why the name "Butterfly"?
+
+The name **Butterfly** was inspired by its natural beauty and its connection to Flutter. Just like a
+butterfly flutters gracefully, we want your Flutter app to be elegant and smooth. The word
+“Butterfly” also shares a similar sound with “Flutter,” making it feel right at home. And since
+butterflies are often associated with beauty and transformation, we hope Butterfly helps your
+codebase evolve into something just as beautiful.
+
 
 ### Removable Library?
 
