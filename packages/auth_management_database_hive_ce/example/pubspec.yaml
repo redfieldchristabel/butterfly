@@ -1,4 +1,4 @@
-name: auth_management_database_isar_community_example
+name: auth_management_database_hive_ce_example
 description: "A new Flutter project."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -16,10 +16,10 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.1.1
+version: 1.0.0+1
 
 environment:
-  sdk: ^3.5.3
+  sdk: ^3.7.0
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -30,20 +30,15 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  auth_management:
-  auth_management_database_isar_community:
-    path: ../
-  isar:
-    hosted: https://pub.isar-community.dev
-    version: ^4.0.3
-  isar_flutter_libs:
-    hosted: https://pub.isar-community.dev
-    version: ^4.0.3
-
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+  auth_management:
+  auth_management_database_hive_ce:
+    path: ../
+  hive_ce: ^2.10.1
+  hive_ce_flutter: ^2.2.0
 
 dev_dependencies:
   flutter_test:
@@ -54,8 +49,9 @@ dev_dependencies:
   # activated in the `analysis_options.yaml` file located at the root of your
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
-  flutter_lints: ^4.0.0
-  build_runner: ^2.4.13
+  flutter_lints: ^5.0.0
+  build_runner: ^2.4.15
+  hive_ce_generator: ^1.8.2
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

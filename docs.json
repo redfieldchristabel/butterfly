@@ -21,6 +21,21 @@
           "icon": "fa-solid fa-star"
         }
       ]
+    },
+    {
+      "group": "Libraries",
+      "pages": [
+        {
+          "title": "Core",
+          "href": "/libraries/core",
+          "icon": "fa-solid fa-butterfly"
+        },
+        {
+          "title": "Auth",
+          "href": "/libraries/auth",
+          "icon": "fa-solid fa-butterfly"
+        }
+      ]
     }
   ]
 }

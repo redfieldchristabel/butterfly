@@ -19,6 +19,9 @@
       <excludeFolder url="file://$MODULE_DIR$/packages/core_management/.dart_tool" />
       <excludeFolder url="file://$MODULE_DIR$/packages/core_management/.pub" />
       <excludeFolder url="file://$MODULE_DIR$/packages/core_management/build" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/auth_management_database_hive_ce/.dart_tool" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/auth_management_database_hive_ce/.pub" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/auth_management_database_hive_ce/build" />
     </content>
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="library" name="Dart SDK" level="project" />
