@@ -1,5 +1,5 @@
 {
-  "name": "My Docs",
+  "name": "Butterfly",
   "description": "My documentation site",
   "sidebar": [
   {
@@ -11,8 +11,8 @@
         "icon": "rocket"
       },
       {
-        "title": "Next Steps",
-        "href": "/next-steps",
+        "title": "Installation",
+        "href": "/installation",
         "icon": "arrow-right"
       }
     ]
