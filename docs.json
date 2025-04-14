@@ -2,20 +2,25 @@
   "name": "Butterfly",
   "description": "My documentation site",
   "sidebar": [
-  {
-    "group": "Getting Started",
-    "pages": [
-      {
-        "title": "Getting to know Butterfly",
-        "href": "/",
-        "icon": "rocket"
-      },
-      {
-        "title": "Installation",
-        "href": "/installation",
-        "icon": "arrow-right"
-      }
-    ]
-  }
-]
+    {
+      "group": "Getting Started",
+      "pages": [
+        {
+          "title": "Getting to know Butterfly",
+          "href": "/",
+          "icon": "rocket"
+        },
+        {
+          "title": "Installation",
+          "href": "/installation",
+          "icon": "arrow-right"
+        },
+        {
+          "title": "Features",
+          "href": "/features",
+          "icon": "fa-solid fa-star"
+        }
+      ]
+    }
+  ]
 }
