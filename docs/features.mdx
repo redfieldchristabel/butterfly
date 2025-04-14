@@ -48,15 +48,15 @@ Generate Dart models effortlessly using the `json_serializable` package, a widel
 ```sh
 butterfly generate model <ModelName>
 ```
-#### Alias
+**Alias:**
 - generate -> gen -> g
 - model -> m
-#### Example
+**Example:**
 ```sh
 butterfly g m Booking
 butterfly gen model UserProfile
 ```
-#### Options
+**Options:**
 - -p <directory>: Specify a subdirectory within the models folder.
       Example: -p booking places the model in models/booking/.
 - -i: Generate an immutable model using the built_value package.
@@ -79,8 +79,9 @@ butterfly generate version
 Butterfly simplifies your commit process by providing a command that helps you craft messages adhering to the [Conventional Commits](https://www.conventionalcommits.org/) specification. This promotes a consistent and meaningful commit history, facilitating better collaboration and automation.
 
 **Command:**
-```bash
+```sh
 butterfly commit
+```
 
 **Alias:**
 - commit -> c
