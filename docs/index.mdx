@@ -81,3 +81,39 @@ Our documentation clearly shows how to implement each feature using **Flutter's 
 without relying on Butterfly. Most of our helper guides come with two tabs: one showing how to do it
 with Butterfly, and the other showing how to do it manually. This ensures you're never locked in —
 you can adopt Butterfly with confidence and remove it whenever you need.
+
+### Project Structure Philosophy
+
+Butterfly doesn’t follow the typical **Clean Architecture** approach. Instead, it uses a simpler,
+more intuitive structure that feels natural for most Flutter projects — with top-level folders like
+`models`, `services`, `screens`, and `widgets` sitting right at the root of your project.
+
+We understand that Clean Architecture aims to group related files by feature to make it easier to
+navigate and manage — and that totally makes sense in theory. But in practice, especially with
+modern IDEs and tools, it’s no longer a must.
+
+Thanks to features like **Ctrl+Click**, **Go to Definition**, and **Find All References**,
+developers can easily jump between classes, services, and widgets without having to manually dig
+through nested folders. So instead of over-complicating the project structure, Butterfly keeps
+things simple and avoids unnecessary indirection.
+
+Even large, mature frameworks like **Laravel** don’t strictly follow Clean Architecture. Open a
+fresh Laravel project and you’ll see it leans more toward organizing by type (models, controllers,
+services) than by feature.
+
+We believe this structure:
+
+- Keeps your codebase clean and easy to follow
+- Avoids premature optimization
+- Feels more natural for everyday development
+- Prevents the headache of deciding where to place shared services or utilities
+
+At the end of the day, it’s not about following trends — it’s about making your development
+experience smoother and your codebase more maintainable.
+
+However, if you prefer the Clean Architecture style, you might consider using the
+[Stacked](https://pub.dev/packages/stacked) package. Stacked is a Flutter framework designed for
+building production applications with testable, scalable, and maintainable code. It provides a
+complete frontend architecture and includes a CLI to generate views, services, and more, adhering to
+the Clean Architecture principles. You can learn more about Stacked in their
+[official documentation](https://stacked.filledstacks.com/docs/getting-started/overview/).
