@@ -55,12 +55,14 @@ class PubspecService with ButterflyLogger {
       );
 
       // Pipe stdout and stderr to the console:
-      process.stdout
-          .transform(utf8.decoder)
-          .listen((data) => stdout.write(data));
-      process.stderr
-          .transform(utf8.decoder)
-          .listen((data) => stderr.write(data));
+      if (mode == ProcessStartMode.normal) {
+        process.stdout
+            .transform(utf8.decoder)
+            .listen((data) => stdout.write(data));
+        process.stderr
+            .transform(utf8.decoder)
+            .listen((data) => stderr.write(data));
+      }
 
       await process.exitCode;
     }
