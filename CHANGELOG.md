@@ -3,6 +3,50 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## 2025-04-14
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`auth_management_database_hive_ce` - `v0.0.2`](#auth_management_database_hive_ce---v002)
+ - [`auth_management_database_hive_ce_example` - `v1.1.0`](#auth_management_database_hive_ce_example---v110)
+ - [`auth_management_database_isar_community` - `v0.0.3`](#auth_management_database_isar_community---v003)
+ - [`auth_management_database_isar_community_example` - `v1.2.0`](#auth_management_database_isar_community_example---v120)
+ - [`butterfly_cli` - `v0.0.11`](#butterfly_cli---v0011)
+
+---
+
+#### `auth_management_database_hive_ce` - `v0.0.2`
+
+ - **FEAT**(docs): add features page to documentation.
+
+#### `auth_management_database_hive_ce_example` - `v1.1.0`
+
+ - **FEAT**(docs): add features page to documentation.
+
+#### `auth_management_database_isar_community` - `v0.0.3`
+
+ - **FEAT**(docs): add features page to documentation.
+
+#### `auth_management_database_isar_community_example` - `v1.2.0`
+
+ - **FEAT**(docs): add features page to documentation.
+ - **FEAT**(riverpod): add auth management provider riverpod.
+ - **DOCS**: add.
+ - **DOCS**: make example for isar repo.
+
+#### `butterfly_cli` - `v0.0.11`
+
+ - **FEAT**: redirect stdout and stderr from pub commands to the console.
+
+
 ## 2025-02-17
 
 ### Changes
