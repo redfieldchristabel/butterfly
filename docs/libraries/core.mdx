@@ -77,19 +77,19 @@ void initState() {
     // ref.read(userProvider.notifier).setUser(user);
 
     // ✅ Safely schedule the state update after the build phase
-    enqueue(() {
-      ref.read(userProvider.notifier).setUser(user);
-    });
+    enqueue(() { // [!code highlight]
+      ref.read(userProvider.notifier).setUser(user); // [!code highlight]
+    }); // [!code highlight]
   });
 
   // Schedule additional UI updates
-  enqueue(() {
-    ref.read(userProvider.notifier).UpdateRandomQuote();
-  });
+  enqueue(() { // [!code highlight]
+    ref.read(userProvider.notifier).UpdateRandomQuote(); // [!code highlight]
+  }); // [!code highlight]
 
-  enqueue(() {
-    ref.read(themeProvider.notifier).checkDarkMode();
-  });
+  enqueue(() { // [!code highlight]
+    ref.read(themeProvider.notifier).checkDarkMode(); // [!code highlight]
+  }); // [!code highlight]
 }
 ```
 - The `apiService.getRandomUser()` call fetches user data asynchronously.
