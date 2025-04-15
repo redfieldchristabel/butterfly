@@ -127,7 +127,46 @@ void initState() {
  </TabItem> </Tabs>
 
 
- This helper simplifies complex post-frame logic and ensures UI updates are safe, sequential, and
- clean.
+This helper simplifies complex post-frame logic and ensures UI updates are safe, sequential, and
+clean.
 
- ##
+### ⚠️ Applicability: `StatefulWidget` and Variants Only
+
+The `enqueue()` helper is designed for use within `StatefulWidget` and its variants, such as
+`ConsumerStatefulWidget` from Riverpod. This is because:
+
+- **Internal State Management**: `StatefulWidget` and its variants have mutable internal state,
+allowing them to manage lifecycle events like `initState()`, `didUpdateWidget()`, and `dispose()`.
+The `enqueue()` helper leverages these lifecycle methods to schedule tasks safely after the widget's
+build phase.
+
+- **Asynchronous Operations**: These widgets can perform asynchronous operations (e.g.,
+fetching data) and update their state accordingly. The `enqueue()` helper ensures that such updates
+occur after the widget is fully built, preventing potential errors.
+
+- **Lifecycle Awareness**: The helper checks the widget's `mounted` status before executing tasks,
+ensuring that operations are only performed when the widget is part of the widget tree.
+
+---
+
+### 🧠 Why `StatelessWidget` Doesn't Require `enqueue()`
+
+`StatelessWidget` is designed for widgets that don't maintain any internal state and rely solely on
+the configuration information in the object itself and the `BuildContext` in which the widget is
+inflated. Key characteristics include:
+
+- **Immutability**: Once created, a `StatelessWidget` cannot change its properties. It is rebuilt
+only when its parent widget changes its configuration or when an `InheritedWidget` it depends on
+changes.
+
+- **No Internal State**: Since `StatelessWidget` doesn't manage any mutable state, there's no need
+to schedule tasks after the build phase. Any necessary updates are typically handled by the parent
+widget or through external state management solutions.
+
+- **Simplified Lifecycle**: Without the need for lifecycle methods like `initState()` or `dispose()`
+, `StatelessWidget` simplifies the widget tree and reduces complexity.
+
+In summary, `StatelessWidget` doesn't require the `enqueue()` helper because it doesn't manage
+internal state or perform asynchronous operations that need to be scheduled after the build phase.
+
+
