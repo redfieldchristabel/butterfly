@@ -28,10 +28,11 @@ This `CoreService` acts as the bridge to features provided by the Core Library, 
 
 ## 🔁 `enqueue()` Helper
 
-The enqueue() function is a utility provided by the Butterfly Core library for safely scheduling UI
-updates after the widget is fully built. Unlike using WidgetsBinding.instance.addPostFrameCallback,
-enqueue() manages a queue, making it perfect for running multiple UI tasks in order without
-colliding with the Flutter rendering pipeline.
+The `enqueue()` function is a utility provided by the Butterfly Core library for safely scheduling
+UI updates after the widget is fully built. It is introduced in the `Widget` class via an extended
+class. Unlike using `WidgetsBinding.instance.addPostFrameCallback`, `enqueue()` manages a queue,
+making it perfect for running multiple UI tasks in order without colliding with the Flutter
+rendering pipeline.
 
 Key Features:
 - Ensures the widget is still mounted before executing your callback
