@@ -51,7 +51,8 @@ trigger UI rendering errors if run too early.
 Extend your `State` class with the `TaskQueueMixin` to enable the `enqueue()` functionality:
 
 ```dart
-class MyWidgetState extends State<MyWidget> with TaskQueueMixin {
+class MyWidgetState extends State<MyWidget> { // [!code --]
+class MyWidgetState extends State<MyWidget> with TaskQueueMixin { // [!code ++]
   @override
   void initState() {
     super.initState();
