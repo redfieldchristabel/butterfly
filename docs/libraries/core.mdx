@@ -28,11 +28,14 @@ This `CoreService` acts as the bridge to features provided by the Core Library, 
 
 ## 🔁 `enqueue()` Helper
 
-The `enqueue()` function is a utility provided by the Butterfly Core library for safely scheduling
-UI updates after the widget is fully built. It is introduced in the `Widget` class via an extended
-class. Unlike using `WidgetsBinding.instance.addPostFrameCallback`, `enqueue()` manages a queue,
-making it perfect for running multiple UI tasks in order without colliding with the Flutter
-rendering pipeline.
+The `enqueue()` function is a utility provided by the Butterfly Core library that allows you to
+safely schedule UI updates after the widget has completed its build phase. It is introduced via a
+mixin, making it usable in any `State` class without requiring inheritance or framework-specific
+widgets.
+
+Unlike `WidgetsBinding.instance.addPostFrameCallback`, `enqueue()` manages a dedicated task queue,
+allowing multiple UI update tasks to be queued and executed sequentially. This ensures clean and
+predictable behavior without risking rendering errors like `setState() called during build`.
 
 Key Features:
 - Ensures the widget is still mounted before executing your callback
@@ -44,6 +47,22 @@ This is especially useful for state updates that would normally be placed in ini
 trigger UI rendering errors if run too early.
 
 **Example Usage:**
+
+Extend your `State` class with the `TaskQueueMixin` to enable the `enqueue()` functionality:
+
+```dart
+class MyWidgetState extends State<MyWidget> with TaskQueueMixin {
+  @override
+  void initState() {
+    super.initState();
+
+    enqueue(() {
+      // Your post-build UI update logic here
+    });
+  }
+}
+```
+
 
 <Tabs> <TabItem label="Butterfly" value="butterfly">
 ```dart
@@ -109,3 +128,5 @@ void initState() {
 
  This helper simplifies complex post-frame logic and ensures UI updates are safe, sequential, and
  clean.
+
+ ##
