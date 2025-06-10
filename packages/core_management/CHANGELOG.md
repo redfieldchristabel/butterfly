@@ -1,3 +1,8 @@
+## 0.0.4
+
+ - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
+ - **FEAT**(core): Introduce TaskQueueMixin for safe UI updates.
+
 ## 0.0.3
 
  - **FEAT**: export core and theme services.
