@@ -105,5 +105,7 @@ class ModelGeneratorCommand extends Command with ButterflyLogger {
     } else {
       await masonService.generateModel(params);
     }
+
+    info('Model generated at ${generatedFile.absolute.path}');
   }
 }
