@@ -1,3 +1,7 @@
+## 0.0.12
+
+ - **FEAT**: display generated model path.
+
 ## 0.0.11
 
  - **FEAT**: redirect stdout and stderr from pub commands to the console.

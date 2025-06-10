@@ -3,6 +3,58 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## 2025-06-10
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`auth_management_database_hive_ce` - `v0.0.3`](#auth_management_database_hive_ce---v003)
+ - [`auth_management_database_hive_ce_example` - `v1.2.0`](#auth_management_database_hive_ce_example---v120)
+ - [`auth_management_database_isar_community` - `v0.0.4`](#auth_management_database_isar_community---v004)
+ - [`auth_management_database_isar_community_example` - `v1.3.0`](#auth_management_database_isar_community_example---v130)
+ - [`butterfly_cli` - `v0.0.12`](#butterfly_cli---v0012)
+ - [`core_management` - `v0.0.4`](#core_management---v004)
+ - [`core_management_route_go_router` - `v0.0.2`](#core_management_route_go_router---v002)
+
+---
+
+#### `auth_management_database_hive_ce` - `v0.0.3`
+
+ - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
+
+#### `auth_management_database_hive_ce_example` - `v1.2.0`
+
+ - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
+
+#### `auth_management_database_isar_community` - `v0.0.4`
+
+ - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
+
+#### `auth_management_database_isar_community_example` - `v1.3.0`
+
+ - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
+
+#### `butterfly_cli` - `v0.0.12`
+
+ - **FEAT**: display generated model path.
+
+#### `core_management` - `v0.0.4`
+
+ - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
+ - **FEAT**(core): Introduce TaskQueueMixin for safe UI updates.
+
+#### `core_management_route_go_router` - `v0.0.2`
+
+ - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
+
+
 ## 2025-04-14
 
 ### Changes

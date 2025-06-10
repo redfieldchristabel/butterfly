@@ -1,3 +1,7 @@
+## 0.0.3
+
+ - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
+
 ## 0.0.2
 
  - **FEAT**(docs): add features page to documentation.

@@ -1,6 +1,6 @@
 name: auth_management_database_hive_ce
 description: "A library to support Hive CE for auth management database"
-version: 0.0.2
+version: 0.0.3
 homepage:
 
 environment:
