@@ -5,6 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 abstract class GoRouterService<T> extends BaseRouteService<T> {
+  // TODO: maybe move to parrent class
+  static final GlobalKey<NavigatorState> _rootNavigator =
+  GlobalKey<NavigatorState>();
+
+  // getter to prevent assignment and can be access by this class descendant.
+  GlobalKey<NavigatorState> get rootNavigator => _rootNavigator;
   List<RouteBase> get routes;
 
   /// Optional redirect path for role-based authorization after authentication.
