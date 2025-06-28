@@ -1,26 +1,50 @@
 import 'dart:async';
+import 'dart:developer';
 
 import 'package:core_management/services/base_route.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 abstract class GoRouterService<T> extends BaseRouteService<T> {
   // TODO: maybe move to parrent class
   static final GlobalKey<NavigatorState> _rootNavigator =
-  GlobalKey<NavigatorState>();
+      GlobalKey<NavigatorState>();
 
   // getter to prevent assignment and can be access by this class descendant.
   GlobalKey<NavigatorState> get rootNavigator => _rootNavigator;
+
   List<RouteBase> get routes;
 
   /// Optional redirect path for role-based authorization after authentication.
   /// Ignored if [requiresAuth] is false.
   String? roleBasedRedirect(T? user) => null;
 
+  void onRouteChanged(BuildContext context, GoRouterState state) {}
+
   FutureOr<String?> goRouterRedirect(
     BuildContext context,
     GoRouterState state,
   ) async {
+    if (kDebugMode) {
+      log(
+        '🔀 Router Redirect',
+        name: 'GoRouterService',
+        time: DateTime.now(),
+        level: 800, // INFO level
+        error: {
+          'fullPath': state.fullPath,
+          'matchedLocation': state.matchedLocation,
+          'uri': state.uri.toString(),
+          'temporaryRedirect': temporaryRedirect,
+          'redirectOverride': redirectOverride,
+          'timestamp': DateTime.now().toIso8601String(),
+        },
+      );
+    }
+
+    onRouteChanged(context, state);
+
     if (redirectOverride != null) {
       final route = redirectOverride;
       redirectOverride = null;
