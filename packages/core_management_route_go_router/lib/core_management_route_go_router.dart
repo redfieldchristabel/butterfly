@@ -28,6 +28,14 @@ abstract class GoRouterService<T> extends BaseRouteService<T> {
   /// This method is called before any redirection logic in [goRouterRedirect], making it
   /// ideal for tracking all navigation attempts, even those that might be redirected.
   ///
+  /// In debug mode, it automatically logs route change information including:
+  /// - Full path
+  /// - Matched location
+  /// - URI
+  /// - Temporary redirect status
+  /// - Any redirect overrides
+  /// - Timestamp
+  ///
   /// Parameters:
   /// - [context]: The current build context
   /// - [state]: The current router state containing navigation information
@@ -41,6 +49,9 @@ abstract class GoRouterService<T> extends BaseRouteService<T> {
   ///
   ///   // Update app state based on new route
   ///   appState.updateCurrentRoute(state.fullPath);
+  ///
+  ///   // Call super to maintain default logging behavior
+  ///   super.onRouteChanged(context, state);
   /// }
   /// ```
   @protected
@@ -67,11 +78,10 @@ abstract class GoRouterService<T> extends BaseRouteService<T> {
   /// Handles route redirection logic for the GoRouter.
   ///
   /// This method is called by GoRouter whenever a navigation event occurs. It's responsible for:
-  /// 1. Logging debug information in development mode
-  /// 2. Executing any custom route change callbacks
-  /// 3. Handling redirect overrides
-  /// 4. Managing initial route redirection
-  /// 5. Enforcing authentication requirements
+  /// 1. Executing [onRouteChanged] callback (which includes debug logging)
+  /// 2. Handling redirect overrides
+  /// 3. Managing initial route redirection
+  /// 4. Enforcing authentication requirements
   ///
   /// The method returns a [String] path to redirect to, or `null` to allow the navigation
   /// to proceed without redirection.
