@@ -39,7 +39,7 @@ abstract class BaseErrorHandlerService {
   /// void onError(FlutterErrorDetails error) {
   ///   // Custom error handling (e.g., logging, analytics)
   ///   debugPrint('Custom error handling: ${error.exception}');
-  ///   
+  ///
   ///   // Call super to maintain default error presentation
   ///   super.onError(error);
   /// }
@@ -48,7 +48,7 @@ abstract class BaseErrorHandlerService {
   /// Parameters:
   ///   - [error]: The [FlutterErrorDetails] object containing information
   ///     about the error that occurred.
-  void onError(FlutterErrorDetails error) {
+  void onError(FlutterErrorDetails errorDetails) {
     FlutterError.presentError(error);
   }
 
