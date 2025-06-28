@@ -45,7 +45,24 @@ abstract class GoRouterService<T> extends BaseRouteService<T> {
   /// ```
   @protected
   @mustCallSuper
-  void onRouteChanged(BuildContext context, GoRouterState state) {}
+  void onRouteChanged(BuildContext context, GoRouterState state) {
+    if (kDebugMode) {
+      log(
+        '🔀 Router Redirect',
+        name: 'GoRouterService',
+        time: DateTime.now(),
+        level: 800, // INFO level
+        error: {
+          'fullPath': state.fullPath,
+          'matchedLocation': state.matchedLocation,
+          'uri': state.uri.toString(),
+          'temporaryRedirect': temporaryRedirect,
+          'redirectOverride': redirectOverride,
+          'timestamp': DateTime.now().toIso8601String(),
+        },
+      );
+    }
+  }
 
   /// Handles route redirection logic for the GoRouter.
   ///
@@ -83,23 +100,6 @@ abstract class GoRouterService<T> extends BaseRouteService<T> {
     BuildContext context,
     GoRouterState state,
   ) async {
-    if (kDebugMode) {
-      log(
-        '🔀 Router Redirect',
-        name: 'GoRouterService',
-        time: DateTime.now(),
-        level: 800, // INFO level
-        error: {
-          'fullPath': state.fullPath,
-          'matchedLocation': state.matchedLocation,
-          'uri': state.uri.toString(),
-          'temporaryRedirect': temporaryRedirect,
-          'redirectOverride': redirectOverride,
-          'timestamp': DateTime.now().toIso8601String(),
-        },
-      );
-    }
-
     onRouteChanged(context, state);
 
     if (redirectOverride != null) {
