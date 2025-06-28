@@ -8,15 +8,15 @@ import 'package:flutter/material.dart';
 /// for use with [MaterialApp.router].
 abstract class BaseRouteService<T> {
   /// Global key for the root navigator to access the top-level navigation context.
-  static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<
-      NavigatorState>();
+  static final GlobalKey<NavigatorState> navigatorKey =
+      GlobalKey<NavigatorState>();
 
-  const BaseRouteService() {
+  BaseRouteService() {
     if (requiresAuth) {
       assert(authTriggerRoutes.isNotEmpty,
-      'authTriggerRoutes must be at least one if requiresAuth is true.');
-      assert(defaultAuthRoute
-          .isNotEmpty, 'defaultAuthRoute must be defined if requiresAuth is true.');
+          'authTriggerRoutes must be at least one if requiresAuth is true.');
+      assert(defaultAuthRoute.isNotEmpty,
+          'defaultAuthRoute must be defined if requiresAuth is true.');
     }
   }
 
