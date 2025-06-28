@@ -58,7 +58,7 @@ abstract class BaseCoreService {
   ///
   /// Returns:
   ///   An instance of [BaseErrorHandlerService] or `null` to use the default handler.
-  BaseErrorHandlerService? get errorHandlerService => null;
+  BaseErrorHandlerService? get _errorHandlerService => null;
 
   /// Sets up the global error handling for the application.
   ///
@@ -80,7 +80,7 @@ abstract class BaseCoreService {
   /// This method should be called before any other code that might throw errors
   /// to ensure all errors are properly caught and handled.
   void errorHandler() {
-    final handler = errorHandlerService ?? DefaultErrorHandler();
+    final handler = _errorHandlerService ?? DefaultErrorHandler();
 
     FlutterError.onError = handler.onError;
     PlatformDispatcher.instance.onError = handler.onPlatformError;
