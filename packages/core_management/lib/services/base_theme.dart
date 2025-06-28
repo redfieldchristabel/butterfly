@@ -51,8 +51,6 @@ abstract class BaseThemeService {
       textTheme: coreTypographyTheme.textTheme,
       primaryTextTheme: coreTypographyTheme.primaryTextTheme,
       textSelectionTheme: coreTypographyTheme.textSelectionTheme,
-
-
     );
   }
 
