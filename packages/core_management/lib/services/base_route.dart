@@ -70,6 +70,24 @@ abstract class BaseRouteService<T> {
   /// Ignored if [requiresAuth] is false.
   List<String> get debugRoutes => [];
 
+  /// Optional list of [NavigatorObserver]s that will receive navigation events.
+  ///
+  /// These observers can be used to track navigation events, handle deep linking,
+  /// or implement custom navigation behavior. The observers will be used by the
+  /// router to notify about route changes.
+  ///
+  /// Returns `null` by default, which means no observers will be used.
+  ///
+  /// Example:
+  /// ```dart
+  /// @override
+  /// List<NavigatorObserver>? get observers => [
+  ///   AnalyticsObserver(),
+  ///   CustomNavigationObserver(),
+  /// ];
+  /// ```
+  List<NavigatorObserver>? get observers => null;
+
   /// Optional builder for creating an error screen when navigation fails.
   Widget Function(BuildContext context, dynamic state)? get errorBuilder;
 }

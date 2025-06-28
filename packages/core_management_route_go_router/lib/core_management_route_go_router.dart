@@ -20,6 +20,28 @@ abstract class GoRouterService<T> extends BaseRouteService<T> {
   /// Ignored if [requiresAuth] is false.
   String? roleBasedRedirect(T? user) => null;
 
+  /// Optional [Listenable] to trigger route re-evaluation when it notifies its listeners.
+  ///
+  /// When this notifier triggers (by calling `notifyListeners()`), the router will
+  /// re-evaluate the current route and potentially redirect based on the new state.
+  ///
+  /// This is useful for scenarios like authentication state changes, where you want
+  /// to redirect the user when they log in or out.
+  ///
+  /// Example:
+  /// ```dart
+  /// final _authNotifier = ValueNotifier<bool>(false);
+  ///
+  /// @override
+  /// Listenable? get refreshListenable => _authNotifier;
+  ///
+  /// // Later, when auth state changes:
+  /// _authNotifier.value = true; // Will trigger route re-evaluation
+  /// ```
+  @protected
+  Listenable? get refreshListenable => null;
+
+
   /// Called whenever a route change occurs, before any redirection logic is processed.
   ///
   /// This method provides a hook to perform actions or side effects when the route changes,
@@ -158,6 +180,8 @@ abstract class GoRouterService<T> extends BaseRouteService<T> {
   GoRouter get routerConfig {
     return GoRouter(
       navigatorKey: BaseRouteService.navigatorKey,
+      refreshListenable: refreshListenable,
+      observers: observers,
       initialLocation: '/',
       routes: routes,
       redirect: goRouterRedirect,
