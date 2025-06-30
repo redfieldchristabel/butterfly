@@ -4,7 +4,7 @@ import 'package:auth_management/auth_management_provider.dart';
 import 'package:auth_management_provider_riverpod/src/user.dart';
 import 'package:riverpod/riverpod.dart';
 
-class AuthManagementIsarRepository<T extends RiverpodUser>
+class AuthManagementRiverpodRepository<T extends RiverpodUser>
     implements AuthServiceProviderRepository<T> {
   late final Ref ref;
 
