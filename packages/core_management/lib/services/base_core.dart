@@ -3,7 +3,9 @@
 // TODO: add queue for build statefull widget
 
 import 'package:core_management/services/base_error_handler.dart';
+import 'package:core_management/services/base_loading.dart';
 import 'package:core_management/src/services/default_error_handler.dart';
+import 'package:core_management/src/services/default_loading.dart';
 import 'package:flutter/foundation.dart';
 
 /// A base service class that serves as the foundation for core application services.
@@ -50,6 +52,14 @@ import 'package:flutter/foundation.dart';
 /// }
 /// ```
 abstract class BaseCoreService {
+  static late final BaseCoreService instance;
+
+  BaseCoreService() {
+    instance = this;
+  }
+
+  // ---------------- Services ----------------
+
   /// Gets the error handler service instance.
   ///
   /// This getter should be overridden to provide a custom error handler.
@@ -57,9 +67,15 @@ abstract class BaseCoreService {
   /// will be used when [errorHandler] is called.
   ///
   /// Returns:
-  ///   An instance of [BaseErrorHandlerService] or `null` to use the default handler.
+  ///   An instance of [BaseErrorHandlerService].
   @protected
-  BaseErrorHandlerService? get errorHandlerService => null;
+  BaseErrorHandlerService get errorHandlerService => DefaultErrorHandler();
+
+  BaseLoadingService get loadingService => DefaultLoadingService();
+
+
+
+  // ---------------- Services End ----------------
 
   /// Sets up the global error handling for the application.
   ///
@@ -81,7 +97,7 @@ abstract class BaseCoreService {
   /// This method should be called before any other code that might throw errors
   /// to ensure all errors are properly caught and handled.
   void errorHandler() {
-    final handler = errorHandlerService ?? DefaultErrorHandler();
+    final handler = errorHandlerService;
 
     FlutterError.onError = handler.onError;
     PlatformDispatcher.instance.onError = handler.onPlatformError;
