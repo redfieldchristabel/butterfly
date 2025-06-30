@@ -7,12 +7,11 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 abstract class GoRouterService<T> extends BaseRouteService<T> {
-  // TODO: maybe move to parrent class
-  static final GlobalKey<NavigatorState> _rootNavigator =
-      GlobalKey<NavigatorState>();
-
-  // getter to prevent assignment and can be access by this class descendant.
-  GlobalKey<NavigatorState> get rootNavigator => _rootNavigator;
+  /// Gets the global navigator key used for navigation.
+  ///
+  /// This is a convenience getter that provides access to the static [BaseRouteService.navigatorKey].
+  /// It allows accessing the navigator key through an instance of this class.
+  GlobalKey<NavigatorState> get navigatorKey => BaseRouteService.navigatorKey;
 
   List<RouteBase> get routes;
 
@@ -40,7 +39,6 @@ abstract class GoRouterService<T> extends BaseRouteService<T> {
   /// ```
   @protected
   Listenable? get refreshListenable => null;
-
 
   /// Called whenever a route change occurs, before any redirection logic is processed.
   ///
