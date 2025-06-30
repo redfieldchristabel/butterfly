@@ -1,6 +1,8 @@
 // TODO: add support for changing the theme in runtime
 // TODO: add support for theme extension (Custom theme)
+import 'package:core_management/core_management.dart';
 import 'package:core_management/core_typography_theme.dart';
+import 'package:flutter/foundation.dart' show PlatformDispatcher;
 import 'package:flutter/material.dart';
 
 abstract class BaseThemeService {
@@ -8,11 +10,10 @@ abstract class BaseThemeService {
   late final ThemeData _theme;
   late final bool primaryColorIsDark;
 
-  BaseThemeService(
-    BuildContext context, {
+  BaseThemeService({
     Color colorSeed = Colors.blue,
   }) {
-    final brightness = MediaQuery.of(context).platformBrightness;
+    final brightness = PlatformDispatcher.instance.platformBrightness;
     darkTheme = brightness == Brightness.dark;
     _theme = ThemeData(
         useMaterial3: true, colorSchemeSeed: colorSeed, brightness: brightness);

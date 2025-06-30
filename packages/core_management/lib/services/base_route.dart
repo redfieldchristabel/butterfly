@@ -57,14 +57,14 @@ abstract class BaseRouteService<T> {
   String get signUpRoutePath => '/signup';
 
   /// Optional redirect path for the initial app launch (e.g., splash screen).
-  String? get initialRedirect;
+  String? get initialRedirect => '/';
 
   /// Configures the router and returns a router configuration object for [MaterialApp.router].
   RouterConfig<Object> get routerConfig;
 
   /// Optional debug screen for bypassing authentication or any other checks
   /// during development.
-  Widget? get debugScreen;
+  Widget? get debugScreen => null;
 
   /// Route paths accessible when [debugScreen] is active (for testing purposes).
   /// Ignored if [requiresAuth] is false.
@@ -89,5 +89,6 @@ abstract class BaseRouteService<T> {
   List<NavigatorObserver>? get observers => null;
 
   /// Optional builder for creating an error screen when navigation fails.
-  Widget Function(BuildContext context, dynamic state)? get errorBuilder;
+  Widget Function(BuildContext context, dynamic state)? get errorBuilder =>
+      null;
 }
