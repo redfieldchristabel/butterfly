@@ -49,7 +49,7 @@ abstract class BaseErrorHandlerService {
   ///   - [error]: The [FlutterErrorDetails] object containing information
   ///     about the error that occurred.
   void onError(FlutterErrorDetails errorDetails) {
-    FlutterError.presentError(error);
+    FlutterError.presentError(errorDetails);
   }
 
   /// Handles platform-level errors.
