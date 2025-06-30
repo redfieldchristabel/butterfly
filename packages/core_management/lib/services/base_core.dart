@@ -77,7 +77,7 @@ abstract class BaseCoreService {
 
   BaseLoadingService get loadingService => DefaultLoadingService();
 
-  BaseRouteService? get routeService => null;
+  // Route service from mixins
 
   // ---------------- Services End ----------------
 
