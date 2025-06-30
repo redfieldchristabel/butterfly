@@ -5,5 +5,5 @@ import '../services/base_route.dart' show BaseRouteService;
 mixin RouteServiceMixin {
   BaseRouteService get routeService;
 
-  RouterConfig get routerConfig => routeService.routerConfig;
+  RouterConfig<Object> get routerConfig => routeService.routerConfig;
 }
