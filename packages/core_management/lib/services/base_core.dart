@@ -4,9 +4,13 @@
 
 import 'package:core_management/services/base_error_handler.dart';
 import 'package:core_management/services/base_loading.dart';
+import 'package:core_management/services/base_route.dart';
 import 'package:core_management/src/services/default_error_handler.dart';
 import 'package:core_management/src/services/default_loading.dart';
 import 'package:flutter/foundation.dart';
+
+import '../src/services/default_theme.dart';
+import 'base_theme.dart';
 
 /// A base service class that serves as the foundation for core application services.
 ///
@@ -65,15 +69,14 @@ abstract class BaseCoreService {
   /// This getter should be overridden to provide a custom error handler.
   /// If not overridden, it returns `null` and the default error handler
   /// will be used when [errorHandler] is called.
-  ///
-  /// Returns:
-  ///   An instance of [BaseErrorHandlerService].
   @protected
   BaseErrorHandlerService get errorHandlerService => DefaultErrorHandler();
 
+  BaseThemeService get themeService => DefaultThemeService();
+
   BaseLoadingService get loadingService => DefaultLoadingService();
 
-
+  BaseRouteService? get routeService => null;
 
   // ---------------- Services End ----------------
 
