@@ -1,6 +1,6 @@
 import 'dart:async' show StreamController;
 
-import '../../../repositories/lock.dart';
+import 'lock.dart';
 
 class InMemoryLockRepository implements LockRepository {
   final Map<String, DateTime> _locks = {};
