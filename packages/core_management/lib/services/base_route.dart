@@ -56,8 +56,6 @@ abstract class BaseRouteService<T> {
   /// Ignored if [requiresAuth] is false.
   String get signUpRoutePath => '/signup';
 
-  /// Optional redirect path for the initial app launch (e.g., splash screen).
-  String? get initialRedirect => '/';
 
   /// Configures the router and returns a router configuration object for [MaterialApp.router].
   RouterConfig<Object> get routerConfig;

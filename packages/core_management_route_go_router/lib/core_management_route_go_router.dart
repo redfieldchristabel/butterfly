@@ -143,11 +143,6 @@ abstract class GoRouterService<T> extends BaseRouteService<T> {
       return route;
     }
 
-    final initialRoute = initialRedirect;
-    if (initialRoute != null) {
-      return initialRoute;
-    }
-
     if (!requiresAuth) {
       return null; // No auth checks, allow all routes
     }
