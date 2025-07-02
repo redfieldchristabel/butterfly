@@ -62,11 +62,6 @@ class CoreLockService {
   /// If [timeout] is provided, waits up to that duration to acquire the lock.
   /// If [lockDuration] is provided, overrides the default lock duration.
   ///
-  /// Attempts to acquire a lock for the given [key].
-  ///
-  /// If [timeout] is provided, waits up to that duration to acquire the lock.
-  /// If [lockDuration] is provided, overrides the default lock duration.
-  ///
   /// Returns `true` if the lock was acquired, `false` otherwise.
   ///
   /// Note: Persistence operations are performed in the background.
@@ -126,24 +121,6 @@ class CoreLockService {
     return false;
   }
 
-  /// Checks if a lock with the given [key] is currently held,
-  /// including checking the persistence layer.
-  Future<bool> isLockedAsync(String key) async {
-    // Check in-memory first
-    if (isLocked(key)) {
-      return true;
-    }
-
-    // Check persistence if available
-    if (_persistence != null) {
-      final expiry = await _persistence!.getLockExpiry(key);
-      if (expiry != null && expiry.isAfter(DateTime.now())) {
-        return true;
-      }
-    }
-
-    return false;
-  }
 
   /// Gets the expiry time of the lock with the given [key] from memory.
   ///
@@ -157,24 +134,6 @@ class CoreLockService {
       }
       _releaseInMemory(key);
     }
-    return null;
-  }
-
-  /// Gets the expiry time of the lock with the given [key], checking persistence.
-  ///
-  /// Returns the expiry time if the lock exists and is not expired, null otherwise.
-  Future<DateTime?> getLockExpiryAsync(String key) async {
-    // Check in-memory first
-    final memoryExpiry = getLockExpiry(key);
-    if (memoryExpiry != null) {
-      return memoryExpiry;
-    }
-
-    // Check persistence if available
-    if (_persistence != null) {
-      return await _persistence!.getLockExpiry(key);
-    }
-
     return null;
   }
 
