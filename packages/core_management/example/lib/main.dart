@@ -62,12 +62,9 @@ class _MyHomePageState extends State<MyHomePage> with TaskQueueMixin {
   int _counter = 0;
 
   void _incrementCounter() {
-    coreService.loadingService.controller.state = ButterflyLoadingState.loading;
-
-    Future.delayed(const Duration(seconds: 3), () {
+    Future.delayed(const Duration(seconds: 2), () {
       print("completed");
-      coreService.loadingService.controller.state =
-          ButterflyLoadingState.completed;
+      enqueue(() => print("queue run 1"));
     });
 
     setState(() {
