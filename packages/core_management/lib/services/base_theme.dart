@@ -6,17 +6,12 @@ import 'package:flutter/foundation.dart' show PlatformDispatcher;
 import 'package:flutter/material.dart';
 
 abstract class BaseThemeService {
+  late final Color colorSeed;
   late final bool darkTheme;
   late final ThemeData _theme;
   late final bool primaryColorIsDark;
 
-  BaseThemeService({
-    Color colorSeed = Colors.blue,
-  }) {
-    final brightness = PlatformDispatcher.instance.platformBrightness;
-    darkTheme = brightness == Brightness.dark;
-    _theme = ThemeData(
-        useMaterial3: true, colorSchemeSeed: colorSeed, brightness: brightness);
+  BaseThemeService({this.colorSeed = Colors.blue}) {
     primaryColorIsDark =
         ThemeData.estimateBrightnessForColor(colorSeed) == Brightness.dark;
   }
@@ -25,7 +20,13 @@ abstract class BaseThemeService {
 
   CoreTypographyTheme get coreTypographyTheme => CoreTypographyTheme(_theme);
 
-  ThemeData get theme {
+  ThemeData theme(BuildContext context) {
+    final brightness = Theme.of(context).brightness;
+    darkTheme = brightness == Brightness.dark;
+    final colorScheme =
+        ColorScheme.fromSeed(seedColor: colorSeed, brightness: brightness);
+    _theme = ThemeData.from(colorScheme: colorScheme);
+
     return _theme.copyWith(
       appBarTheme: appBarTheme,
       cardTheme: cardTheme,
