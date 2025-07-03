@@ -1,4 +1,5 @@
 import 'dart:collection';
+import 'package:flutter/scheduler.dart' show SchedulerBinding, SchedulerPhase;
 import 'package:flutter/widgets.dart';
 
 mixin TaskQueueMixin<T extends StatefulWidget> on State<T> {
@@ -26,14 +27,24 @@ mixin TaskQueueMixin<T extends StatefulWidget> on State<T> {
 
     _isProcessing = true;
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+    final schedulerPhase = SchedulerBinding.instance.schedulerPhase;
 
+    if (schedulerPhase == SchedulerPhase.idle ||
+        schedulerPhase == SchedulerPhase.postFrameCallbacks) {
+      // Not building: run immediately.
       final task = _taskQueue.removeFirst();
       task();
-
       _processQueue();
-    });
+    } else {
+      // Building or layout: defer.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+
+        final task = _taskQueue.removeFirst();
+        task();
+        _processQueue();
+      });
+    }
   }
 
   @override
