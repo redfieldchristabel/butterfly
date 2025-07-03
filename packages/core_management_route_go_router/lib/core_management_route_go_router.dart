@@ -78,29 +78,32 @@ abstract class GoRouterService<T> extends BaseRouteService<T> {
   @mustCallSuper
   void onRouteChanged(BuildContext context, GoRouterState state) {
     if (kDebugMode) {
+      // TODO: add full stack trace
       final buffer =
           StringBuffer()
             ..writeln('🔄 ROUTER REDIRECT')
             ..writeln('├─ 📍 Path: ${state.uri.path}')
-            ..writeln('├─ 🔗 Full Path: ${state.fullPath}')
-            ..writeln('├─ 🎯 Matched Location: ${state.matchedLocation}')
-            ..writeln('└─ ⚙️  Redirect Details:')
-            ..writeln('   ├─ Temporary: $temporaryRedirect')
-            ..writeln('   └─ Has Override: ${redirectOverride != null}');
+            ..writeln('├─ 🔗 Full URL: ${state.uri.toString()}')
+            ..writeln('├─ 🗂️  Full Path: ${state.fullPath}');
+
+      buffer
+        ..writeln('└─ ⚙️  Redirect Details:')
+        ..writeln('   ├─ Temporary: $temporaryRedirect')
+        ..writeln('   └─ Has Override: ${redirectOverride != null}');
 
       if (redirectOverride != null) {
         buffer.writeln('      └─ Override: $redirectOverride');
       }
 
       if (requiresAuth) {
-        buffer.writeln('   └─ User: $user');
+        buffer.writeln('└─ 👤 User: ${user ?? "null"}');
       }
 
       log(
         buffer.toString(),
         name: 'GoRouterService',
         time: DateTime.now(),
-        level: 800, // INFO level
+        level: 800,
       );
     }
   }
