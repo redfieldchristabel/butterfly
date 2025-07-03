@@ -75,7 +75,9 @@ abstract class BaseCoreService {
 
   BaseThemeService get themeService => DefaultThemeService();
 
-  BaseLoadingService get loadingService => DefaultLoadingService();
+  final _internalLoadingService = DefaultLoadingService();
+
+  BaseLoadingService get loadingService => _internalLoadingService;
 
   // Route service from mixins
 
