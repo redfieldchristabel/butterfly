@@ -5,15 +5,14 @@ import 'package:auth_management_provider_riverpod/src/user.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class AuthManagementRiverpodRepository<T extends RiverpodUser>
-    implements AuthServiceProviderRepository<T> {
-  bool _isInitialized = false;
+    extends AuthServiceProviderRepository<T> {
   late final WidgetRef ref;
 
   void initialize(WidgetRef ref) {
-    if (_isInitialized) {
+    if (initialized) {
       return;
     }
-    _isInitialized = true;
+    initialized = true;
     this.ref = ref;
   }
 

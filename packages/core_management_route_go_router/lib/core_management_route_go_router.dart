@@ -78,19 +78,24 @@ abstract class GoRouterService<T> extends BaseRouteService<T> {
   @mustCallSuper
   void onRouteChanged(BuildContext context, GoRouterState state) {
     if (kDebugMode) {
-      final buffer = StringBuffer()
-        ..writeln('🔄 ROUTER REDIRECT')
-        ..writeln('├─ 📍 Path: ${state.uri.path}')
-        ..writeln('├─ 🔗 Full Path: ${state.fullPath}')
-        ..writeln('├─ 🎯 Matched Location: ${state.matchedLocation}')
-        ..writeln('└─ ⚙️  Redirect Details:')
-        ..writeln('   ├─ Temporary: $temporaryRedirect')
-        ..writeln('   └─ Has Override: ${redirectOverride != null}');
-        
+      final buffer =
+          StringBuffer()
+            ..writeln('🔄 ROUTER REDIRECT')
+            ..writeln('├─ 📍 Path: ${state.uri.path}')
+            ..writeln('├─ 🔗 Full Path: ${state.fullPath}')
+            ..writeln('├─ 🎯 Matched Location: ${state.matchedLocation}')
+            ..writeln('└─ ⚙️  Redirect Details:')
+            ..writeln('   ├─ Temporary: $temporaryRedirect')
+            ..writeln('   └─ Has Override: ${redirectOverride != null}');
+
       if (redirectOverride != null) {
         buffer.writeln('      └─ Override: $redirectOverride');
       }
-      
+
+      if (requiresAuth) {
+        buffer.writeln('   └─ User: $user');
+      }
+
       log(
         buffer.toString(),
         name: 'GoRouterService',
@@ -137,6 +142,8 @@ abstract class GoRouterService<T> extends BaseRouteService<T> {
   ) async {
     onRouteChanged(context, state);
 
+    final user = this.user;
+
     if (redirectOverride != null) {
       final route = redirectOverride;
       redirectOverride = null;
@@ -152,17 +159,23 @@ abstract class GoRouterService<T> extends BaseRouteService<T> {
       return '/test';
     }
 
-    final user = this.user;
-
-    if (user == null && !publicRoutes.contains(state.uri.toString())) {
+    final matchesPublicRoute = publicRoutes.contains(state.matchedLocation);
+    final matchesAuthTriggerRoute = authTriggerRoutes.contains(
+      state.matchedLocation,
+    );
+    if (user == null && !(matchesPublicRoute || matchesAuthTriggerRoute)) {
       temporaryRedirect = state.uri.toString();
       return signInRoutePath;
     }
 
-    if (user != null && authTriggerRoutes.contains(state.uri.toString())) {
+    if (user != null && authTriggerRoutes.contains(state.matchedLocation)) {
       final route = temporaryRedirect ?? defaultAuthRoute;
       temporaryRedirect = null;
       return route;
+    }
+
+    if (matchesAuthTriggerRoute) {
+      return null;
     }
 
     if (temporaryRedirect != null) {
