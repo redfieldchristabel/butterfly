@@ -8,7 +8,7 @@ import 'package:core_management/services/base_route.dart';
 import 'package:core_management/src/services/default_error_handler.dart';
 import 'package:core_management/src/services/default_loading.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart' show ThemeData;
+import 'package:flutter/material.dart' show ThemeData, BuildContext;
 
 import '../src/services/default_theme.dart';
 import 'base_theme.dart';
@@ -107,5 +107,5 @@ abstract class BaseCoreService {
     PlatformDispatcher.instance.onError = handler.onPlatformError;
   }
 
-  ThemeData get theme => themeService.theme;
+  ThemeData getTheme(BuildContext context) => themeService.theme(context);
 }
