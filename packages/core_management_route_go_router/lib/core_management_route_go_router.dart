@@ -101,7 +101,7 @@ abstract class GoRouterService<T> extends BaseRouteService<T> {
 
       log(
         buffer.toString(),
-        name: 'GoRouterService',
+        name: '🦋 GoRouterService',
         time: DateTime.now(),
         level: 800,
       );
