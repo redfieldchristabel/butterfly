@@ -7,9 +7,11 @@ import 'package:flutter/material.dart';
 
 abstract class BaseThemeService {
   late final Color colorSeed;
-  late final bool darkTheme;
-  late final ThemeData _theme;
   late final bool primaryColorIsDark;
+  @protected
+  late  bool darkTheme;
+  @protected
+  late  ThemeData iTheme;
 
   BaseThemeService({this.colorSeed = Colors.blue}) {
     primaryColorIsDark =
@@ -18,16 +20,16 @@ abstract class BaseThemeService {
 
   Brightness get brightness => darkTheme ? Brightness.dark : Brightness.light;
 
-  CoreTypographyTheme get coreTypographyTheme => CoreTypographyTheme(_theme);
+  CoreTypographyTheme get coreTypographyTheme => CoreTypographyTheme(iTheme);
 
   ThemeData theme(BuildContext context) {
     final brightness = Theme.of(context).brightness;
     darkTheme = brightness == Brightness.dark;
     final colorScheme =
         ColorScheme.fromSeed(seedColor: colorSeed, brightness: brightness);
-    _theme = ThemeData.from(colorScheme: colorScheme);
+    iTheme = ThemeData.from(colorScheme: colorScheme);
 
-    return _theme.copyWith(
+    return iTheme.copyWith(
       appBarTheme: appBarTheme,
       cardTheme: cardTheme,
       iconTheme: iconTheme,
@@ -56,49 +58,49 @@ abstract class BaseThemeService {
     );
   }
 
-  AppBarTheme get appBarTheme => _theme.appBarTheme;
+  AppBarTheme get appBarTheme => iTheme.appBarTheme;
 
-  CardThemeData get cardTheme => _theme.cardTheme;
+  CardThemeData get cardTheme => iTheme.cardTheme;
 
-  IconThemeData get iconTheme => _theme.iconTheme;
+  IconThemeData get iconTheme => iTheme.iconTheme;
 
-  ListTileThemeData get listTileTheme => _theme.listTileTheme;
+  ListTileThemeData get listTileTheme => iTheme.listTileTheme;
 
-  DividerThemeData get dividerTheme => _theme.dividerTheme;
+  DividerThemeData get dividerTheme => iTheme.dividerTheme;
 
-  ChipThemeData get chipThemeData => _theme.chipTheme;
+  ChipThemeData get chipThemeData => iTheme.chipTheme;
 
-  TabBarThemeData get tabBarTheme => _theme.tabBarTheme;
+  TabBarThemeData get tabBarTheme => iTheme.tabBarTheme;
 
   // Button
-  ButtonThemeData get buttonTheme => _theme.buttonTheme;
+  ButtonThemeData get buttonTheme => iTheme.buttonTheme;
 
-  ElevatedButtonThemeData get elevatedButtonTheme => _theme.elevatedButtonTheme;
+  ElevatedButtonThemeData get elevatedButtonTheme => iTheme.elevatedButtonTheme;
 
-  OutlinedButtonThemeData get outlinedButtonTheme => _theme.outlinedButtonTheme;
+  OutlinedButtonThemeData get outlinedButtonTheme => iTheme.outlinedButtonTheme;
 
-  FilledButtonThemeData get filledButtonTheme => _theme.filledButtonTheme;
+  FilledButtonThemeData get filledButtonTheme => iTheme.filledButtonTheme;
 
-  TextButtonThemeData get textButtonTheme => _theme.textButtonTheme;
+  TextButtonThemeData get textButtonTheme => iTheme.textButtonTheme;
 
-  IconButtonThemeData get iconButtonTheme => _theme.iconButtonTheme;
+  IconButtonThemeData get iconButtonTheme => iTheme.iconButtonTheme;
 
   SegmentedButtonThemeData get segmentedButtonTheme =>
-      _theme.segmentedButtonTheme;
+      iTheme.segmentedButtonTheme;
 
-  ToggleButtonsThemeData get toggleButtonsTheme => _theme.toggleButtonsTheme;
+  ToggleButtonsThemeData get toggleButtonsTheme => iTheme.toggleButtonsTheme;
 
   FloatingActionButtonThemeData get floatingActionButtonTheme =>
-      _theme.floatingActionButtonTheme;
+      iTheme.floatingActionButtonTheme;
 
   // End Button
 
-  BottomSheetThemeData get bottomSheetThemeData => _theme.bottomSheetTheme;
+  BottomSheetThemeData get bottomSheetThemeData => iTheme.bottomSheetTheme;
 
   BottomNavigationBarThemeData get bottomNavigationBarTheme =>
-      _theme.bottomNavigationBarTheme;
+      iTheme.bottomNavigationBarTheme;
 
-  TextTheme get textTheme => _theme.textTheme;
+  TextTheme get textTheme => iTheme.textTheme;
 
-  InputDecorationTheme get inputDecorationTheme => _theme.inputDecorationTheme;
+  InputDecorationTheme get inputDecorationTheme => iTheme.inputDecorationTheme;
 }
