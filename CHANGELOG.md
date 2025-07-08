@@ -15,6 +15,28 @@ Packages with breaking changes:
 
 Packages with other changes:
 
+ - [`example` - `v1.2.0`](#example---v120)
+
+---
+
+#### `example` - `v1.2.0`
+
+ - **FEAT**: optimize loading service delay and enhance task queue processing logic.
+ - **FEAT**: add CoreService implementation extending BaseCoreService.
+
+
+## 2025-07-08
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
  - [`auth_management` - `v0.0.4`](#auth_management---v004)
  - [`auth_management_database_hive_ce` - `v0.0.3+1`](#auth_management_database_hive_ce---v0031)
  - [`auth_management_database_hive_ce_example` - `v1.2.1`](#auth_management_database_hive_ce_example---v121)
