@@ -1,135 +1,159 @@
-mdx
-import DocCard from "@theme/DocCard";
+---
+title: ScreenLayout Extension
+description: Responsive layout utilities for Flutter applications
+---
 
-# Screen Layout Extension
+## ScreenLayout Extension
 
-The `ScreenLayout` extension provides convenient getters and methods for determining the current screen size and orientation in a Flutter application. This is useful for creating responsive layouts that adapt to different screen sizes.
+The `ScreenLayoutExtension` provides convenient methods for creating responsive layouts in Flutter applications. It extends the `BuildContext` class with properties and methods to easily adapt your UI to different screen sizes and orientations.
+
+## Features
+
+- Get screen dimensions and orientation
+- Check device type (mobile, tablet, desktop)
+- Responsive layout utilities
+- Theme data access
+
+## Installation
+
+This extension is part of the `core_management` package. Make sure it's imported in your Dart file:
+
+```dart
+import 'package:core_management/core_management.dart';
+```
 
 ## Usage
 
-To use the `ScreenLayout` extension, you need to import it:
+### Screen Size and Dimensions
 
+Get the screen size and dimensions:
+
+```dart
+// Get the screen size
+final size = context.screenSize;
+final width = size.width;
+final height = size.height;
+
+// Get the shortest side (useful for responsive design)
+final shortest = context.shortestSide;
 ```
-dart
-import 'package:core_management/extensions/screen_layout.dart';
+
+### Responsive Layout
+
+Check the device type and adjust your layout accordingly:
+
+```dart
+@override
+Widget build(BuildContext context) {
+  // Check if the device is a mobile
+  if (context.mobileLayout) {
+    return _buildMobileLayout();
+  }
+  return _buildDesktopLayout();
+}
 ```
-Then, you can access the extension methods on a `BuildContext`:
+
+### Theme Access
+
+Quickly access the current theme:
+
+```dart
+// Get the current theme
+themeData = context.themeData;
+
+// Use theme colors
+final primaryColor = context.themeData.primaryColor;
+final textTheme = context.themeData.textTheme;
 ```
-dart
-BuildContext context; // your build context
 
-// Get the screen width and height
-final screenWidth = context.screenWidth;
-final screenHeight = context.screenHeight;
+## API Reference
 
-// Check the screen orientation
-final isLandscape = context.isLandscape;
-final isPortrait = context.isPortrait;
+### Properties
 
-// Check if the screen is a phone, tablet, or desktop
-final isPhone = context.isPhone;
-final isTablet = context.isTablet;
-final isDesktop = context.isDesktop;
+#### `screenSize: Size`
 
-// Check if the screen size is small, medium, or large
-final isSmallScreen = context.isSmallScreen;
-final isMediumScreen = context.isMediumScreen;
-final isLargeScreen = context.isLargeScreen;
-```
+Returns the size of the current screen.
+
+#### `shortestSide: double`
+
+Returns the length of the shortest side of the screen.
+
+#### `mobileLayout: bool`
+
+Returns `true` if the shortest side is less than 600 logical pixels (typically mobile devices).
+
+#### `themeData: ThemeData`
+
+Returns the current theme data.
+
 ## Examples
 
-Here are some examples of how you can use the `ScreenLayout` extension in your Flutter widgets:
+### Responsive Layout Example
 
-### Building a responsive layout
-```
-dart
-import 'package:flutter/material.dart';
-import 'package:core_management/extensions/screen_layout.dart';
-
-class ResponsiveWidget extends StatelessWidget {
+```dart
+class ResponsiveLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    if (context.isDesktop) {
-      return _buildDesktopLayout(context);
-    } else if (context.isTablet) {
-      return _buildTabletLayout(context);
-    } else {
-      return _buildPhoneLayout(context);
-    }
-  }
-
-  Widget _buildDesktopLayout(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Desktop Layout')),
-      body: Row(
-        children: [
-          Expanded(child: Container(color: Colors.red)),
-          Expanded(child: Container(color: Colors.blue)),
-        ],
-      ),
+      body: context.mobileLayout 
+          ? _buildMobileLayout() 
+          : _buildDesktopLayout(),
     );
   }
 
-  Widget _buildTabletLayout(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Tablet Layout')),
-      body: Column(
-        children: [
-          Expanded(child: Container(color: Colors.green)),
-          Expanded(child: Container(color: Colors.yellow)),
-        ],
-      ),
+  Widget _buildMobileLayout() {
+    return Column(
+      children: [
+        _buildHeader(),
+        Expanded(child: _buildContent()),
+        _buildFooter(),
+      ],
     );
   }
 
-  Widget _buildPhoneLayout(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Phone Layout')),
-      body: Center(
-        child: Container(color: Colors.purple, width: 100, height: 100),
-      ),
+  Widget _buildDesktopLayout() {
+    return Row(
+      children: [
+        _buildSidebar(),
+        Expanded(
+          child: Column(
+            children: [
+              _buildHeader(),
+              Expanded(child: _buildContent()),
+              _buildFooter(),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
 ```
-### Adjusting widget properties based on screen size
-```
-dart
-import 'package:flutter/material.dart';
-import 'package:core_management/extensions/screen_layout.dart';
 
-class ScalableText extends StatelessWidget {
-  final String text;
+### Responsive Padding
 
-  const ScalableText({Key? key, required this.text}) : super(key: key);
-
+```dart
+class ResponsivePadding extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    double fontSize = 16.0;
-    if (context.isLargeScreen) {
-      fontSize = 24.0;
-    } else if (context.isMediumScreen) {
-      fontSize = 20.0;
-    }
-
-    return Text(
-      text,
-      style: TextStyle(fontSize: fontSize),
+    final padding = context.mobileLayout ? 8.0 : 16.0;
+    
+    return Padding(
+      padding: EdgeInsets.all(padding),
+      child: Text('Responsive padding'),
     );
   }
 }
 ```
-## Available Getters and Methods
 
-- `screenWidth`: Get the current screen width.
-- `screenHeight`: Get the current screen height.
-- `isLandscape`: Check if the device is in landscape mode.
-- `isPortrait`: Check if the device is in portrait mode.
-- `isPhone`: Check if the device is a phone.
-- `isTablet`: Check if the device is a tablet.
-- `isDesktop`: Check if the device is a desktop.
-- `isSmallScreen`: Check if the screen size is small (less than 600 pixels).
-- `isMediumScreen`: Check if the screen size is medium (between 600 and 1200 pixels).
-- `isLargeScreen`: Check if the screen size is large (greater than 1200 pixels).
+## Best Practices
 
-</DocsCard>
+1. **Mobile-First Approach**: Design for mobile first, then enhance for larger screens.
+2. **Use Breakpoints**: Use `shortestSide` for responsive breakpoints.
+3. **Test on Multiple Devices**: Always test your responsive layouts on different screen sizes.
+4. **Use Theme**: Leverage the `themeData` getter to maintain consistent styling.
+
+## Related Topics
+
+- [Flutter Layouts](https://flutter.dev/docs/development/ui/layout)
+- [Responsive Design in Flutter](https://flutter.dev/docs/development/ui/layout/responsive)
