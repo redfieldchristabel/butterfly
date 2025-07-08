@@ -17,6 +17,7 @@ abstract class BaseRouteService<T> {
           'authTriggerRoutes must be at least one if requiresAuth is true.');
       assert(defaultAuthRoute.isNotEmpty,
           'defaultAuthRoute must be defined if requiresAuth is true.');
+      assert(user is! Future, 'user getter cannot be async');
     }
   }
 
@@ -30,7 +31,26 @@ abstract class BaseRouteService<T> {
   /// Cleared after use to avoid affecting subsequent navigations.
   String? temporaryRedirect;
 
-  T? get user => null;
+  T? get user {
+    final StringBuffer buffer = StringBuffer();
+    if (requiresAuth) {
+      buffer
+        ..writeln('"requiresAuth" is true, but user is not implemented.')
+        ..writeln('Please implement "user" getter in your route service.')
+        ..writeln('Or set "requiresAuth" to false if your app does not require'
+            ' authentication.')
+        ..writeln()
+        ..writeln('the getter can\'t be async, The most use case is to use'
+            'a static class variable normally the one you use for listening '
+            'to auth state changes.');
+    } else {
+      buffer
+        ..writeln('"requiresAuth" is false, but "user" getter is called.')
+        ..writeln('Please set "requiresAuth" to true if your app requires'
+            ' authentication, or do not call "user" getter in your app.');
+    }
+    throw UnimplementedError(buffer.toString());
+  }
 
   /// Whether the application requires authentication.
   /// If false, all routes are treated as public, and auth-related properties are ignored.
@@ -55,7 +75,6 @@ abstract class BaseRouteService<T> {
   /// The route path for the sign-up screen.
   /// Ignored if [requiresAuth] is false.
   String get signUpRoutePath => '/signup';
-
 
   /// Configures the router and returns a router configuration object for [MaterialApp.router].
   RouterConfig<Object> get routerConfig;
