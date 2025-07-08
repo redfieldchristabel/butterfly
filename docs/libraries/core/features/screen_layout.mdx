@@ -1,0 +1,135 @@
+mdx
+import DocCard from "@theme/DocCard";
+
+# Screen Layout Extension
+
+The `ScreenLayout` extension provides convenient getters and methods for determining the current screen size and orientation in a Flutter application. This is useful for creating responsive layouts that adapt to different screen sizes.
+
+## Usage
+
+To use the `ScreenLayout` extension, you need to import it:
+
+```
+dart
+import 'package:core_management/extensions/screen_layout.dart';
+```
+Then, you can access the extension methods on a `BuildContext`:
+```
+dart
+BuildContext context; // your build context
+
+// Get the screen width and height
+final screenWidth = context.screenWidth;
+final screenHeight = context.screenHeight;
+
+// Check the screen orientation
+final isLandscape = context.isLandscape;
+final isPortrait = context.isPortrait;
+
+// Check if the screen is a phone, tablet, or desktop
+final isPhone = context.isPhone;
+final isTablet = context.isTablet;
+final isDesktop = context.isDesktop;
+
+// Check if the screen size is small, medium, or large
+final isSmallScreen = context.isSmallScreen;
+final isMediumScreen = context.isMediumScreen;
+final isLargeScreen = context.isLargeScreen;
+```
+## Examples
+
+Here are some examples of how you can use the `ScreenLayout` extension in your Flutter widgets:
+
+### Building a responsive layout
+```
+dart
+import 'package:flutter/material.dart';
+import 'package:core_management/extensions/screen_layout.dart';
+
+class ResponsiveWidget extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    if (context.isDesktop) {
+      return _buildDesktopLayout(context);
+    } else if (context.isTablet) {
+      return _buildTabletLayout(context);
+    } else {
+      return _buildPhoneLayout(context);
+    }
+  }
+
+  Widget _buildDesktopLayout(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Desktop Layout')),
+      body: Row(
+        children: [
+          Expanded(child: Container(color: Colors.red)),
+          Expanded(child: Container(color: Colors.blue)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabletLayout(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Tablet Layout')),
+      body: Column(
+        children: [
+          Expanded(child: Container(color: Colors.green)),
+          Expanded(child: Container(color: Colors.yellow)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPhoneLayout(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Phone Layout')),
+      body: Center(
+        child: Container(color: Colors.purple, width: 100, height: 100),
+      ),
+    );
+  }
+}
+```
+### Adjusting widget properties based on screen size
+```
+dart
+import 'package:flutter/material.dart';
+import 'package:core_management/extensions/screen_layout.dart';
+
+class ScalableText extends StatelessWidget {
+  final String text;
+
+  const ScalableText({Key? key, required this.text}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    double fontSize = 16.0;
+    if (context.isLargeScreen) {
+      fontSize = 24.0;
+    } else if (context.isMediumScreen) {
+      fontSize = 20.0;
+    }
+
+    return Text(
+      text,
+      style: TextStyle(fontSize: fontSize),
+    );
+  }
+}
+```
+## Available Getters and Methods
+
+- `screenWidth`: Get the current screen width.
+- `screenHeight`: Get the current screen height.
+- `isLandscape`: Check if the device is in landscape mode.
+- `isPortrait`: Check if the device is in portrait mode.
+- `isPhone`: Check if the device is a phone.
+- `isTablet`: Check if the device is a tablet.
+- `isDesktop`: Check if the device is a desktop.
+- `isSmallScreen`: Check if the screen size is small (less than 600 pixels).
+- `isMediumScreen`: Check if the screen size is medium (between 600 and 1200 pixels).
+- `isLargeScreen`: Check if the screen size is large (greater than 1200 pixels).
+
+</DocsCard>
