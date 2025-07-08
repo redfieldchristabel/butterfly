@@ -1,3 +1,10 @@
+## 0.0.3
+
+ - **REFACTOR**: remove riverpod and use flutter_riverpod directly.
+ - **REFACTOR**: rename AuthManagementIsarRepository to AuthManagementRiverpodRepository.
+ - **FEAT**: add initialization state to AuthServiceProviderRepository and update AuthManagementRiverpodRepository.
+ - **FEAT**: add initialization check to AuthManagementRiverpodRepository.
+
 ## 0.0.2+1
 
  - Update a dependency to the latest release.

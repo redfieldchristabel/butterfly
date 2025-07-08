@@ -3,6 +3,110 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## 2025-07-08
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`auth_management` - `v0.0.4`](#auth_management---v004)
+ - [`auth_management_database_hive_ce` - `v0.0.3+1`](#auth_management_database_hive_ce---v0031)
+ - [`auth_management_database_hive_ce_example` - `v1.2.1`](#auth_management_database_hive_ce_example---v121)
+ - [`auth_management_provider_riverpod` - `v0.0.3`](#auth_management_provider_riverpod---v003)
+ - [`butterfly_cli` - `v0.0.12+1`](#butterfly_cli---v00121)
+ - [`core_management` - `v0.0.5`](#core_management---v005)
+ - [`core_management_route_go_router` - `v0.0.3`](#core_management_route_go_router---v003)
+ - [`example` - `v1.1.0`](#example---v110)
+ - [`auth_management_database_isar_community_example` - `v1.3.1`](#auth_management_database_isar_community_example---v131)
+ - [`auth_management_database_isar_community` - `v0.0.4+1`](#auth_management_database_isar_community---v0041)
+ - [`auth_management_firebase` - `v0.0.2+2`](#auth_management_firebase---v0022)
+ - [`auth_management_firebase_google` - `v0.0.2+2`](#auth_management_firebase_google---v0022)
+
+Packages with dependency updates only:
+
+> Packages listed below depend on other packages in this workspace that have had changes. Their versions have been incremented to bump the minimum dependency versions of the packages they depend upon in this project.
+
+ - `auth_management_database_isar_community_example` - `v1.3.1`
+ - `auth_management_database_isar_community` - `v0.0.4+1`
+ - `auth_management_firebase` - `v0.0.2+2`
+ - `auth_management_firebase_google` - `v0.0.2+2`
+
+---
+
+#### `auth_management` - `v0.0.4`
+
+ - **FEAT**: add initialization state to AuthServiceProviderRepository and update AuthManagementRiverpodRepository.
+
+#### `auth_management_database_hive_ce` - `v0.0.3+1`
+
+ - **REFACTOR**(auth_management_database_hive_ce): use git dependency for auth_management.
+
+#### `auth_management_database_hive_ce_example` - `v1.2.1`
+
+ - **REFACTOR**(auth_management_database_hive_ce): use git dependency for auth_management.
+
+#### `auth_management_provider_riverpod` - `v0.0.3`
+
+ - **REFACTOR**: remove riverpod and use flutter_riverpod directly.
+ - **REFACTOR**: rename AuthManagementIsarRepository to AuthManagementRiverpodRepository.
+ - **FEAT**: add initialization state to AuthServiceProviderRepository and update AuthManagementRiverpodRepository.
+ - **FEAT**: add initialization check to AuthManagementRiverpodRepository.
+
+#### `butterfly_cli` - `v0.0.12+1`
+
+ - **REFACTOR**(auth_management_database_hive_ce): use git dependency for auth_management.
+
+#### `core_management` - `v0.0.5`
+
+ - **REFACTOR**: remove initial redirect logic from routing configuration.
+ - **REFACTOR**: move in-memory lock repository to top level.
+ - **REFACTOR**: Rename error variable in onError.
+ - **REFACTOR**: make errorHandlerService public.
+ - **REFACTOR**: make errorHandlerService private.
+ - **FIX**: correct variable name in onError method.
+ - **FEAT**: refactor BaseThemeService to use iTheme for improved theme management.
+ - **FEAT**: optimize loading service delay and enhance task queue processing logic.
+ - **FEAT**: add CoreService implementation extending BaseCoreService.
+ - **FEAT**: add example module to project configuration and optimize loading service initialization.
+ - **FEAT**: update theme handling to support context-based brightness and color scheme.
+ - **FEAT**: implement CoreLockService with in-memory and persistence options.
+ - **FEAT**(core_management): add distributed lock service.
+ - **FEAT**: add HexColor extension.
+ - **FEAT**: add new helper extension.
+ - **FEAT**(go_router): Introduce GoRouterServiceMixin.
+ - **FEAT**: add theme getter to BaseCore.
+ - **FEAT**: Add BaseThemeService and default implementation.
+ - **FEAT**: add loading overlay and service.
+ - **FEAT**: add base error handler and integrate into core service.
+ - **FEAT**(routing): introduce refreshListenable and observers.
+
+#### `core_management_route_go_router` - `v0.0.3`
+
+ - **REFACTOR**: remove initial redirect logic from routing configuration.
+ - **REFACTOR**: Remove redundant navigator key in GoRouterService.
+ - **REFACTOR**(router): log route changes in `onRouteChanged`.
+ - **FEAT**: improve router redirect logging with enhanced user information.
+ - **FEAT**: add initialization state to AuthServiceProviderRepository and update AuthManagementRiverpodRepository.
+ - **FEAT**: enhance logging for router redirects with detailed information.
+ - **FEAT**(go_router): Introduce GoRouterServiceMixin.
+ - **FEAT**(routing): introduce refreshListenable and observers.
+ - **FEAT**(router): add route change logging and callback.
+ - **FEAT**(route_go_router): Add rootNavigator key to GoRouterService.
+ - **DOCS**(go_router): enhance onRouteChanged documentation.
+ - **DOCS**: Add detailed documentation for onRouteChanged and goRouterRedirect.
+
+#### `example` - `v1.1.0`
+
+ - **FEAT**: optimize loading service delay and enhance task queue processing logic.
+ - **FEAT**: add CoreService implementation extending BaseCoreService.
+
+
 ## 2025-06-10
 
 ### Changes

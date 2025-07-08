@@ -1,3 +1,7 @@
+## 0.0.4
+
+ - **FEAT**: add initialization state to AuthServiceProviderRepository and update AuthManagementRiverpodRepository.
+
 ## 0.0.3
 
  - **FEAT**: add gen_version command to melos.

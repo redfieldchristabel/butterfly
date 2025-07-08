@@ -1,3 +1,7 @@
+## 0.0.3+1
+
+ - **REFACTOR**(auth_management_database_hive_ce): use git dependency for auth_management.
+
 ## 0.0.3
 
  - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
