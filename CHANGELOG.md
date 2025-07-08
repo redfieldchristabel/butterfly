@@ -15,6 +15,36 @@ Packages with breaking changes:
 
 Packages with other changes:
 
+ - [`core_management` - `v0.0.6`](#core_management---v006)
+ - [`core_management_route_go_router` - `v0.0.3+1`](#core_management_route_go_router---v0031)
+ - [`example` - `v1.2.1`](#example---v121)
+
+Packages with dependency updates only:
+
+> Packages listed below depend on other packages in this workspace that have had changes. Their versions have been incremented to bump the minimum dependency versions of the packages they depend upon in this project.
+
+ - `core_management_route_go_router` - `v0.0.3+1`
+ - `example` - `v1.2.1`
+
+---
+
+#### `core_management` - `v0.0.6`
+
+ - **FEAT**: enhance user getter with detailed error handling for authentication requirements.
+
+
+## 2025-07-08
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
  - [`example` - `v1.2.0`](#example---v120)
 
 ---
