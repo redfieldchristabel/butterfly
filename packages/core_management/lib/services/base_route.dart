@@ -31,17 +31,39 @@ abstract class BaseRouteService<T> {
   /// Cleared after use to avoid affecting subsequent navigations.
   String? temporaryRedirect;
 
+  /// Returns the current authenticated user, or null if no user is signed in.
+  ///
+  /// This getter must be overridden in subclasses when [requiresAuth] is true.
+  /// It provides access to the current authentication state and is used by the
+  /// routing system to handle authentication-based redirects.
+  ///
+  /// Important notes:
+  /// - This getter cannot be asynchronous. If you're using a stream-based
+  ///   authentication system, you should listen to the auth state changes
+  ///   and update a synchronous getter or variable that this returns.
+  /// - When [requiresAuth] is true, this getter must be implemented to return
+  ///   the current user or null if no user is authenticated.
+  /// - When [requiresAuth] is false, this getter should not be called as it
+  ///   will throw an [UnimplementedError].
+  ///
+  /// Example implementation:
+  /// ```dart
+  /// @override
+  /// User? get user => AuthService.currentUser;
+  /// ```
+  ///
+  /// @throws UnimplementedError if the getter is not overridden when required.
   T? get user {
     final StringBuffer buffer = StringBuffer();
     if (requiresAuth) {
       buffer
-        ..writeln('"requiresAuth" is true, but user is not implemented.')
+        ..writeln('"requiresAuth" is true, but "user" getter is not implemented.')
         ..writeln('Please implement "user" getter in your route service.')
         ..writeln('Or set "requiresAuth" to false if your app does not require'
             ' authentication.')
         ..writeln()
-        ..writeln('the getter can\'t be async, The most use case is to use'
-            'a static class variable normally the one you use for listening '
+        ..writeln('The getter can\'t be async. The most common use case is to use'
+            ' a static class variable - typically the one you use for listening '
             'to auth state changes.');
     } else {
       buffer
