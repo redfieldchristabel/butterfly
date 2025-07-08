@@ -1,3 +1,7 @@
+## 0.0.6
+
+ - **FEAT**: enhance user getter with detailed error handling for authentication requirements.
+
 ## 0.0.5
 
  - **REFACTOR**: remove initial redirect logic from routing configuration.
