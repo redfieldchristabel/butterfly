@@ -28,7 +28,13 @@
         {
           "title": "Core",
           "href": "/libraries/core",
-          "icon": "fa-solid fa-butterfly"
+          "icon": "fa-solid fa-butterfly",
+          "pages": [
+            {
+              "title": "Enqueue Helper",
+              "href": "libraries/core/features/enqueue.mdx"
+            }
+          ]
         },
         {
           "title": "Auth",
