@@ -1,6 +1,6 @@
 name: auth_management_provider_riverpod
 description: "A Dipendency Injection library to support Riverpod for Butterfly Auth Management"
-version: 0.0.2+1
+version: 0.0.3
 homepage:
 
 environment:

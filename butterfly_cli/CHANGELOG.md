@@ -1,3 +1,7 @@
+## 0.0.12+1
+
+ - **REFACTOR**(auth_management_database_hive_ce): use git dependency for auth_management.
+
 ## 0.0.12
 
  - **FEAT**: display generated model path.

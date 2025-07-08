@@ -1,3 +1,7 @@
+## 0.0.4+1
+
+ - Update a dependency to the latest release.
+
 ## 0.0.4
 
  - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
