@@ -1,0 +1,113 @@
+---
+title: RouteService Mixin
+description: Navigation and routing utilities for services
+---
+
+## RouteService Mixin
+
+The `RouteServiceMixin` provides a convenient way to access routing functionality from any service in your application. It's particularly useful when you need to handle navigation outside of the widget tree or in business logic layers.
+
+## Features
+
+- Access to route service methods without BuildContext
+- Easy integration with any service that extends BaseCoreService
+- Centralized router configuration access
+- Type-safe navigation methods
+
+## Installation
+
+This mixin is part of the `core_management` package. Make sure it's imported in your Dart file:
+
+```dart
+import 'package:core_management/core_management.dart';
+```
+
+## Usage
+
+### Basic Usage
+
+Add the mixin to any service that extends `BaseCoreService`:
+
+```dart
+class MyService extends BaseCoreService with RouteServiceMixin {
+  @override
+  BaseRouteService get routeService => getIt<BaseRouteService>();
+  
+  void performActionAndNavigate() {
+    // Your business logic here
+    
+    // Navigate to a new screen
+    routeService.push('/details', arguments: {'id': 123});
+  }
+}
+```
+
+### Accessing Router Configuration
+
+Access the router configuration directly:
+
+```dart
+class NavigationService extends BaseCoreService with RouteServiceMixin {
+  @override
+  BaseRouteService get routeService => getIt<BaseRouteService>();
+  
+  void configureNavigation() {
+    final routerConfig = this.routerConfig;
+    // Access router configuration properties
+    debugPrint('Router configuration: $routerConfig');
+  }
+}
+```
+
+## API Reference
+
+### Properties
+
+#### `routeService: BaseRouteService` (required)
+
+The route service instance that provides navigation capabilities. This getter must be implemented by the class using this mixin.
+
+#### `routerConfig: RouterConfig<Object>`
+
+Provides access to the application's router configuration, including the route map, route information parser, and router delegate.
+
+## Best Practices
+
+1. **Dependency Injection**: Use a service locator (like get_it) to provide the route service instance.
+2. **Separation of Concerns**: Keep navigation logic in dedicated service classes rather than in UI components.
+3. **Error Handling**: Always handle potential navigation errors, especially when dealing with deep links or dynamic routes.
+4. **Testing**: Mock the route service in unit tests to verify navigation behavior.
+
+## Example: Authentication Service with Navigation
+
+```dart
+class AuthService extends BaseCoreService with RouteServiceMixin {
+  @override
+  BaseRouteService get routeService => getIt<BaseRouteService>();
+  
+  Future<void> login(String email, String password) async {
+    try {
+      // Perform login logic
+      await _authRepository.login(email, password);
+      
+      // Navigate to home on success
+      routeService.pushReplacement('/home');
+    } catch (e) {
+      // Handle error
+      routeService.showErrorSnackbar('Login failed: ${e.toString()}');
+      rethrow;
+    }
+  }
+  
+  Future<void> logout() async {
+    await _authRepository.logout();
+    routeService.pushReplacement('/login');
+  }
+}
+```
+
+## Related Topics
+
+- [Navigation in Flutter](https://docs.flutter.dev/development/ui/navigation)
+- [Go Router Documentation](https://pub.dev/packages/go_router)
+- [Dependency Injection in Flutter](https://pub.dev/packages/get_it)
