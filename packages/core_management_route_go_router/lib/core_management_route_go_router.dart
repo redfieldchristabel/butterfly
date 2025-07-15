@@ -1,3 +1,6 @@
+/// @docImport 'package:core_management_route_go_router/go_router_auth_route.dart';
+library;
+
 import 'dart:async';
 import 'dart:developer';
 
@@ -6,18 +9,8 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-abstract class GoRouterService<T> extends BaseRouteService<T> {
-  /// Gets the global navigator key used for navigation.
-  ///
-  /// This is a convenience getter that provides access to the static [BaseRouteService.navigatorKey].
-  /// It allows accessing the navigator key through an instance of this class.
-  GlobalKey<NavigatorState> get navigatorKey => BaseRouteService.navigatorKey;
-
+abstract class GoRouterService extends BaseRouteService {
   List<RouteBase> get routes;
-
-  /// Optional redirect path for role-based authorization after authentication.
-  /// Ignored if [requiresAuth] is false.
-  String? roleBasedRedirect(T? user) => null;
 
   /// Optional [Listenable] to trigger route re-evaluation when it notifies its listeners.
   ///
@@ -75,29 +68,36 @@ abstract class GoRouterService<T> extends BaseRouteService<T> {
   /// }
   /// ```
   @protected
-  @mustCallSuper
-  void onRouteChanged(BuildContext context, GoRouterState state) {
+  void onRouteChanged(BuildContext context, GoRouterState state) {}
+
+  @protected
+  /// Logs basic route navigation events.
+  ///
+  /// This method logs essential information about route changes, including:
+  /// - Current route path and URL
+  /// - Redirect information (if applicable)
+  ///
+  /// Note: This is the base implementation that only logs basic route information.
+  /// For authentication-related logging, see the [GoRouterAuthRoute] mixin.
+  ///
+  /// Parameters:
+  /// - [state]: The current router state containing navigation information
+  ///
+  /// Note: This method is called automatically by the router system and is used
+  /// for debugging purposes only.
+  void routeLog(GoRouterState state) {
     if (kDebugMode) {
       // TODO: add full stack trace
-      final buffer =
-          StringBuffer()
-            ..writeln('🔄 ROUTER REDIRECT')
-            ..writeln('├─ 📍 Path: ${state.uri.path}')
-            ..writeln('├─ 🔗 Full URL: ${state.uri.toString()}')
-            ..writeln('├─ 🗂️  Full Path: ${state.fullPath}');
+      final buffer = StringBuffer()
+        ..writeln('🔄 ROUTER REDIRECT')
+        ..writeln('├─ 📍 Path: ${state.uri.path}')
+        ..writeln('├─ 🔗 Full URL: ${state.uri.toString()}')
+        ..writeln('├─ 🗂️  Full Path: ${state.fullPath}');
 
       buffer
         ..writeln('└─ ⚙️  Redirect Details:')
         ..writeln('   ├─ Temporary: $temporaryRedirect')
-        ..writeln('   └─ Has Override: ${redirectOverride != null}');
-
-      if (redirectOverride != null) {
-        buffer.writeln('      └─ Override: $redirectOverride');
-      }
-
-      if (requiresAuth) {
-        buffer.writeln('└─ 👤 User: ${user ?? "null"}');
-      }
+        ..writeln('   └─ Redirect: $redirectOverride');
 
       log(
         buffer.toString(),
@@ -114,7 +114,6 @@ abstract class GoRouterService<T> extends BaseRouteService<T> {
   /// 1. Executing [onRouteChanged] callback (which includes debug logging)
   /// 2. Handling redirect overrides
   /// 3. Managing initial route redirection
-  /// 4. Enforcing authentication requirements
   ///
   /// The method returns a [String] path to redirect to, or `null` to allow the navigation
   /// to proceed without redirection.
@@ -143,9 +142,9 @@ abstract class GoRouterService<T> extends BaseRouteService<T> {
     BuildContext context,
     GoRouterState state,
   ) async {
-    onRouteChanged(context, state);
+    routeLog(state);
 
-    final user = this.user;
+    onRouteChanged(context, state);
 
     if (redirectOverride != null) {
       final route = redirectOverride;
@@ -153,41 +152,7 @@ abstract class GoRouterService<T> extends BaseRouteService<T> {
       return route;
     }
 
-    if (!requiresAuth) {
-      return null; // No auth checks, allow all routes
-    }
-
-    if (debugScreen != null &&
-        debugRoutes.contains(state.uri.toString()) == true) {
-      return '/test';
-    }
-
-    final matchesPublicRoute = publicRoutes.contains(state.matchedLocation);
-    final matchesAuthTriggerRoute = authTriggerRoutes.contains(
-      state.matchedLocation,
-    );
-    if (user == null && !(matchesPublicRoute || matchesAuthTriggerRoute)) {
-      temporaryRedirect = state.uri.toString();
-      return signInRoutePath;
-    }
-
-    if (user != null && authTriggerRoutes.contains(state.matchedLocation)) {
-      final route = temporaryRedirect ?? defaultAuthRoute;
-      temporaryRedirect = null;
-      return route;
-    }
-
-    if (matchesAuthTriggerRoute) {
-      return null;
-    }
-
-    if (temporaryRedirect != null) {
-      final route = temporaryRedirect;
-      temporaryRedirect = null;
-      return route;
-    }
-
-    return roleBasedRedirect(user);
+    return null;
   }
 
   @override
@@ -196,7 +161,7 @@ abstract class GoRouterService<T> extends BaseRouteService<T> {
       navigatorKey: BaseRouteService.navigatorKey,
       refreshListenable: refreshListenable,
       observers: observers,
-      initialLocation: '/',
+      initialLocation: initialRoute,
       routes: routes,
       redirect: goRouterRedirect,
       errorBuilder: errorBuilder,
