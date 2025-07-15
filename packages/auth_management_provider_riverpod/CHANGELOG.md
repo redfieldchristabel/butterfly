@@ -1,3 +1,7 @@
+## 0.0.4
+
+ - **FEAT**: update RiverpodUserState to keep alive and adjust provider types.
+
 ## 0.0.3
 
  - **REFACTOR**: remove riverpod and use flutter_riverpod directly.

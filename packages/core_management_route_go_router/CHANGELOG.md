@@ -1,3 +1,7 @@
+## 0.0.4
+
+ - **FEAT**: add butterfly emoji to GoRouterService log name for improved visibility.
+
 ## 0.0.3+1
 
  - Update a dependency to the latest release.
