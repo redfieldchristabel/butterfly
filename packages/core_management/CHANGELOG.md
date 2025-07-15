@@ -1,3 +1,7 @@
+## 0.0.6+1
+
+ - **DOCS**: add documentation for RouteService mixin and update existing docs.
+
 ## 0.0.6
 
  - **FEAT**: enhance user getter with detailed error handling for authentication requirements.

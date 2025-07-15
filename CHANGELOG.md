@@ -3,6 +3,42 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## 2025-07-15
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`auth_management_provider_riverpod` - `v0.0.4`](#auth_management_provider_riverpod---v004)
+ - [`core_management` - `v0.0.6+1`](#core_management---v0061)
+ - [`core_management_route_go_router` - `v0.0.4`](#core_management_route_go_router---v004)
+ - [`example` - `v1.2.2`](#example---v122)
+
+---
+
+#### `auth_management_provider_riverpod` - `v0.0.4`
+
+ - **FEAT**: update RiverpodUserState to keep alive and adjust provider types.
+
+#### `core_management` - `v0.0.6+1`
+
+ - **DOCS**: add documentation for RouteService mixin and update existing docs.
+
+#### `core_management_route_go_router` - `v0.0.4`
+
+ - **FEAT**: add butterfly emoji to GoRouterService log name for improved visibility.
+
+#### `example` - `v1.2.2`
+
+ - **DOCS**: add documentation for RouteService mixin and update existing docs.
+
+
 ## 2025-07-08
 
 ### Changes

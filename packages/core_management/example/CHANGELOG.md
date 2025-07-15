@@ -1,3 +1,7 @@
+## 1.2.2
+
+ - **DOCS**: add documentation for RouteService mixin and update existing docs.
+
 ## 1.2.1
 
  - Update a dependency to the latest release.
