@@ -3,12 +3,14 @@ import 'dart:developer';
 
 import 'package:auth_management/auth_management.dart';
 import 'package:auth_management/auth_management_provider.dart';
+import 'package:flutter/foundation.dart' show mustCallSuper;
 
 abstract class AuthServiceRepository<T> {
   static late final AuthServiceRepository instance;
 
   T? currentUser;
 
+  @mustCallSuper
   void initialize() {
     instance = this;
     streamUser().listen((event) {
@@ -36,4 +38,6 @@ abstract class AuthServiceRepository<T> {
   }
 
   void onUserChanged(T? user) {}
+
+  FutureOr<T> fetchUser();
 }

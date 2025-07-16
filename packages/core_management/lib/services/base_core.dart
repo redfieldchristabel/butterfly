@@ -4,7 +4,6 @@
 
 import 'package:core_management/services/base_error_handler.dart';
 import 'package:core_management/services/base_loading.dart';
-import 'package:core_management/services/base_route.dart';
 import 'package:core_management/src/services/default_error_handler.dart';
 import 'package:core_management/src/services/default_loading.dart';
 import 'package:flutter/foundation.dart';

@@ -124,5 +124,7 @@ abstract class GoRouterAuthRoute<T> extends GoRouterService
     }
 
     if (user != null) return roleBasedRedirect(user);
+
+    return null;
   }
 }

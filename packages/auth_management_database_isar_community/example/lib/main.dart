@@ -85,4 +85,10 @@ class AuthService extends AuthServiceRepository<MyUser> {
 
   @override
   AuthManagementDatabaseRepository<MyUser> get dbRepo => isarRepo;
+
+  @override
+  FutureOr<MyUser> fetchUser() {
+    // actual api call
+    return MyUser(id: 1);
+  }
 }

@@ -5,7 +5,6 @@ import 'package:butterfly_cli/extensions/command_helper.dart';
 import 'package:butterfly_cli/readable_exception.dart';
 import 'package:butterfly_cli/services/framework.dart';
 import 'package:pubspec_manager/pubspec_manager.dart';
-import 'package:yaml_edit/yaml_edit.dart';
 
 class PubspecService with ButterflyLogger {
   late final File _pubspecFile;
@@ -22,7 +21,6 @@ class PubspecService with ButterflyLogger {
   }
 
   Future<void> addDependency(final String name, {bool dev = false}) async {
-    final curDir = Directory.current.path;
     frameworkService.ensureRootDirectory();
 
     info("cur dir ${Directory.current.path}");
@@ -67,16 +65,6 @@ class PubspecService with ButterflyLogger {
       await process.exitCode;
     }
     return;
-
-    final dependency = DependencyBuilderPubHosted(name: name);
-    if (dev) {
-      pubspec.devDependencies.add(dependency);
-    } else {
-      pubspec.dependencies.add(dependency);
-    }
-    detail('Write to pubspec.yaml file');
-    pubspec.save();
-    frameworkService.changeWorkingDirectory(curDir);
   }
 
   void addButterflyDependency(String name) {
