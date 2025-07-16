@@ -1,3 +1,9 @@
+## 0.1.0
+
+> Note: This release has breaking changes.
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
 ## 0.0.12+1
 
  - **REFACTOR**(auth_management_database_hive_ce): use git dependency for auth_management.

@@ -11,6 +11,90 @@ See [Conventional Commits](https://conventionalcommits.org) for commit guideline
 
 Packages with breaking changes:
 
+ - [`auth_management` - `v0.2.0`](#auth_management---v020)
+ - [`auth_management_database_hive_ce` - `v0.2.0`](#auth_management_database_hive_ce---v020)
+ - [`auth_management_database_hive_ce_example` - `v3.0.0`](#auth_management_database_hive_ce_example---v300)
+ - [`auth_management_database_isar_community` - `v0.2.0`](#auth_management_database_isar_community---v020)
+ - [`auth_management_database_isar_community_example` - `v3.0.0`](#auth_management_database_isar_community_example---v300)
+ - [`auth_management_firebase` - `v0.1.0`](#auth_management_firebase---v010)
+ - [`auth_management_oauth2` - `v0.1.0`](#auth_management_oauth2---v010)
+ - [`butterfly_cli` - `v0.1.0`](#butterfly_cli---v010)
+ - [`core_management` - `v0.2.0`](#core_management---v020)
+ - [`core_management_route_go_router` - `v0.2.0`](#core_management_route_go_router---v020)
+ - [`example` - `v3.0.0`](#example---v300)
+ - [`go_router_example` - `v3.0.0`](#go_router_example---v300)
+
+Packages with other changes:
+
+ - [`auth_management_provider_riverpod` - `v0.0.4+2`](#auth_management_provider_riverpod---v0042)
+ - [`auth_management_firebase_google` - `v0.0.2+4`](#auth_management_firebase_google---v0024)
+
+Packages with dependency updates only:
+
+> Packages listed below depend on other packages in this workspace that have had changes. Their versions have been incremented to bump the minimum dependency versions of the packages they depend upon in this project.
+
+ - `auth_management_provider_riverpod` - `v0.0.4+2`
+ - `auth_management_firebase_google` - `v0.0.2+4`
+
+---
+
+#### `auth_management` - `v0.2.0`
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `auth_management_database_hive_ce` - `v0.2.0`
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `auth_management_database_hive_ce_example` - `v3.0.0`
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `auth_management_database_isar_community` - `v0.2.0`
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `auth_management_database_isar_community_example` - `v3.0.0`
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `auth_management_firebase` - `v0.1.0`
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `auth_management_oauth2` - `v0.1.0`
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `butterfly_cli` - `v0.1.0`
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `core_management` - `v0.2.0`
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `core_management_route_go_router` - `v0.2.0`
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `example` - `v3.0.0`
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `go_router_example` - `v3.0.0`
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+
+## 2025-07-16
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
  - [`auth_management` - `v0.1.0`](#auth_management---v010)
  - [`auth_management_database_hive_ce` - `v0.1.0`](#auth_management_database_hive_ce---v010)
  - [`auth_management_database_hive_ce_example` - `v2.0.0`](#auth_management_database_hive_ce_example---v200)
