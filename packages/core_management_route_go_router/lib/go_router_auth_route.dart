@@ -7,9 +7,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show BuildContext;
 import 'package:go_router/go_router.dart';
 
-mixin GoRouterAuthRoute<T> on GoRouterService implements AuthRoute<T> {
+abstract class GoRouterAuthRoute<T> extends GoRouterService
+    with BaseAuthRoute<T> {
   /// Optional redirect path for role-based authorization after authentication.
-  String? roleBasedRedirect(T? user) => null;
+  String? roleBasedRedirect(T user) => null;
 
   @override
   void routeLog(GoRouterState state) {
@@ -122,6 +123,6 @@ mixin GoRouterAuthRoute<T> on GoRouterService implements AuthRoute<T> {
       return route;
     }
 
-    return roleBasedRedirect(user);
+    if (user != null) return roleBasedRedirect(user);
   }
 }

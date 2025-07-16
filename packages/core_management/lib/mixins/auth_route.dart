@@ -19,7 +19,7 @@ import 'package:core_management/core_management.dart';
 /// class MyRouteService with AuthRoute<User> {
 ///   @override
 ///   User? get user => AuthService.currentUser;
-///   
+///
 ///   // Optional: customize auth routes
 ///   @override
 ///   List<String> get authTriggerRoutes => ['/profile', '/settings'];
@@ -28,7 +28,7 @@ import 'package:core_management/core_management.dart';
 ///
 /// Note: This mixin works in conjunction with [BaseRouteService] and should be
 /// used when implementing authentication in your application.
-mixin AuthRoute<T> on BaseRouteService {
+mixin BaseAuthRoute<T> on BaseRouteService {
   /// Returns the current authenticated user, or null if no user is signed in.
   ///
   /// This getter must be implemented when [requiresAuth] is true to provide

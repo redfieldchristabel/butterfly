@@ -4,6 +4,7 @@ packages:
   - butterfly_cli
   - packages/**
 
+
 scripts:
   analyze:
     exec: dart analyze .
