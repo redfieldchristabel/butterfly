@@ -6,9 +6,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 abstract class FirebaseAuthManagementRepository<T>
     implements AuthServiceRepository<T> {
   final FirebaseAuth auth = FirebaseAuth.instance;
-  final AuthManagementDatabaseRepository<T> localDatabase;
-
-  FirebaseAuthManagementRepository(this.localDatabase);
 
   /// ALso see [FirebaseAuth.signInWithEmailAndPassword]
   Future<UserCredential> signInWithEmailAndPassword(
@@ -24,7 +21,7 @@ abstract class FirebaseAuthManagementRepository<T>
   @override
   Future<void> signOut() async {
     await auth.signOut();
-    await localDatabase.clearUser();
+    await dbRepo.clearUser();
   }
 
   /// Retrieves the current user from Firebase Authentication.
@@ -78,7 +75,7 @@ abstract class FirebaseAuthManagementRepository<T>
   ///
   /// [user]: The Firebase [User] object to be transformed.
   Future<T> morphUser(User user) async {
-    final T? localUser = await localDatabase.getUser();
+    final T? localUser = await dbRepo.getUser();
     if (localUser != null) {
       return localUser;
     }
@@ -91,5 +88,6 @@ abstract class FirebaseAuthManagementRepository<T>
   /// This method is used to manually fetch user data from the database.
   /// It is called by the [AuthManagement] when the user data is not available
   /// from local storage.
+  @override
   Future<T> fetchUser();
 }

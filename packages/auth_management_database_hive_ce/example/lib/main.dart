@@ -26,6 +26,11 @@ class AuthService extends AuthServiceRepository<User> {
 
   @override
   AuthManagementDatabaseRepository<User> get dbRepo => hiveCe;
+
+  @override
+  FutureOr<User> fetchUser() {
+    return User('My Id');
+  }
 }
 
 Future<void> main() async {

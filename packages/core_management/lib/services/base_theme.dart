@@ -1,8 +1,6 @@
 // TODO: add support for changing the theme in runtime
 // TODO: add support for theme extension (Custom theme)
-import 'package:core_management/core_management.dart';
 import 'package:core_management/core_typography_theme.dart';
-import 'package:flutter/foundation.dart' show PlatformDispatcher;
 import 'package:flutter/material.dart';
 
 abstract class BaseThemeService {

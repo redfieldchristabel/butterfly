@@ -33,7 +33,6 @@ class CoreLockService {
 
   final LockPersistence? _persistence;
   final Duration _defaultLockDuration;
-  final Duration _pollingInterval;
 
   /// Creates a new [CoreLockService] instance.
   ///
@@ -50,8 +49,8 @@ class CoreLockService {
     Duration? defaultLockDuration,
     Duration? pollingInterval,
   })  : _persistence = persistence,
-        _defaultLockDuration = defaultLockDuration ?? const Duration(seconds: 30),
-        _pollingInterval = pollingInterval ?? const Duration(milliseconds: 100) {
+        _defaultLockDuration =
+            defaultLockDuration ?? const Duration(seconds: 30) {
     if (pollingInterval != null && pollingInterval <= Duration.zero) {
       throw ArgumentError('pollingInterval must be positive');
     }
@@ -121,7 +120,6 @@ class CoreLockService {
     return false;
   }
 
-
   /// Gets the expiry time of the lock with the given [key] from memory.
   ///
   /// Returns the expiry time if the lock exists and is not expired, null otherwise.
@@ -166,7 +164,6 @@ class CoreLockService {
     DateTime expiryTime,
     Duration timeout,
   ) {
-    final endTime = DateTime.now().add(timeout);
     final stopwatch = Stopwatch()..start();
 
     while (stopwatch.elapsed < timeout) {
@@ -180,7 +177,7 @@ class CoreLockService {
       // Wait for the lock to be released or timeout
       final remaining = timeout - stopwatch.elapsed;
       if (remaining <= Duration.zero) break;
-      
+
       final released = _waitForRelease(key, DateTime.now().add(remaining));
       if (!released) break;
     }
@@ -195,7 +192,7 @@ class CoreLockService {
 
     // If we have a persistence layer that supports watching, use it
     if (_persistence != null) {
-      final stream = _persistence!.watchLockRelease(key);
+      final stream = _persistence.watchLockRelease(key);
       if (stream != null) {
         final completer = Completer<bool>();
         final subscription = stream.listen(
@@ -213,7 +210,7 @@ class CoreLockService {
               return false;
             },
           ) as FutureOr<bool>;
-          
+
           // This is a simplification - in a real implementation,
           // you'd need to handle the async operation differently
           // For sync context, we'll just return false
@@ -234,11 +231,11 @@ class CoreLockService {
     _syncDelay(remaining);
     return false;
   }
-  
+
   // Helper method to run persistence operations in the background
   void _syncWithPersistence(FutureOr Function() operation) {
     if (_persistence == null) return;
-    
+
     // Run in a microtask to ensure it's async but still runs soon
     Future.microtask(() async {
       try {
@@ -249,7 +246,7 @@ class CoreLockService {
       }
     });
   }
-  
+
   // Helper method for simple delays in sync context
   void _syncDelay(Duration duration) {
     final end = DateTime.now().add(duration);
@@ -300,4 +297,3 @@ class _LockEntry {
 
   _LockEntry(this.expiry);
 }
-
