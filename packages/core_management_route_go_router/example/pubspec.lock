@@ -39,7 +39,7 @@ packages:
       path: "../../auth_management"
       relative: true
     source: path
-    version: "0.0.4"
+    version: "0.1.0"
   boolean_selector:
     dependency: transitive
     description:
@@ -166,14 +166,14 @@ packages:
       path: "../../core_management"
       relative: true
     source: path
-    version: "0.0.6+1"
+    version: "0.1.0"
   core_management_route_go_router:
     dependency: "direct main"
     description:
       path: ".."
       relative: true
     source: path
-    version: "0.0.4"
+    version: "0.1.0"
   crypto:
     dependency: transitive
     description:
