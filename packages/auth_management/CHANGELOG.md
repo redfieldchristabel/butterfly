@@ -1,3 +1,9 @@
+## 0.1.0
+
+> Note: This release has breaking changes.
+
+ - **BREAKING** **FEAT**: add example for go_router package.
+
 ## 0.0.4
 
  - **FEAT**: add initialization state to AuthServiceProviderRepository and update AuthManagementRiverpodRepository.

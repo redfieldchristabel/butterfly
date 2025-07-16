@@ -3,6 +3,81 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## 2025-07-16
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - [`auth_management` - `v0.1.0`](#auth_management---v010)
+ - [`auth_management_database_hive_ce` - `v0.1.0`](#auth_management_database_hive_ce---v010)
+ - [`auth_management_database_hive_ce_example` - `v2.0.0`](#auth_management_database_hive_ce_example---v200)
+ - [`auth_management_database_isar_community` - `v0.1.0`](#auth_management_database_isar_community---v010)
+ - [`auth_management_database_isar_community_example` - `v2.0.0`](#auth_management_database_isar_community_example---v200)
+ - [`core_management` - `v0.1.0`](#core_management---v010)
+ - [`core_management_route_go_router` - `v0.1.0`](#core_management_route_go_router---v010)
+ - [`example` - `v2.0.0`](#example---v200)
+ - [`go_router_example` - `v2.0.0`](#go_router_example---v200)
+
+Packages with other changes:
+
+ - [`auth_management_provider_riverpod` - `v0.0.4+1`](#auth_management_provider_riverpod---v0041)
+ - [`auth_management_firebase` - `v0.0.2+3`](#auth_management_firebase---v0023)
+ - [`auth_management_firebase_google` - `v0.0.2+3`](#auth_management_firebase_google---v0023)
+
+Packages with dependency updates only:
+
+> Packages listed below depend on other packages in this workspace that have had changes. Their versions have been incremented to bump the minimum dependency versions of the packages they depend upon in this project.
+
+ - `auth_management_provider_riverpod` - `v0.0.4+1`
+ - `auth_management_firebase` - `v0.0.2+3`
+ - `auth_management_firebase_google` - `v0.0.2+3`
+
+---
+
+#### `auth_management` - `v0.1.0`
+
+ - **BREAKING** **FEAT**: add example for go_router package.
+
+#### `auth_management_database_hive_ce` - `v0.1.0`
+
+ - **BREAKING** **FEAT**: add example for go_router package.
+
+#### `auth_management_database_hive_ce_example` - `v2.0.0`
+
+ - **BREAKING** **FEAT**: add example for go_router package.
+
+#### `auth_management_database_isar_community` - `v0.1.0`
+
+ - **BREAKING** **FEAT**: add example for go_router package.
+
+#### `auth_management_database_isar_community_example` - `v2.0.0`
+
+ - **BREAKING** **FEAT**: add example for go_router package.
+
+#### `core_management` - `v0.1.0`
+
+ - **BREAKING** **REFACTOR**: extract auth logic from GoRouterService to GoRouterAuthRoute mixin.
+ - **BREAKING** **FEAT**: add example for go_router package.
+
+#### `core_management_route_go_router` - `v0.1.0`
+
+ - **FEAT**: add example for go_router package.
+ - **BREAKING** **REFACTOR**: extract auth logic from GoRouterService to GoRouterAuthRoute mixin.
+ - **BREAKING** **FEAT**: add example for go_router package.
+
+#### `example` - `v2.0.0`
+
+ - **BREAKING** **REFACTOR**: extract auth logic from GoRouterService to GoRouterAuthRoute mixin.
+
+#### `go_router_example` - `v2.0.0`
+
+ - **FEAT**: add example for go_router package.
+ - **BREAKING** **FEAT**: add example for go_router package.
+
+
 ## 2025-07-15
 
 ### Changes

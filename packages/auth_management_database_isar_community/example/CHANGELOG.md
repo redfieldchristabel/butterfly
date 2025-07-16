@@ -1,3 +1,9 @@
+## 2.0.0
+
+> Note: This release has breaking changes.
+
+ - **BREAKING** **FEAT**: add example for go_router package.
+
 ## 1.3.1
 
  - Update a dependency to the latest release.
