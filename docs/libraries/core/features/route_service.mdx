@@ -1,229 +1,184 @@
 ---
-title: Route Management System
-description: Comprehensive routing and navigation system for Flutter applications
+title: Route Management
+description: Seamless authentication routing for Flutter applications
 ---
 
 ## Overview
 
-The Route Management System provides a robust, type-safe routing solution that combines all routing-related functionality into a single, cohesive system. This system is designed to work seamlessly with your application's core services and provides a consistent way to handle navigation and authentication across your app.
+Butterfly's Route Management provides a streamlined way to handle authentication flows in your Flutter application. It works alongside your existing routing solution (currently supporting Go Router) to automatically manage protected routes, authentication redirects, and deep linking.
 
-## Key Components
+## Supported Routers
 
-### 1. Base Route Service
+- ✅ Go Router (current implementation)
+- 🚧 Auto Route (planned)
 
-The foundation of the routing system, providing essential navigation functionality.
+## Key Features
 
-```dart
-class BaseRouteService {
-  // Navigation methods
-  void push(String path, {Object? arguments});
-  void pop();
-  void pushReplacement(String path, {Object? arguments});
-  
-  // Route configuration
-  String get initialRoute;
-  String? get redirectOverride;
-}
-```
-
-### 2. Authentication Route Mixin
-
-Handles authentication-related routing logic.
-
-```dart
-mixin AuthRoute<T> on BaseRouteService {
-  // Authentication state
-  T? get user;
-  
-  // Auth-related routes
-  List<String> get authTriggerRoutes;
-  String get defaultAuthRoute;
-  String get signInRoutePath;
-  String get signUpRoutePath;
-  
-  // Public routes configuration
-  List<String> get publicRoutes;
-}
-```
-
-### 3. Go Router Integration
-
-Provides Go Router-specific functionality.
-
-```dart
-mixin GoRouterAuthRoute<T> on GoRouterService implements AuthRoute<T> {
-  // Go Router specific methods
-  FutureOr<String?> goRouterRedirect(BuildContext context, GoRouterState state);
-  
-  // Auth-specific logging
-  void routeLog(GoRouterState state);
-}
-```
+- 🔒 Automatic route protection
+- 🔄 Seamless auth redirects
+- 🔗 Deep link support
+- 🐛 Built-in debug routes
+- 📊 Detailed logging
 
 ## Getting Started
 
-### 1. Setup
-
-Add the required dependencies to your `pubspec.yaml`:
+### 1. Add Dependencies
 
 ```yaml
 dependencies:
-  core_management: ^latest_version
   core_management_route_go_router: ^latest_version
+  go_router: ^10.0.0  # or latest
 ```
 
-### 2. Create Your Route Service
+### 2. Create Your Router Service
 
 ```dart
-class MyRouteService
-    extends BaseRouteService
-    with GoRouterAuthRoute<User> {
+import 'package:go_router/go_router.dart';
+import 'package:core_management_route_go_router/core_management_route_go_router.dart';
+
+class AppRouter extends GoRouterService with GoRouterAuthRoute<User> {
+  AppRouter() : super(
+    routes: [
+      // Your route definitions here
+      GoRoute(
+        path: '/',
+        builder: (context, state) => const HomePage(),
+      ),
+      GoRoute(
+        path: '/profile',
+        builder: (context, state) => const ProfilePage(),
+      ),
+    ],
+    errorBuilder: (context, state) => ErrorPage(error: state.error),
+  );
+
   @override
-  User? get user => AuthService.currentUser;
+  User? get user => AuthService.currentUser;  // Must be synchronous
+
+  @override
+  List<String> get publicRoutes => [
+    '/',         // Homepage is public
+    '/about',    // About page is public
+  ];
+
+  @override
+  List<String> get authTriggerRoutes => [
+    '/login',    // Routes that trigger auth flow
+    '/signup',
+  ];
+
+  @override
+  String get signInRoutePath => '/login';
   
   @override
-  List<String> get publicRoutes => ['/login', '/signup'];
+  String get signUpRoutePath => '/signup';
   
   @override
-  String get initialRoute => '/login';
+  String get defaultAuthRoute => '/';
 }
 ```
 
-## Usage Examples
+## How It Works
 
 ### Authentication Flow
 
+1. When a user tries to access a protected route:
+   - If user is logged in (`user != null`): Access granted
+   - If user is not logged in: Redirected to `signInRoutePath`
+
+2. After successful login:
+   - If user came from a protected route: Redirects back to original route
+   - If user came from an auth route (login/signup): Redirects to `defaultAuthRoute`
+
+### Public Routes
+
+Mark routes as public by adding them to the `publicRoutes` list:
+
 ```dart
-class AuthService extends BaseCoreService {
-  final MyRouteService _routeService;
-  
-  AuthService(this._routeService);
-  
-  Future<void> login(String email, String password) async {
-    try {
-      await _authRepository.login(email, password);
-      _routeService.pushReplacement('/home');
-    } catch (e) {
-      _routeService.showErrorSnackbar('Login failed');
-    }
-  }
-}
+@override
+List<String> get publicRoutes => [
+  '/',
+  '/about',
+  '/privacy',
+];
 ```
 
-### Protected Routes
+### Debug Routes
+
+For development, you can bypass authentication using debug routes:
 
 ```dart
-class ProfileService extends BaseCoreService {
-  final MyRouteService _routeService;
-  
-  ProfileService(this._routeService);
-  
-  Future<void> loadProfile() async {
-    if (_routeService.user == null) {
-      throw Exception('User not authenticated');
-    }
-    // Load profile data...
-  }
-}
+@override
+List<String> get debugRoutes => [
+  '/debug/profile',
+  '/debug/settings',
+];
 ```
 
-## Best Practices
+## Deep Linking
 
-1. **Service Composition**
-   - Always use dependency injection for route services
-   - Keep route logic in dedicated services
-   - Use mixins to compose functionality
+Deep linking works out of the box. When a user opens a protected deep link:
 
-2. **Authentication**
-   - Implement proper auth state management
-   - Configure public routes correctly
-   - Handle unauthenticated access gracefully
+1. If not logged in: Redirected to login
+2. After login: Automatically taken to the deep-linked content
 
-3. **Navigation**
-   - Use named routes consistently
-   - Handle route arguments properly
-   - Implement proper error handling
+## Logging
 
-4. **Testing**
-   - Mock route services in tests
-   - Test auth flows separately
-   - Verify route configurations
+Detailed route changes are logged in debug mode:
 
-## Debugging
-
-The system provides detailed logging for route changes:
-
-```dart
-// Example log output
+```
 🔄 AUTH ROUTER EVENT
-├─ 📁 Route Details:
-│   ├─ 📍 Path: /profile
-│   └─ 🔗 Full URL: /profile
-├─ 🔐 Auth Status:
-│   ├─ 👤 User: User
-│   └─ 🔐 Is Public Route: false
-├─ ⚙️ Redirect Details:
-│   ├─ 🔄 Override: null
-│   └─ ⏳ Temporary: false
+├─ 📍 Path: /profile
+├─ 🔗 Full URL: /profile?ref=email
+├─ 🔐 Auth Required: true
+└─ 👤 User: User(id: 123)
+```
+
+## Removing the Feature
+
+This package is designed to be non-intrusive. If you need to remove it:
+
+1. Copy the base router implementation
+2. Remove the `GoRouterAuthRoute` mixin
+3. Implement your own auth logic
+
+## Common Questions
+
+### Why use this instead of direct Go Router?
+
+- Handles common auth patterns automatically
+- Reduces boilerplate code
+- Consistent behavior across apps
+- Built-in debug tools
+
+### How to handle custom auth states?
+
+Override the `goRouterRedirect` method in your router:
+
+```dart
+@override
+FutureOr<String?> goRouterRedirect(
+  BuildContext context,
+  GoRouterState state,
+) async {
+  // Your custom logic here
+  return await super.goRouterRedirect(context, state);
+}
 ```
 
 ## Troubleshooting
 
-### Common Issues
+### Routes not protecting
+- Ensure `user` getter is properly implemented
+- Check if route is in `publicRoutes`
+- Verify `authTriggerRoutes` are correctly set
 
-1. **Unauthenticated Access**
-   - Ensure [user](cci:1://file:///home/hayabusa/StudioProjects/butterfly/packages/core_management/lib/mixins/auth_route.dart:18:2-52:13) getter is implemented
-   - Check public routes configuration
-   - Verify auth state management
-
-2. **Route Configuration**
-   - Check initial route is set
-   - Verify route paths are correct
-   - Ensure all required routes are defined
-
-3. **Navigation Errors**
-   - Handle null arguments properly
-   - Check route existence
-   - Verify route parameters
-
-## API Reference
-
-### BaseRouteService
-
-- `push(String path, {Object? arguments})`: Navigate to a new route
-- `pop()`: Navigate back
-- `pushReplacement(String path, {Object? arguments})`: Replace current route
-- `initialRoute`: Get the initial route path
-- `redirectOverride`: Get/set redirect override
-
-### AuthRoute
-
-- `user`: Get current authenticated user
-- `authTriggerRoutes`: Get routes that trigger auth flow
-- `publicRoutes`: Get public (non-auth) routes
-- `defaultAuthRoute`: Get default auth route
-- `signInRoutePath`: Get sign-in route
-- `signUpRoutePath`: Get sign-up route
-
-### GoRouterAuthRoute
-
-- `goRouterRedirect`: Handle Go Router redirection
-- `routeLog`: Log route changes with auth context
+### Redirect loops
+- Make sure `signInRoutePath` is in `authTriggerRoutes`
+- Check for circular redirects in your route definitions
+- Ensure `user` getter is synchronous
 
 ## Related Resources
 
 - [Go Router Documentation](https://pub.dev/packages/go_router)
-- [Flutter Navigation Guide](https://docs.flutter.dev/development/ui/navigation/tutorial)
-- [Dependency Injection in Flutter](https://pub.dev/packages/get_it)
-
-## Contributing
-
-If you find any issues or want to contribute improvements, please:
-1. Check the existing issues
-2. Fork the repository
-3. Create a feature branch
-4. Submit a pull request
-
-## License
-
-This documentation is licensed under the MIT License.
+- [Flutter Navigation Guide](https://docs.flutter.dev/development/ui/navigation)
