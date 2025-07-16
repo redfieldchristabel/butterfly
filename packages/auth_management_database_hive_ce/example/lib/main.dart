@@ -10,7 +10,7 @@ import 'hive/hive_registrar.g.dart';
 // part 'main.g.dart';
 
 final hiveCe = AuthManagementDatabaseHiveCe<User>();
-final authManagement = AuthService(dbRepo: hiveCe);
+final authManagement = AuthService();
 
 class User extends BaseUser {
   final String id;
@@ -18,32 +18,14 @@ class User extends BaseUser {
   User(this.id);
 }
 
-abstract class MockAuthManagement extends AuthServiceRepository<User> {
-  MockAuthManagement({required super.dbRepo});
-
+class AuthService extends AuthServiceRepository<User> {
   void signIn() {
     final user = User('My Id');
     dbRepo.addUser(user);
   }
 
   @override
-  FutureOr<User?> getUser() {
-    return dbRepo.getUser();
-  }
-
-  @override
-  FutureOr<void> signOut() {
-    dbRepo.clearUser();
-  }
-
-  @override
-  Stream<User?> streamUser() {
-    return dbRepo.streamUser();
-  }
-}
-
-class AuthService extends MockAuthManagement {
-  AuthService({required super.dbRepo});
+  AuthManagementDatabaseRepository<User> get dbRepo => hiveCe;
 }
 
 Future<void> main() async {

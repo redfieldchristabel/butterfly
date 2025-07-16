@@ -1,18 +1,39 @@
 import 'dart:async';
+import 'dart:developer';
 
 import 'package:auth_management/auth_management.dart';
 import 'package:auth_management/auth_management_provider.dart';
 
 abstract class AuthServiceRepository<T> {
-  final AuthManagementDatabaseRepository<T> dbRepo;
+  static late final AuthServiceRepository instance;
 
-  final AuthServiceProviderRepository<T>? providerRepo;
+  T? currentUser;
 
-  AuthServiceRepository({required this.dbRepo, this.providerRepo});
+  void initialize() {
+    instance = this;
+    streamUser().listen((event) {
+      currentUser = event;
+      log('Auth User Stream $event', name: '🦋 Auth Management', level: 800);
+      onUserChanged(event);
+    });
+  }
 
-  FutureOr<void> signOut();
+  AuthManagementDatabaseRepository<T> get dbRepo;
 
-  Stream<T?> streamUser();
+  AuthServiceProviderRepository<T>? get providerRepo => null;
 
-  FutureOr<T?> getUser();
+  FutureOr<void> signOut() {
+    dbRepo.clearUser();
+    providerRepo?.clearUser();
+  }
+
+  Stream<T?> streamUser() {
+    return dbRepo.streamUser();
+  }
+
+  FutureOr<T?> getUser() {
+    return dbRepo.getUser();
+  }
+
+  void onUserChanged(T? user) {}
 }
