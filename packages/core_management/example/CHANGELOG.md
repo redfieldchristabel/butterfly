@@ -1,3 +1,9 @@
+## 2.0.0
+
+> Note: This release has breaking changes.
+
+ - **BREAKING** **REFACTOR**: extract auth logic from GoRouterService to GoRouterAuthRoute mixin.
+
 ## 1.2.2
 
  - **DOCS**: add documentation for RouteService mixin and update existing docs.

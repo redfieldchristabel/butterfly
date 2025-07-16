@@ -1,3 +1,9 @@
+## 0.1.0
+
+> Note: This release has breaking changes.
+
+ - **BREAKING** **FEAT**: add example for go_router package.
+
 ## 0.0.3+1
 
  - **REFACTOR**(auth_management_database_hive_ce): use git dependency for auth_management.

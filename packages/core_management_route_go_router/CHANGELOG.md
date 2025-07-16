@@ -1,3 +1,11 @@
+## 0.1.0
+
+> Note: This release has breaking changes.
+
+ - **FEAT**: add example for go_router package.
+ - **BREAKING** **REFACTOR**: extract auth logic from GoRouterService to GoRouterAuthRoute mixin.
+ - **BREAKING** **FEAT**: add example for go_router package.
+
 ## 0.0.4
 
  - **FEAT**: add butterfly emoji to GoRouterService log name for improved visibility.

@@ -1,3 +1,10 @@
+## 0.1.0
+
+> Note: This release has breaking changes.
+
+ - **BREAKING** **REFACTOR**: extract auth logic from GoRouterService to GoRouterAuthRoute mixin.
+ - **BREAKING** **FEAT**: add example for go_router package.
+
 ## 0.0.6+1
 
  - **DOCS**: add documentation for RouteService mixin and update existing docs.
