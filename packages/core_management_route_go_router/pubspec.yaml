@@ -14,7 +14,7 @@ dependencies:
   core_management:
     git:
       url: git@github.com:redfieldchristabel/butterfly.git
-      ref: develop
+      ref: old2
       path: packages/core_management
 
 dev_dependencies:

@@ -13,7 +13,7 @@ dependencies:
   auth_management:
     git:
       url: git@github.com:redfieldchristabel/butterfly.git
-      ref: develop
+      ref: old2
       path: packages/auth_management
   flutter_riverpod: ^2.6.1
   riverpod_annotation: ^2.6.1
