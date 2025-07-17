@@ -12,6 +12,10 @@ dependencies:
     sdk: flutter
   go_router: ^16.0.0
   core_management:
+    git:
+      url: git@github.com:redfieldchristabel/butterfly.git
+      ref: 58eda811021bcff308760e47befcb6953a144910
+      path: packages/core_management
 
 dev_dependencies:
   flutter_test:
