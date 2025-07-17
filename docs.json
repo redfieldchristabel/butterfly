@@ -26,20 +26,26 @@
       "group": "Libraries",
       "pages": [
         {
-          "title": "Core",
-          "href": "/libraries/core",
-          "icon": "fa-solid fa-butterfly",
+          "group": "Core",
           "pages": [
             {
-              "title": "Enqueue Helper",
-              "href": "libraries/core/features/enqueue.mdx"
+              "title": "Introduction",
+              "href": "/libraries/core"
+            },
+            {
+              "title": "Route Service",
+              "href": "/libraries/core/features/route_service"
             }
           ]
         },
         {
-          "title": "Auth",
-          "href": "/libraries/auth",
-          "icon": "fa-solid fa-butterfly"
+          "group": "Auth",
+          "pages": [
+            {
+              "title": "Introduction",
+              "href": "/libraries/auth"
+            }
+          ]
         }
       ]
     }
