@@ -1,0 +1,211 @@
+---
+title: Route Service
+description: Authentication-aware routing for Flutter applications with seamless deep linking support
+---
+
+### Introduction
+
+The Route Service provides a structured way to handle authentication and routing in your Flutter
+Application. In general, it just a class that hold the logic to all the routing strategies that you
+want to enforce in you application. It is **not a wrapper** around the Navigator nor **replacer**
+but sit along side the main router engine your system already using.  for now we only support
+**GoRouter** engine. Don't worry since this is not a wrapper so we don't handle the push, go, pop
+or whatsoever your router provider give you, mean you still get the full control after using this
+feature. You just need to declare some route than **Butterfly** will handle the rest.
+
+### Why use it?
+
+The library enforce the route base on current environment and current route instead of needing you
+to like push a route when user already login, now you just need to log user in, and the
+**Butterfly** will check the current environment and enforce the route base on your setting on it.
+
+For example, you already declare the the **defaultAuthRoute** to be **/**, then after your
+application login and the user exist, **Butterfly** will check the current user exist and then
+enforce the route to be **/**. So you don't need to push the route when user already login, you
+self. If in the web even the user change the url to **/login** then **Butterfly** will enforce the
+route to be **/** again. Same as if the current user are not there, **Butterfly** will enforce the
+route to be **/login** again. We also support:
+
+- survive deep linking no auth
+- survive no auth
+- debug route for development
+- multiple **authTriggerRoute**
+
+### Initialization
+
+When using `butterfly init` command, it will ask if you need to use the route service, if you
+choose yes here no need to install here.
+
+You can also add this feature by running
+```dart
+butterfly generate service
+```
+chose the `route` as the feature.
+
+When running this command, it just adding a new file called `route.dart` to your `lib` and
+`services` directory.the root level `route.dart` only contain example of 2 routes while the other
+`route.dart` contain a class that extend router provider that you choose, currently we only support
+**GoRouter**.
+
+Normally this feature help an application that use authentication, if your application don't, this
+feature will not help you so much but you can still use it as we support both auth and no auth
+route.
+
+### Removable
+
+Router service are the whole class working together to achieve this gold of declarative routing. So
+you to remove this feature, you will need to copy the extended class and paste it as yours. This
+service won't have the native Flutter tap as most of the feature have. But since it our philosophy,
+you still can remove it and write natively.enforce
+
+### Usage
+
+#### Declaration Route
+
+In **Butterfly**, declaration route mean that you declare a routes as a complete expected behavior.
+this mean that for **Butterfly** to enforce the route, it will check the current environment and
+the route that you declare in this service for example, you declare **/login** as your
+**authTriggerRoutes**, this mean **Butterfly** know that if we on the page and user are exist, we
+need to redirect user to **defaultAuthRoute** route which is also declared by you. But don't worry
+because mostly all the variable have a default value that will mostly be what you want already.
+
+#### Route elements
+
+##### initialRoute
+
+This is the initial route for your application. It is the route that will be displayed when the
+application starts.
+
+##### redirectOverride
+
+An optional route path to override the default navigation for one cycle. This is useful when you
+want to redirect the user to a specific route when they try to navigate to the initial route. This
+will be reset after the first use. This is not a declarative route since it will be use in runtime
+instead if set it at compiled time so this router is a variable instead of getter.
+
+##### temporaryRedirect
+
+An optional route path for temporary redirects, such as deep links or notifications. Will be reset
+after use to avoid affecting subsequent navigation. This route is also not a declarative route
+and we notice that it kinda conflicting with the **redirectOverride** so we are discussing if we
+can remove it to reduce the confusion in developer.
+
+##### debugScreen & debugRoutes
+
+Optional debug screen for bypassing authentication or any other checks during development. Useful
+when you wanna build a new screen without authentication or found it hassle  to navigate through the
+entire application. Override this getter to use it.
+```dart
+class MyRouteService extends GoRouterService {
+
+    // TODO: remove this getter
+    Widget get debugScreen => NewFeatureScreen();
+
+}
+```
+we recommend to always add the TODO: comment so you will not forgot to remove this getter.declarative
+
+**debugRoutes** are the list of route that will also bypass any other gate so can be use in pair
+with **debugScreen** so even in debug screen's route, yuu will still be able to redirect to other
+route. Failed to do so will make the new screen that are being redirect from the **debugScreen**
+will perform a gate check and if the route are protected, it will be redirected to the sign in
+screen.
+
+<Info>We are planing to remove the **debugRoutes** getter because will can perform a check if the
+**debugScreen** are not null truncate all the gate check.</Info>
+
+<Info>Be careful because it will just help you bypass gate redirect check so if your screen
+expected a user model from provider it will not have. Use this feature only for earlier development
+of the screen. You can use a fake user for this screen if needed.</Info>
+
+##### observers
+
+Optional list of [NavigatorObserver] that will receive navigation events from the router. This is
+mostly use for analytics or logging. Example you can use Firebase Crashlytics navigator observer
+to track navigation events so when crash happen, you can track the route that cause the crash.
+
+##### errorBuilder
+
+Optional builder for creating an error screen when navigation fails like when user click on a
+deeplink that not exist.
+
+#### Auth Route elements
+
+##### user
+
+This is a getter that will be called by **Butterfly** to get the current user. This getter need to
+be implemented by you. This getter are one of the required element for application that using the
+authentication route. Don't worry, you will be force to implement this getter when you use the
+authentication route. Mostly we use the static variable to be pointed by this getter. This getter
+cannot be async. If you are using the AuthService by **Butterfly** library, you can use the static
+variable `currentUser` as the pointer of this getter.
+```dart
+ @override
+ User? get user => AuthService.currentUser;
+```
+
+##### authTriggerRoutes
+
+This normally hold a list of route that are the stepping stone route to the **defaultAuthRoute**.
+Example are `/sign-in` routes, after the login route, normally we will redirect to home route. Some
+application might also use the `/signup` route as **authTriggerRoutes** so when user register, they
+will be automatically redirect to the home route. by default , we only set the `/sign-in` as one of
+the **authTriggerRoutes** elements.
+
+If you application have other sign in option like magic link something, append those route to this
+getter so **Butterfly** know to perform a gate check on current route and redirect to the
+**defaultAuthRoute**.
+
+##### defaultAuthRoute
+
+This is the default route to redirect user when they are successfully authenticated. Default to
+`/`. Normally this are your homepage route of your application.
+
+##### signInRoute & signUpRoute
+
+This is the route to redirect user when they are not authenticated. Default to `/sign-in` &
+`/sign-up`. You can change to something like `/login` to match with your application sign in route.
+
+##### publicRoutes
+
+In the **Butterfly** library, when extending the AuthRouteServices, we treat all route except the
+**authTriggerRoutes**, **signInRoute** and **signUpRoute** as protected route. So if your
+application have other public route that not require authentication, append those route to this
+getter so **Butterfly** know it is not a protected route.
+
+#### Go ROuter Auth Route elements
+
+This are the element that only available for Go Router engine. We will try to move this element to
+the base class to make other engine in future will also support this feature.
+
+##### roleBasedRedirect
+
+This is the method that will be called by Go Router engine everytime the route pass all the gate
+checks. You can override this method to perform a check maybe on the role but it must not be async.
+```dart
+@override
+String? roleBasedRedirect(User user, GoRouterState state) {
+    if(state.uri.path.contains('/admin-dashboard'){
+        if(user.admin) return null;
+        else return '/';
+    }
+    return null;
+}
+```
+
+##### routeLog
+
+This is the method that will be called by Go Router engine to log the route change so developer
+will have a better understanding while debugging. Normally you will not override this method.
+
+##### goRouterRedirect
+
+This is where all the redirect logic, gate are reside. Normally you will not override this method
+also but you can, Be sure you know what you are doing.
+
+<Info>Normally only this are needed to remove this class and go native flutter.</Info>
+
+
+
+
+
