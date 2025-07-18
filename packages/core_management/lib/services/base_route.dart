@@ -14,7 +14,7 @@ abstract class BaseRouteService {
   /// The current [BuildContext] of the root navigator's overlay, if available.
   BuildContext? get context => navigatorKey.currentState?.overlay?.context;
 
-  String initialRoute = '/';
+  String get initialRoute => '/';
 
   /// An optional route path to override the default navigation for one cycle.
   String? redirectOverride;

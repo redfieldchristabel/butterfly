@@ -8,7 +8,7 @@ import '../models/user.dart';
 
 class RouteService extends GoRouterAuthRoute<User> {
   @override
-  List<String> get authTriggerRoutes => [signInRoutePath];
+  List<String> get authTriggerRoutes => [signInRoute];
 
   @override
   List<RouteBase> get routes => $appRoutes;

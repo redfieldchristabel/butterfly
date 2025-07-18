@@ -54,22 +54,18 @@ mixin BaseAuthRoute<T> on BaseRouteService {
   T? get user;
 
   /// Route paths that trigger navigation to [defaultAuthRoute] after authentication.
-  /// Ignored if [requiresAuth] is false.
-  List<String> get authTriggerRoutes => [signInRoutePath, signUpRoutePath];
+  List<String> get authTriggerRoutes => [signInRoute, signUpRoute];
 
   /// The default route path to navigate to after successful authentication.
   /// Ignored if [requiresAuth] is false.
   String get defaultAuthRoute => '/';
 
   /// The route path for the sign-in screen.
-  /// Ignored if [requiresAuth] is false.
-  String get signInRoutePath => '/login';
+  String get signInRoute => '/login';
 
   /// The route path for the sign-up screen.
-  /// Ignored if [requiresAuth] is false.
-  String get signUpRoutePath => '/signup';
+  String get signUpRoute => '/signup';
 
   /// Route paths that do not require authentication (public routes).
-  /// Ignored if [requiresAuth] is false, as all routes are public.
   List<String> get publicRoutes => [];
 }

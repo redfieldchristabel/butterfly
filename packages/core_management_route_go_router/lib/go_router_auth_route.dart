@@ -10,7 +10,7 @@ import 'package:go_router/go_router.dart';
 abstract class GoRouterAuthRoute<T> extends GoRouterService
     with BaseAuthRoute<T> {
   /// Optional redirect path for role-based authorization after authentication.
-  String? roleBasedRedirect(T user) => null;
+  String? roleBasedRedirect(T user, GoRouterState state) => null;
 
   @override
   void routeLog(GoRouterState state) {
@@ -104,7 +104,7 @@ abstract class GoRouterAuthRoute<T> extends GoRouterService
     );
     if (user == null && !(matchesPublicRoute || matchesAuthTriggerRoute)) {
       temporaryRedirect = state.uri.toString();
-      return signInRoutePath;
+      return signInRoute;
     }
 
     if (user != null && authTriggerRoutes.contains(state.matchedLocation)) {
@@ -123,7 +123,7 @@ abstract class GoRouterAuthRoute<T> extends GoRouterService
       return route;
     }
 
-    if (user != null) return roleBasedRedirect(user);
+    if (user != null) return roleBasedRedirect(user, state);
 
     return null;
   }
