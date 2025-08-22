@@ -56,7 +56,7 @@ abstract class BaseThemeService {
     );
   }
 
-  AppBarTheme get appBarTheme => iTheme.appBarTheme;
+  AppBarThemeData get appBarTheme => iTheme.appBarTheme;
 
   CardThemeData get cardTheme => iTheme.cardTheme;
 
@@ -100,5 +100,5 @@ abstract class BaseThemeService {
 
   TextTheme get textTheme => iTheme.textTheme;
 
-  InputDecorationTheme get inputDecorationTheme => iTheme.inputDecorationTheme;
+  InputDecorationThemeData get inputDecorationTheme => iTheme.inputDecorationTheme;
 }
