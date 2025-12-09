@@ -9,9 +9,9 @@ part of 'route.dart';
 List<RouteBase> get $appRoutes => [$homeRoute, $secondRoute, $loginRoute];
 
 RouteBase get $homeRoute =>
-    GoRouteData.$route(path: '/', factory: _$HomeRoute._fromState);
+    GoRouteData.$route(path: '/', factory: $HomeRoute._fromState);
 
-mixin _$HomeRoute on GoRouteData {
+mixin $HomeRoute on GoRouteData {
   static HomeRoute _fromState(GoRouterState state) => HomeRoute();
 
   @override
@@ -32,9 +32,9 @@ mixin _$HomeRoute on GoRouteData {
 }
 
 RouteBase get $secondRoute =>
-    GoRouteData.$route(path: '/second', factory: _$SecondRoute._fromState);
+    GoRouteData.$route(path: '/second', factory: $SecondRoute._fromState);
 
-mixin _$SecondRoute on GoRouteData {
+mixin $SecondRoute on GoRouteData {
   static SecondRoute _fromState(GoRouterState state) => SecondRoute();
 
   @override
@@ -55,9 +55,9 @@ mixin _$SecondRoute on GoRouteData {
 }
 
 RouteBase get $loginRoute =>
-    GoRouteData.$route(path: '/login', factory: _$LoginRoute._fromState);
+    GoRouteData.$route(path: '/login', factory: $LoginRoute._fromState);
 
-mixin _$LoginRoute on GoRouteData {
+mixin $LoginRoute on GoRouteData {
   static LoginRoute _fromState(GoRouterState state) => LoginRoute();
 
   @override

@@ -7,7 +7,7 @@ import 'package:go_router_example/services/auth.dart';
 part 'route.g.dart';
 
 @TypedGoRoute<HomeRoute>(path: '/')
-class HomeRoute extends GoRouteData with _$HomeRoute {
+class HomeRoute extends GoRouteData with $HomeRoute {
   @override
   Widget build(BuildContext context, GoRouterState state) {
     return HomeScreen();
@@ -16,7 +16,7 @@ class HomeRoute extends GoRouteData with _$HomeRoute {
 
 //this is example for second route
 @TypedGoRoute<SecondRoute>(path: '/second')
-class SecondRoute extends GoRouteData with _$SecondRoute {
+class SecondRoute extends GoRouteData with $SecondRoute {
   @override
   Widget build(BuildContext context, GoRouterState state) {
     return SecondScreen();
@@ -24,7 +24,7 @@ class SecondRoute extends GoRouteData with _$SecondRoute {
 }
 
 @TypedGoRoute<LoginRoute>(path: '/login')
-class LoginRoute extends GoRouteData with _$LoginRoute {
+class LoginRoute extends GoRouteData with $LoginRoute {
   @override
   Widget build(BuildContext context, GoRouterState state) {
     return Scaffold(
