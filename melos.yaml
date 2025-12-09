@@ -33,6 +33,3 @@ command:
   version:
     hooks:
       post: melos run gen_version
-
-ignore:
-  - 'packages/**/example'
