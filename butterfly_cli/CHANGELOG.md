@@ -1,3 +1,56 @@
+## 0.2.0
+
+> Note: This release has breaking changes.
+
+ - **REFACTOR**: remove non-null assertion for pubspec version.
+ - **REFACTOR**(auth_management_database_hive_ce): use git dependency for auth_management.
+ - **REFACTOR**(auth_management_database_hive_ce): use git dependency for auth_management.
+ - **REFACTOR**: move services and generated files to lib folder.
+ - **REFACTOR**: rename framework service to core service.
+ - **REFACTOR**: rename framework service to core service.
+ - **REFACTOR**: move services and generated files to lib folder.
+ - **REFACTOR**: ensure lib folder when creating files.
+ - **REFACTOR**: ensure lib folder when creating files.
+ - **REFACTOR**: remove non-null assertion for pubspec version.
+ - **FIX**: change go router mason file path.
+ - **FIX**: await some process.
+ - **FIX**: await some process.
+ - **FIX**: change mason target branch.
+ - **FIX**: change mason target branch.
+ - **FIX**: change go router mason file path.
+ - **FIX**: add dev mode flag to butterfly CLI.
+ - **FIX**: add dev mode flag to butterfly CLI.
+ - **FIX**: bump.
+ - **FIX**: bump.
+ - **FEAT**: display generated model path.
+ - **FEAT**: add dependency management and core service.
+ - **FEAT**: add dependency management and core service.
+ - **FEAT**: redirect stdout and stderr from pub commands to the console.
+ - **FEAT**: add.
+ - **FEAT**: redirect stdout and stderr from pub commands to the console.
+ - **FEAT**: add.
+ - **FEAT**: refactor service generation and update core service.
+ - **FEAT**: update dev mode flag to use uppercase 'D'.
+ - **FEAT**: update dev mode flag to use uppercase 'D'.
+ - **FEAT**: add dev mode flag to butterfly CLI.
+ - **FEAT**: add dev mode flag to butterfly CLI.
+ - **FEAT**: add version command.
+ - **FEAT**(Model Generator): Add support for imutable model.
+ - **FEAT**: add butterfly dependency and router type to project config.
+ - **FEAT**: add butterfly dependency and router type to project config.
+ - **FEAT**: refactor service generation and update core service.
+ - **FEAT**: display generated model path.
+ - **FEAT**(Model Generator): Add support for imutable model.
+ - **FEAT**: add version command.
+ - **DOCS**: add.
+ - **DOCS**: add.
+ - **DOCS**: wip.
+ - **DOCS**: wip.
+ - **DOCS**: wip.
+ - **DOCS**: wip.
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
 ## 0.1.0
 
 > Note: This release has breaking changes.

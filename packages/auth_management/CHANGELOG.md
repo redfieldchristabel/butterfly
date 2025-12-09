@@ -1,3 +1,16 @@
+## 0.3.0
+
+> Note: This release has breaking changes.
+
+ - **FEAT**: add initialization state to AuthServiceProviderRepository and update AuthManagementRiverpodRepository.
+ - **FEAT**: add initialization state to AuthServiceProviderRepository and update AuthManagementRiverpodRepository.
+ - **FEAT**: add gen_version command to melos.
+ - **FEAT**: add gen_version command to melos.
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+ - **BREAKING** **FEAT**: add example for go_router package.
+ - **BREAKING** **FEAT**: add example for go_router package.
+
 ## 0.2.0
 
 > Note: This release has breaking changes.

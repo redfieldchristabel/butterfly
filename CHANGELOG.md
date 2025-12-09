@@ -3,6 +3,244 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## 2025-12-09
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - [`auth_management` - `v0.3.0`](#auth_management---v030)
+ - [`auth_management_database_hive_ce` - `v0.3.0`](#auth_management_database_hive_ce---v030)
+ - [`auth_management_database_hive_ce_example` - `v4.0.0`](#auth_management_database_hive_ce_example---v400)
+ - [`auth_management_database_isar_community` - `v0.3.0`](#auth_management_database_isar_community---v030)
+ - [`auth_management_database_isar_community_example` - `v4.0.0`](#auth_management_database_isar_community_example---v400)
+ - [`auth_management_firebase` - `v0.2.0`](#auth_management_firebase---v020)
+ - [`auth_management_oauth2` - `v0.2.0`](#auth_management_oauth2---v020)
+ - [`butterfly_cli` - `v0.2.0`](#butterfly_cli---v020)
+ - [`core_management_route_go_router` - `v0.3.0`](#core_management_route_go_router---v030)
+ - [`example` - `v4.0.0`](#example---v400)
+ - [`go_router_example` - `v4.0.0`](#go_router_example---v400)
+
+Packages with other changes:
+
+ - [`auth_management_provider_riverpod` - `v0.0.5`](#auth_management_provider_riverpod---v005)
+ - [`auth_management_firebase_google` - `v0.0.2+5`](#auth_management_firebase_google---v0025)
+
+Packages with dependency updates only:
+
+> Packages listed below depend on other packages in this workspace that have had changes. Their versions have been incremented to bump the minimum dependency versions of the packages they depend upon in this project.
+
+ - `auth_management_firebase_google` - `v0.0.2+5`
+
+---
+
+#### `auth_management` - `v0.3.0`
+
+ - **FEAT**: add initialization state to AuthServiceProviderRepository and update AuthManagementRiverpodRepository.
+ - **FEAT**: add initialization state to AuthServiceProviderRepository and update AuthManagementRiverpodRepository.
+ - **FEAT**: add gen_version command to melos.
+ - **FEAT**: add gen_version command to melos.
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+ - **BREAKING** **FEAT**: add example for go_router package.
+ - **BREAKING** **FEAT**: add example for go_router package.
+
+#### `auth_management_database_hive_ce` - `v0.3.0`
+
+ - **REFACTOR**(auth_management_database_hive_ce): use git dependency for auth_management.
+ - **REFACTOR**(auth_management_database_hive_ce): use git dependency for auth_management.
+ - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
+ - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
+ - **FEAT**(docs): add features page to documentation.
+ - **FEAT**(docs): add features page to documentation.
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+ - **BREAKING** **FEAT**: add example for go_router package.
+ - **BREAKING** **FEAT**: add example for go_router package.
+
+#### `auth_management_database_hive_ce_example` - `v4.0.0`
+
+ - **REFACTOR**(auth_management_database_hive_ce): use git dependency for auth_management.
+ - **REFACTOR**(auth_management_database_hive_ce): use git dependency for auth_management.
+ - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
+ - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
+ - **FEAT**(docs): add features page to documentation.
+ - **FEAT**(docs): add features page to documentation.
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+ - **BREAKING** **FEAT**: add example for go_router package.
+ - **BREAKING** **FEAT**: add example for go_router package.
+
+#### `auth_management_database_isar_community` - `v0.3.0`
+
+ - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
+ - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
+ - **FEAT**(docs): add features page to documentation.
+ - **FEAT**(docs): add features page to documentation.
+ - **DOCS**: add.
+ - **DOCS**: add.
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+ - **BREAKING** **FEAT**: add example for go_router package.
+ - **BREAKING** **FEAT**: add example for go_router package.
+
+#### `auth_management_database_isar_community_example` - `v4.0.0`
+
+ - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
+ - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
+ - **FEAT**(docs): add features page to documentation.
+ - **FEAT**(docs): add features page to documentation.
+ - **DOCS**: add.
+ - **DOCS**: add.
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+ - **BREAKING** **FEAT**: add example for go_router package.
+ - **BREAKING** **FEAT**: add example for go_router package.
+
+#### `auth_management_firebase` - `v0.2.0`
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `auth_management_oauth2` - `v0.2.0`
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `butterfly_cli` - `v0.2.0`
+
+ - **REFACTOR**: remove non-null assertion for pubspec version.
+ - **REFACTOR**(auth_management_database_hive_ce): use git dependency for auth_management.
+ - **REFACTOR**(auth_management_database_hive_ce): use git dependency for auth_management.
+ - **REFACTOR**: move services and generated files to lib folder.
+ - **REFACTOR**: rename framework service to core service.
+ - **REFACTOR**: rename framework service to core service.
+ - **REFACTOR**: move services and generated files to lib folder.
+ - **REFACTOR**: ensure lib folder when creating files.
+ - **REFACTOR**: ensure lib folder when creating files.
+ - **REFACTOR**: remove non-null assertion for pubspec version.
+ - **FIX**: change go router mason file path.
+ - **FIX**: await some process.
+ - **FIX**: await some process.
+ - **FIX**: change mason target branch.
+ - **FIX**: change mason target branch.
+ - **FIX**: change go router mason file path.
+ - **FIX**: add dev mode flag to butterfly CLI.
+ - **FIX**: add dev mode flag to butterfly CLI.
+ - **FIX**: bump.
+ - **FIX**: bump.
+ - **FEAT**: display generated model path.
+ - **FEAT**: add dependency management and core service.
+ - **FEAT**: add dependency management and core service.
+ - **FEAT**: redirect stdout and stderr from pub commands to the console.
+ - **FEAT**: add.
+ - **FEAT**: redirect stdout and stderr from pub commands to the console.
+ - **FEAT**: add.
+ - **FEAT**: refactor service generation and update core service.
+ - **FEAT**: update dev mode flag to use uppercase 'D'.
+ - **FEAT**: update dev mode flag to use uppercase 'D'.
+ - **FEAT**: add dev mode flag to butterfly CLI.
+ - **FEAT**: add dev mode flag to butterfly CLI.
+ - **FEAT**: add version command.
+ - **FEAT**(Model Generator): Add support for imutable model.
+ - **FEAT**: add butterfly dependency and router type to project config.
+ - **FEAT**: add butterfly dependency and router type to project config.
+ - **FEAT**: refactor service generation and update core service.
+ - **FEAT**: display generated model path.
+ - **FEAT**(Model Generator): Add support for imutable model.
+ - **FEAT**: add version command.
+ - **DOCS**: add.
+ - **DOCS**: add.
+ - **DOCS**: wip.
+ - **DOCS**: wip.
+ - **DOCS**: wip.
+ - **DOCS**: wip.
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `core_management_route_go_router` - `v0.3.0`
+
+ - **REFACTOR**: Remove redundant navigator key in GoRouterService.
+ - **REFACTOR**(router): log route changes in `onRouteChanged`.
+ - **REFACTOR**(router): log route changes in `onRouteChanged`.
+ - **REFACTOR**: remove initial redirect logic from routing configuration.
+ - **REFACTOR**: remove initial redirect logic from routing configuration.
+ - **REFACTOR**: Remove redundant navigator key in GoRouterService.
+ - **FEAT**: improve router redirect logging with enhanced user information.
+ - **FEAT**(router): add route change logging and callback.
+ - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
+ - **FEAT**: add butterfly emoji to GoRouterService log name for improved visibility.
+ - **FEAT**: add butterfly emoji to GoRouterService log name for improved visibility.
+ - **FEAT**: improve router redirect logging with enhanced user information.
+ - **FEAT**(route_go_router): Add rootNavigator key to GoRouterService.
+ - **FEAT**: add initialization state to AuthServiceProviderRepository and update AuthManagementRiverpodRepository.
+ - **FEAT**: add initialization state to AuthServiceProviderRepository and update AuthManagementRiverpodRepository.
+ - **FEAT**(route_go_router): Add rootNavigator key to GoRouterService.
+ - **FEAT**(router): add route change logging and callback.
+ - **FEAT**: enhance logging for router redirects with detailed information.
+ - **FEAT**: enhance logging for router redirects with detailed information.
+ - **FEAT**(go_router): Introduce GoRouterServiceMixin.
+ - **FEAT**(go_router): Introduce GoRouterServiceMixin.
+ - **FEAT**: add example for go_router package.
+ - **FEAT**: add example for go_router package.
+ - **FEAT**(routing): introduce refreshListenable and observers.
+ - **FEAT**(routing): introduce refreshListenable and observers.
+ - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
+ - **DOCS**(go_router): enhance onRouteChanged documentation.
+ - **DOCS**: Add detailed documentation for onRouteChanged and goRouterRedirect.
+ - **DOCS**: Add detailed documentation for onRouteChanged and goRouterRedirect.
+ - **DOCS**(go_router): enhance onRouteChanged documentation.
+ - **BREAKING** **REFACTOR**: Simplify route path names in `BaseAuthRoute`.
+ - **BREAKING** **REFACTOR**: extract auth logic from GoRouterService to GoRouterAuthRoute mixin.
+ - **BREAKING** **REFACTOR**: extract auth logic from GoRouterService to GoRouterAuthRoute mixin.
+ - **BREAKING** **FEAT**: add example for go_router package.
+ - **BREAKING** **FEAT**: add example for go_router package.
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `example` - `v4.0.0`
+
+ - **FEAT**: optimize loading service delay and enhance task queue processing logic.
+ - **FEAT**: optimize loading service delay and enhance task queue processing logic.
+ - **FEAT**: add CoreService implementation extending BaseCoreService.
+ - **FEAT**: add CoreService implementation extending BaseCoreService.
+ - **DOCS**: add documentation for RouteService mixin and update existing docs.
+ - **DOCS**: add documentation for RouteService mixin and update existing docs.
+ - **BREAKING** **REFACTOR**: extract auth logic from GoRouterService to GoRouterAuthRoute mixin.
+ - **BREAKING** **REFACTOR**: extract auth logic from GoRouterService to GoRouterAuthRoute mixin.
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `go_router_example` - `v4.0.0`
+
+ - **FEAT**: add example for go_router package.
+ - **FEAT**: add example for go_router package.
+ - **BREAKING** **REFACTOR**: Simplify route path names in `BaseAuthRoute`.
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+ - **BREAKING** **FEAT**: add example for go_router package.
+ - **BREAKING** **FEAT**: add example for go_router package.
+
+#### `auth_management_provider_riverpod` - `v0.0.5`
+
+ - **REFACTOR**: remove riverpod and use flutter_riverpod directly.
+ - **REFACTOR**: remove riverpod and use flutter_riverpod directly.
+ - **REFACTOR**: rename AuthManagementIsarRepository to AuthManagementRiverpodRepository.
+ - **REFACTOR**: rename AuthManagementIsarRepository to AuthManagementRiverpodRepository.
+ - **FEAT**: update RiverpodUserState to keep alive and adjust provider types.
+ - **FEAT**: update RiverpodUserState to keep alive and adjust provider types.
+ - **FEAT**: add initialization state to AuthServiceProviderRepository and update AuthManagementRiverpodRepository.
+ - **FEAT**: add initialization state to AuthServiceProviderRepository and update AuthManagementRiverpodRepository.
+ - **FEAT**: add initialization check to AuthManagementRiverpodRepository.
+ - **FEAT**: add initialization check to AuthManagementRiverpodRepository.
+
+# Change Log
+
+All notable changes to this project will be documented in this file.
+See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
+
 ## 2025-08-22
 
 ### Changes
