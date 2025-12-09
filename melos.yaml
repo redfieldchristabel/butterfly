@@ -11,7 +11,13 @@ scripts:
   build:
     exec: dart build
   build_runner:
-    exec: dart run build_runner build
+    exec: dart run build_runner build -d
+    packageFilters:
+      scope:
+        - butterfly_cli
+        - auth_management_database_isar_community
+        - auth_management_provider_riverpod
+        - core_management_route_go_router
   format:
     exec: dart format --set-exit-if-changed .
   gen_version:
