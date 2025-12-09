@@ -4,9 +4,10 @@ import 'package:auth_management_database_isar_community/auth_management_database
 import 'package:flutter/material.dart';
 
 import 'package:auth_management/auth_management.dart';
-import 'package:isar/isar.dart';
+import 'package:isar_community/isar.dart';
 
 part 'main.g.dart';
+
 
 final isarRepo = AuthManagementIsarRepository<MyUser>();
 final authManagement = AuthService();

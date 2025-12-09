@@ -2,50 +2,56 @@ import 'dart:async';
 
 import 'package:auth_management/auth_management.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:isar/isar.dart';
+import 'package:isar_community/isar.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../auth_management_database_isar_community.dart';
 
 class AuthManagementIsarRepository<T extends BaseUser>
     implements AuthManagementDatabaseRepository<T> {
-  late final IsarGeneratedSchema schema;
+  late final CollectionSchema schema;
   late final Isar isar;
   late final IsarCollection collection;
 
   Future<void> initialize(
-    IsarGeneratedSchema userSchema, {
-    List<IsarGeneratedSchema> schemas = const [],
+    CollectionSchema userSchema, {
+    List<CollectionSchema> schemas = const [],
   }) async {
     schema = userSchema;
 
     final initializeSchemas = [schema, ...schemas];
     if (kIsWeb) {
       // For web, make sure to initialize before
-      await Isar.initialize();
-
-      // Use sync methods
-      isar = Isar.open(
-        schemas: initializeSchemas,
-        directory: Isar.sqliteInMemory,
-        engine: IsarEngine.sqlite,
-      );
+      throw Exception(
+          'Web is not supported yet. Please use other auth management database provider.');
+      // await Isar.initialize();
+      //
+      // // Use sync methods
+      // isar = Isar.openSync(
+      //   initializeSchemas,
+      //   directory: ,
+      // );
     } else {
       final dir = await getApplicationDocumentsDirectory();
-      isar = await Isar.openAsync(
-        schemas: initializeSchemas,
+      isar = await Isar.open(
+        initializeSchemas,
         directory: dir.path,
       );
     }
 
-    collection = isar.collection<int,T>();
+    collection = isar.collection<T>();
   }
 
   @override
   FutureOr<void> addUser(T user) {
     // TODO: find a way to save user from library
-    isar.write((isar) => collection.put(user));
+    // isar.writeSync((isar) => collection.put(user));
 
+    isar.writeTxnSync(
+      () {
+        collection.putSync(user);
+      },
+    );
   }
 
   @override

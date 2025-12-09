@@ -20,6 +20,10 @@ scripts:
         - core_management_route_go_router
   format:
     exec: dart format --set-exit-if-changed .
+  update_deps:
+    exec: dart pub upgrade
+  update_deps_major:
+    exec: dart pub upgrade --major-versions
   gen_version:
     exec: butterfly2 g version
     packageFilters:
@@ -29,3 +33,6 @@ command:
   version:
     hooks:
       post: melos run gen_version
+
+ignore:
+  - 'packages/**/example'
