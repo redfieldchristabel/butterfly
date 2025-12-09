@@ -5,6 +5,7 @@ import 'package:args/command_runner.dart';
 import 'package:butterfly_cli/commands/commit.dart';
 import 'package:butterfly_cli/commands/generators/index.dart';
 import 'package:butterfly_cli/commands/init.dart';
+import 'package:butterfly_cli/commands/version.dart';
 import 'package:butterfly_cli/extensions/command_helper.dart';
 import 'package:butterfly_cli/readable_exception.dart';
 import 'package:mason_logger/mason_logger.dart';
@@ -20,23 +21,24 @@ void main(List<String> arguments) {
 
   final runner = CommandRunner('butterfly', 'A CLI tool for butterfly project');
 
+  runner.argParser.addFlag('verbose', abbr: 'v', help: 'Print verbose output');
+  runner.argParser.addFlag('dev',
+      abbr: 'D', help: 'Run in dev mode', defaultsTo: false);
+
+  runner.addCommand(VersionCommand());
   runner.addCommand(InitCommand());
   runner.addCommand(CommitCommand());
   runner.addCommand(GenerateCommand());
 
-  final argsParser = runner.argParser;
-
-  argsParser.addFlag('verbose', abbr: 'v', help: 'Print verbose output');
+  final result = runner.parse(arguments);
 
   runZonedGuarded(
     () {
-      final result = runner.parse(arguments);
-
       if (kDebugMode) {
         ButterflyLogger.level = Level.verbose;
       } else {
         ButterflyLogger.level =
-            result.flag('verbose') == true ? Level.verbose : Level.info;
+            result.flag('verbose') ? Level.verbose : Level.info;
       }
 
       return runner.run(arguments);
@@ -63,7 +65,7 @@ void main(List<String> arguments) {
         }
       }
 
-      if (kDebugMode) {
+      if (kDebugMode || result.flag('dev')) {
         print('\n\n');
         throw error;
       } else {

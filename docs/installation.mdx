@@ -1,0 +1,23 @@
+---
+title: Installation
+description: What to do next
+---
+
+To install Butterfly, you can use the following command:
+```sh
+dart pub global activate butterfly_cli
+```
+<Info>Do not need to run this command in the project. Its a global command.</Info>
+
+After that, you can run the following command to initialize your project:
+```sh
+butterfly init
+```
+This command will create a new directory called `butterfly` in your project root, which will contain the following subdirectories:
+- `models`: This directory will contain your data models.
+- `models/providers`: This directory will contain your data providers normally your view model.
+- `screens`: This directory will contain your UI screens.
+- `widgets`: This directory will contain your reusable widgets.
+- `services`: This directory will contain your services.
+- `router`: This directory will contain your router configuration.
+

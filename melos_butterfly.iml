@@ -13,6 +13,24 @@
       <excludeFolder url="file://$MODULE_DIR$/packages/auth_management_provider_riverpod/.dart_tool" />
       <excludeFolder url="file://$MODULE_DIR$/packages/auth_management_provider_riverpod/.pub" />
       <excludeFolder url="file://$MODULE_DIR$/packages/auth_management_provider_riverpod/build" />
+      <excludeFolder url="file://$MODULE_DIR$/.dart_tool" />
+      <excludeFolder url="file://$MODULE_DIR$/.pub" />
+      <excludeFolder url="file://$MODULE_DIR$/build" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/core_management/.dart_tool" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/core_management/.pub" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/core_management/build" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/auth_management_database_hive_ce/.dart_tool" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/auth_management_database_hive_ce/.pub" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/auth_management_database_hive_ce/build" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/route_management/.dart_tool" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/route_management/.pub" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/route_management/build" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/core_management_route_go_router/.dart_tool" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/core_management_route_go_router/.pub" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/core_management_route_go_router/build" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/auth_management_oauth2/.dart_tool" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/auth_management_oauth2/.pub" />
+      <excludeFolder url="file://$MODULE_DIR$/packages/auth_management_oauth2/build" />
     </content>
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="library" name="Dart SDK" level="project" />

@@ -1,6 +1,12 @@
+// ignore_for_file: unused_import
+
 import 'dart:async';
 
-abstract interface class AuthServiceProviderRepository<T> {
+import 'package:flutter/cupertino.dart';
+
+abstract class AuthServiceProviderRepository<T> {
+  bool initialized = false;
+
   FutureOr<void> bindUserToProvider(T user);
 
   FutureOr<T?> getUser();

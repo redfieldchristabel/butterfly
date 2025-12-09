@@ -1,0 +1,186 @@
+---
+title: Enqueue Utility
+description: Safely schedule UI updates after widget build phase
+---
+
+## Enqueue Utility
+
+The `enqueue()` function is a powerful utility in the Butterfly Core library that ensures safe and predictable UI updates by scheduling them to run after the current build phase completes. This helps prevent common Flutter errors like `setState() called during build`.
+
+## Overview
+
+`enqueue()` is provided through the `TaskQueueMixin`, which can be easily added to any `State` class. It offers several advantages over raw `WidgetsBinding` callbacks:
+
+- ✅ **Mount Safety**: Automatically checks if the widget is still mounted
+- 🚦 **Sequential Execution**: Maintains a FIFO queue for multiple callbacks
+- ⚡ **Build-Phase Aware**: Ensures callbacks run after the current build cycle
+- 🛡️ **Error Prevention**: Guards against common Flutter rendering errors
+
+## Getting Started
+
+### Basic Usage
+
+1. Add the `TaskQueueMixin` to your `State` class
+2. Use `enqueue()` to schedule post-build operations
+
+```dart
+import 'package:core_management/core_management.dart';
+
+class MyWidget extends StatefulWidget {
+  const MyWidget({super.key});
+
+  @override
+  State<MyWidget> createState() => _MyWidgetState();
+}
+
+class _MyWidgetState extends State<MyWidget> with TaskQueueMixin {
+  @override
+  void initState() {
+    super.initState();
+    
+    enqueue(() {
+      // Your safe post-build UI updates here
+    });
+  }
+}
+```
+
+## Real-World Example
+
+Here's how `enqueue()` compares to native Flutter approaches:
+
+<Tabs>
+<TabItem value="butterfly" label="With Butterfly">
+
+```dart
+@override
+void initState() {
+  super.initState();
+
+  // Fetch user data asynchronously
+  apiService.getRandomUser().then((user) {
+    // Safely update state after build
+    enqueue(() {
+      ref.read(userProvider.notifier).setUser(user);
+    });
+  });
+
+  // Queue multiple updates safely
+  enqueue(() => ref.read(userProvider.notifier).updateRandomQuote());
+  enqueue(() => ref.read(themeProvider.notifier).checkDarkMode());
+}
+```
+
+<Info>
+**Pro Tip**: For better readability, consider extracting complex logic into separate methods and 
+call them within `enqueue()`.
+</Info>
+
+</TabItem>
+
+<TabItem value="native" label="Native Flutter">
+
+```dart
+@override
+void initState() {
+  super.initState();
+
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!mounted) return;
+    
+    ref.read(userProvider.notifier).fetch();
+    
+    // For multiple operations, you'd need to nest callbacks
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(themeProvider.notifier).checkDarkMode();
+    });
+  });
+}
+```
+
+**Drawbacks**:
+- Manual `mounted` checks required
+- Callback hell with multiple operations
+- Error-prone and harder to maintain
+
+</TabItem>
+</Tabs>
+
+## When to Use `enqueue()`
+
+### ✅ Ideal Use Cases
+- State updates after async operations (API calls, database queries)
+- Multiple sequential UI updates
+- Any operation that might trigger `setState()` after `initState()`
+- Complex widget initialization that depends on the first frame
+
+### ⚠️ Limitations
+- Only works with `StatefulWidget` and its variants
+- Not needed for `StatelessWidget` (which doesn't manage state)
+- Shouldn't be used for animations (use `TickerProvider` instead)
+
+## Best Practices
+
+1. **Keep Callbacks Focused**: Each `enqueue` callback should do one thing
+2. **Handle Errors**: Wrap async operations in try-catch blocks
+3. **Avoid Overuse**: Only use when you need to ensure build completion
+4. **Clean Up**: The mixin automatically handles cleanup when the widget disposes
+
+## Advanced Usage
+
+### Chaining Multiple Operations
+
+```dart
+enqueue(() {
+  // First operation
+  ref.read(dataProvider.notifier).loadInitialData();
+  
+  // Chain dependent operations
+  enqueue(() {
+    ref.read(analyticsProvider).logEvent('InitialLoadComplete');
+  });
+});
+```
+
+### With Error Handling
+
+```dart
+enqueue(() async {
+  try {
+    final data = await fetchData();
+    if (mounted) {
+      setState(() => _data = data);
+    }
+  } catch (e) {
+    if (mounted) {
+      setState(() => _error = e.toString());
+    }
+  }
+});
+```
+
+## FAQ
+
+### Why not use `WidgetsBinding.instance.addPostFrameCallback` directly?
+
+While similar, `enqueue()` provides:
+- Built-in `mounted` checks
+- Cleaner syntax for multiple operations
+- Better error messages
+- Automatic cleanup
+
+### Can I use `enqueue` in `build()`?
+
+While technically possible, it's generally not recommended as it can lead to infinite loops. Prefer using it in lifecycle methods like `initState()`, `didChangeDependencies()`, or `didUpdateWidget()`.
+
+### Is there performance overhead?
+
+The overhead is minimal. The mixin maintains a simple queue and leverages Flutter's existing scheduling mechanisms.
+
+## Related Topics
+
+- [State Management in Flutter](/docs/state-management)
+- [Widget Lifecycle](/docs/widget-lifecycle)
+- [Async Patterns](/docs/async-patterns)
+

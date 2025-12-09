@@ -4,7 +4,7 @@ part 'user.g.dart';
 
 mixin RiverpodUser {}
 
-@riverpod
+@Riverpod(keepAlive: true)
 class RiverpodUserState extends _$RiverpodUserState {
   @override
   RiverpodUser? build() => null;

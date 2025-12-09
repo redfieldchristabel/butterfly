@@ -3,12 +3,19 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/packages/auth_management/melos_auth_management.iml" filepath="$PROJECT_DIR$/packages/auth_management/melos_auth_management.iml" />
+      <module fileurl="file://$PROJECT_DIR$/packages/auth_management_database_hive_ce/melos_auth_management_database_hive_ce.iml" filepath="$PROJECT_DIR$/packages/auth_management_database_hive_ce/melos_auth_management_database_hive_ce.iml" />
+      <module fileurl="file://$PROJECT_DIR$/packages/auth_management_database_hive_ce/example/melos_auth_management_database_hive_ce_example.iml" filepath="$PROJECT_DIR$/packages/auth_management_database_hive_ce/example/melos_auth_management_database_hive_ce_example.iml" />
       <module fileurl="file://$PROJECT_DIR$/packages/auth_management_database_isar_community/melos_auth_management_database_isar_community.iml" filepath="$PROJECT_DIR$/packages/auth_management_database_isar_community/melos_auth_management_database_isar_community.iml" />
+      <module fileurl="file://$PROJECT_DIR$/packages/auth_management_database_isar_community/example/melos_auth_management_database_isar_community_example.iml" filepath="$PROJECT_DIR$/packages/auth_management_database_isar_community/example/melos_auth_management_database_isar_community_example.iml" />
       <module fileurl="file://$PROJECT_DIR$/packages/auth_management_firebase/melos_auth_management_firebase.iml" filepath="$PROJECT_DIR$/packages/auth_management_firebase/melos_auth_management_firebase.iml" />
       <module fileurl="file://$PROJECT_DIR$/packages/auth_management_firebase_google/melos_auth_management_firebase_google.iml" filepath="$PROJECT_DIR$/packages/auth_management_firebase_google/melos_auth_management_firebase_google.iml" />
+      <module fileurl="file://$PROJECT_DIR$/packages/auth_management_oauth2/melos_auth_management_oauth2.iml" filepath="$PROJECT_DIR$/packages/auth_management_oauth2/melos_auth_management_oauth2.iml" />
       <module fileurl="file://$PROJECT_DIR$/packages/auth_management_provider_riverpod/melos_auth_management_provider_riverpod.iml" filepath="$PROJECT_DIR$/packages/auth_management_provider_riverpod/melos_auth_management_provider_riverpod.iml" />
       <module fileurl="file://$PROJECT_DIR$/butterfly_cli/melos_butterfly_cli.iml" filepath="$PROJECT_DIR$/butterfly_cli/melos_butterfly_cli.iml" />
-      <module fileurl="file://$PROJECT_DIR$/packages/auth_management_database_isar_community/example/melos_example.iml" filepath="$PROJECT_DIR$/packages/auth_management_database_isar_community/example/melos_example.iml" />
+      <module fileurl="file://$PROJECT_DIR$/packages/core_management/melos_core_management.iml" filepath="$PROJECT_DIR$/packages/core_management/melos_core_management.iml" />
+      <module fileurl="file://$PROJECT_DIR$/packages/core_management_route_go_router/melos_core_management_route_go_router.iml" filepath="$PROJECT_DIR$/packages/core_management_route_go_router/melos_core_management_route_go_router.iml" />
+      <module fileurl="file://$PROJECT_DIR$/packages/core_management/example/melos_example.iml" filepath="$PROJECT_DIR$/packages/core_management/example/melos_example.iml" />
+      <module fileurl="file://$PROJECT_DIR$/packages/core_management_route_go_router/example/melos_go_router_example.iml" filepath="$PROJECT_DIR$/packages/core_management_route_go_router/example/melos_go_router_example.iml" />
       <module fileurl="file://$PROJECT_DIR$/melos_butterfly.iml" filepath="$PROJECT_DIR$/melos_butterfly.iml" />
     </modules>
   </component>

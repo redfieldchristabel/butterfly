@@ -3,6 +3,939 @@
 All notable changes to this project will be documented in this file.
 See [Conventional Commits](https://conventionalcommits.org) for commit guidelines.
 
+## 2025-08-22
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - [`core_management` - `v0.3.0`](#core_management---v030)
+
+Packages with other changes:
+
+ - There are no other changes in this release.
+
+---
+
+#### `core_management` - `v0.3.0`
+
+ - update to new theme datatype in latest flutter
+
+ - **REFACTOR**: make errorHandlerService private.
+ - **REFACTOR**: remove initial redirect logic from routing configuration.
+ - **REFACTOR**: remove initial redirect logic from routing configuration.
+ - **REFACTOR**: move in-memory lock repository to top level.
+ - **REFACTOR**: move in-memory lock repository to top level.
+ - **REFACTOR**: Rename error variable in onError.
+ - **REFACTOR**: Rename error variable in onError.
+ - **REFACTOR**: make errorHandlerService public.
+ - **REFACTOR**: make errorHandlerService public.
+ - **REFACTOR**: make errorHandlerService private.
+ - **FIX**: correct variable name in onError method.
+ - **FIX**: correct variable name in onError method.
+ - **FEAT**: update theme handling to support context-based brightness and color scheme.
+ - **FEAT**: optimize loading service delay and enhance task queue processing logic.
+ - **FEAT**: optimize loading service delay and enhance task queue processing logic.
+ - **FEAT**: add CoreService implementation extending BaseCoreService.
+ - **FEAT**: add CoreService implementation extending BaseCoreService.
+ - **FEAT**: add example module to project configuration and optimize loading service initialization.
+ - **FEAT**: add example module to project configuration and optimize loading service initialization.
+ - **FEAT**: update theme handling to support context-based brightness and color scheme.
+ - **FEAT**(routing): introduce refreshListenable and observers.
+ - **FEAT**: add dependency management and core service.
+ - **FEAT**: export core and theme services.
+ - **FEAT**: implement CoreLockService with in-memory and persistence options.
+ - **FEAT**: implement CoreLockService with in-memory and persistence options.
+ - **FEAT**: export core and theme services.
+ - **FEAT**(core): Introduce TaskQueueMixin for safe UI updates.
+ - **FEAT**(core_management): add distributed lock service.
+ - **FEAT**(core_management): add distributed lock service.
+ - **FEAT**: add HexColor extension.
+ - **FEAT**: add HexColor extension.
+ - **FEAT**: add new helper extension.
+ - **FEAT**: add new helper extension.
+ - **FEAT**(go_router): Introduce GoRouterServiceMixin.
+ - **FEAT**(go_router): Introduce GoRouterServiceMixin.
+ - **FEAT**: add theme getter to BaseCore.
+ - **FEAT**: add theme getter to BaseCore.
+ - **FEAT**: Add BaseThemeService and default implementation.
+ - **FEAT**: Add BaseThemeService and default implementation.
+ - **FEAT**: add loading overlay and service.
+ - **FEAT**: add dependency management and core service.
+ - **FEAT**(core): Introduce TaskQueueMixin for safe UI updates.
+ - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
+ - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
+ - **FEAT**(routing): introduce refreshListenable and observers.
+ - **FEAT**: enhance user getter with detailed error handling for authentication requirements.
+ - **FEAT**: enhance user getter with detailed error handling for authentication requirements.
+ - **FEAT**: refactor BaseThemeService to use iTheme for improved theme management.
+ - **FEAT**: refactor BaseThemeService to use iTheme for improved theme management.
+ - **FEAT**: add base error handler and integrate into core service.
+ - **FEAT**: add base error handler and integrate into core service.
+ - **FEAT**: add loading overlay and service.
+ - **DOCS**: add documentation for RouteService mixin and update existing docs.
+ - **DOCS**: add documentation for RouteService mixin and update existing docs.
+ - **BREAKING** **REFACTOR**: extract auth logic from GoRouterService to GoRouterAuthRoute mixin.
+ - **BREAKING** **REFACTOR**: extract auth logic from GoRouterService to GoRouterAuthRoute mixin.
+ - **BREAKING** **REFACTOR**: Simplify route path names in `BaseAuthRoute`.
+ - **BREAKING** **FEAT**: add example for go_router package.
+ - **BREAKING** **FEAT**: add example for go_router package.
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+
+## 2025-07-16
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - [`auth_management` - `v0.2.0`](#auth_management---v020)
+ - [`auth_management_database_hive_ce` - `v0.2.0`](#auth_management_database_hive_ce---v020)
+ - [`auth_management_database_hive_ce_example` - `v3.0.0`](#auth_management_database_hive_ce_example---v300)
+ - [`auth_management_database_isar_community` - `v0.2.0`](#auth_management_database_isar_community---v020)
+ - [`auth_management_database_isar_community_example` - `v3.0.0`](#auth_management_database_isar_community_example---v300)
+ - [`auth_management_firebase` - `v0.1.0`](#auth_management_firebase---v010)
+ - [`auth_management_oauth2` - `v0.1.0`](#auth_management_oauth2---v010)
+ - [`butterfly_cli` - `v0.1.0`](#butterfly_cli---v010)
+ - [`core_management` - `v0.2.0`](#core_management---v020)
+ - [`core_management_route_go_router` - `v0.2.0`](#core_management_route_go_router---v020)
+ - [`example` - `v3.0.0`](#example---v300)
+ - [`go_router_example` - `v3.0.0`](#go_router_example---v300)
+
+Packages with other changes:
+
+ - [`auth_management_provider_riverpod` - `v0.0.4+2`](#auth_management_provider_riverpod---v0042)
+ - [`auth_management_firebase_google` - `v0.0.2+4`](#auth_management_firebase_google---v0024)
+
+Packages with dependency updates only:
+
+> Packages listed below depend on other packages in this workspace that have had changes. Their versions have been incremented to bump the minimum dependency versions of the packages they depend upon in this project.
+
+ - `auth_management_provider_riverpod` - `v0.0.4+2`
+ - `auth_management_firebase_google` - `v0.0.2+4`
+
+---
+
+#### `auth_management` - `v0.2.0`
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `auth_management_database_hive_ce` - `v0.2.0`
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `auth_management_database_hive_ce_example` - `v3.0.0`
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `auth_management_database_isar_community` - `v0.2.0`
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `auth_management_database_isar_community_example` - `v3.0.0`
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `auth_management_firebase` - `v0.1.0`
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `auth_management_oauth2` - `v0.1.0`
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `butterfly_cli` - `v0.1.0`
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `core_management` - `v0.2.0`
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `core_management_route_go_router` - `v0.2.0`
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `example` - `v3.0.0`
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+#### `go_router_example` - `v3.0.0`
+
+ - **BREAKING** **FEAT**(auth): add OAuth2 management package.
+
+
+## 2025-07-16
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - [`auth_management` - `v0.1.0`](#auth_management---v010)
+ - [`auth_management_database_hive_ce` - `v0.1.0`](#auth_management_database_hive_ce---v010)
+ - [`auth_management_database_hive_ce_example` - `v2.0.0`](#auth_management_database_hive_ce_example---v200)
+ - [`auth_management_database_isar_community` - `v0.1.0`](#auth_management_database_isar_community---v010)
+ - [`auth_management_database_isar_community_example` - `v2.0.0`](#auth_management_database_isar_community_example---v200)
+ - [`core_management` - `v0.1.0`](#core_management---v010)
+ - [`core_management_route_go_router` - `v0.1.0`](#core_management_route_go_router---v010)
+ - [`example` - `v2.0.0`](#example---v200)
+ - [`go_router_example` - `v2.0.0`](#go_router_example---v200)
+
+Packages with other changes:
+
+ - [`auth_management_provider_riverpod` - `v0.0.4+1`](#auth_management_provider_riverpod---v0041)
+ - [`auth_management_firebase` - `v0.0.2+3`](#auth_management_firebase---v0023)
+ - [`auth_management_firebase_google` - `v0.0.2+3`](#auth_management_firebase_google---v0023)
+
+Packages with dependency updates only:
+
+> Packages listed below depend on other packages in this workspace that have had changes. Their versions have been incremented to bump the minimum dependency versions of the packages they depend upon in this project.
+
+ - `auth_management_provider_riverpod` - `v0.0.4+1`
+ - `auth_management_firebase` - `v0.0.2+3`
+ - `auth_management_firebase_google` - `v0.0.2+3`
+
+---
+
+#### `auth_management` - `v0.1.0`
+
+ - **BREAKING** **FEAT**: add example for go_router package.
+
+#### `auth_management_database_hive_ce` - `v0.1.0`
+
+ - **BREAKING** **FEAT**: add example for go_router package.
+
+#### `auth_management_database_hive_ce_example` - `v2.0.0`
+
+ - **BREAKING** **FEAT**: add example for go_router package.
+
+#### `auth_management_database_isar_community` - `v0.1.0`
+
+ - **BREAKING** **FEAT**: add example for go_router package.
+
+#### `auth_management_database_isar_community_example` - `v2.0.0`
+
+ - **BREAKING** **FEAT**: add example for go_router package.
+
+#### `core_management` - `v0.1.0`
+
+ - **BREAKING** **REFACTOR**: extract auth logic from GoRouterService to GoRouterAuthRoute mixin.
+ - **BREAKING** **FEAT**: add example for go_router package.
+
+#### `core_management_route_go_router` - `v0.1.0`
+
+ - **FEAT**: add example for go_router package.
+ - **BREAKING** **REFACTOR**: extract auth logic from GoRouterService to GoRouterAuthRoute mixin.
+ - **BREAKING** **FEAT**: add example for go_router package.
+
+#### `example` - `v2.0.0`
+
+ - **BREAKING** **REFACTOR**: extract auth logic from GoRouterService to GoRouterAuthRoute mixin.
+
+#### `go_router_example` - `v2.0.0`
+
+ - **FEAT**: add example for go_router package.
+ - **BREAKING** **FEAT**: add example for go_router package.
+
+
+## 2025-07-15
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`auth_management_provider_riverpod` - `v0.0.4`](#auth_management_provider_riverpod---v004)
+ - [`core_management` - `v0.0.6+1`](#core_management---v0061)
+ - [`core_management_route_go_router` - `v0.0.4`](#core_management_route_go_router---v004)
+ - [`example` - `v1.2.2`](#example---v122)
+
+---
+
+#### `auth_management_provider_riverpod` - `v0.0.4`
+
+ - **FEAT**: update RiverpodUserState to keep alive and adjust provider types.
+
+#### `core_management` - `v0.0.6+1`
+
+ - **DOCS**: add documentation for RouteService mixin and update existing docs.
+
+#### `core_management_route_go_router` - `v0.0.4`
+
+ - **FEAT**: add butterfly emoji to GoRouterService log name for improved visibility.
+
+#### `example` - `v1.2.2`
+
+ - **DOCS**: add documentation for RouteService mixin and update existing docs.
+
+
+## 2025-07-08
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`core_management` - `v0.0.6`](#core_management---v006)
+ - [`core_management_route_go_router` - `v0.0.3+1`](#core_management_route_go_router---v0031)
+ - [`example` - `v1.2.1`](#example---v121)
+
+Packages with dependency updates only:
+
+> Packages listed below depend on other packages in this workspace that have had changes. Their versions have been incremented to bump the minimum dependency versions of the packages they depend upon in this project.
+
+ - `core_management_route_go_router` - `v0.0.3+1`
+ - `example` - `v1.2.1`
+
+---
+
+#### `core_management` - `v0.0.6`
+
+ - **FEAT**: enhance user getter with detailed error handling for authentication requirements.
+
+
+## 2025-07-08
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`example` - `v1.2.0`](#example---v120)
+
+---
+
+#### `example` - `v1.2.0`
+
+ - **FEAT**: optimize loading service delay and enhance task queue processing logic.
+ - **FEAT**: add CoreService implementation extending BaseCoreService.
+
+
+## 2025-07-08
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`auth_management` - `v0.0.4`](#auth_management---v004)
+ - [`auth_management_database_hive_ce` - `v0.0.3+1`](#auth_management_database_hive_ce---v0031)
+ - [`auth_management_database_hive_ce_example` - `v1.2.1`](#auth_management_database_hive_ce_example---v121)
+ - [`auth_management_provider_riverpod` - `v0.0.3`](#auth_management_provider_riverpod---v003)
+ - [`butterfly_cli` - `v0.0.12+1`](#butterfly_cli---v00121)
+ - [`core_management` - `v0.0.5`](#core_management---v005)
+ - [`core_management_route_go_router` - `v0.0.3`](#core_management_route_go_router---v003)
+ - [`example` - `v1.1.0`](#example---v110)
+ - [`auth_management_database_isar_community_example` - `v1.3.1`](#auth_management_database_isar_community_example---v131)
+ - [`auth_management_database_isar_community` - `v0.0.4+1`](#auth_management_database_isar_community---v0041)
+ - [`auth_management_firebase` - `v0.0.2+2`](#auth_management_firebase---v0022)
+ - [`auth_management_firebase_google` - `v0.0.2+2`](#auth_management_firebase_google---v0022)
+
+Packages with dependency updates only:
+
+> Packages listed below depend on other packages in this workspace that have had changes. Their versions have been incremented to bump the minimum dependency versions of the packages they depend upon in this project.
+
+ - `auth_management_database_isar_community_example` - `v1.3.1`
+ - `auth_management_database_isar_community` - `v0.0.4+1`
+ - `auth_management_firebase` - `v0.0.2+2`
+ - `auth_management_firebase_google` - `v0.0.2+2`
+
+---
+
+#### `auth_management` - `v0.0.4`
+
+ - **FEAT**: add initialization state to AuthServiceProviderRepository and update AuthManagementRiverpodRepository.
+
+#### `auth_management_database_hive_ce` - `v0.0.3+1`
+
+ - **REFACTOR**(auth_management_database_hive_ce): use git dependency for auth_management.
+
+#### `auth_management_database_hive_ce_example` - `v1.2.1`
+
+ - **REFACTOR**(auth_management_database_hive_ce): use git dependency for auth_management.
+
+#### `auth_management_provider_riverpod` - `v0.0.3`
+
+ - **REFACTOR**: remove riverpod and use flutter_riverpod directly.
+ - **REFACTOR**: rename AuthManagementIsarRepository to AuthManagementRiverpodRepository.
+ - **FEAT**: add initialization state to AuthServiceProviderRepository and update AuthManagementRiverpodRepository.
+ - **FEAT**: add initialization check to AuthManagementRiverpodRepository.
+
+#### `butterfly_cli` - `v0.0.12+1`
+
+ - **REFACTOR**(auth_management_database_hive_ce): use git dependency for auth_management.
+
+#### `core_management` - `v0.0.5`
+
+ - **REFACTOR**: remove initial redirect logic from routing configuration.
+ - **REFACTOR**: move in-memory lock repository to top level.
+ - **REFACTOR**: Rename error variable in onError.
+ - **REFACTOR**: make errorHandlerService public.
+ - **REFACTOR**: make errorHandlerService private.
+ - **FIX**: correct variable name in onError method.
+ - **FEAT**: refactor BaseThemeService to use iTheme for improved theme management.
+ - **FEAT**: optimize loading service delay and enhance task queue processing logic.
+ - **FEAT**: add CoreService implementation extending BaseCoreService.
+ - **FEAT**: add example module to project configuration and optimize loading service initialization.
+ - **FEAT**: update theme handling to support context-based brightness and color scheme.
+ - **FEAT**: implement CoreLockService with in-memory and persistence options.
+ - **FEAT**(core_management): add distributed lock service.
+ - **FEAT**: add HexColor extension.
+ - **FEAT**: add new helper extension.
+ - **FEAT**(go_router): Introduce GoRouterServiceMixin.
+ - **FEAT**: add theme getter to BaseCore.
+ - **FEAT**: Add BaseThemeService and default implementation.
+ - **FEAT**: add loading overlay and service.
+ - **FEAT**: add base error handler and integrate into core service.
+ - **FEAT**(routing): introduce refreshListenable and observers.
+
+#### `core_management_route_go_router` - `v0.0.3`
+
+ - **REFACTOR**: remove initial redirect logic from routing configuration.
+ - **REFACTOR**: Remove redundant navigator key in GoRouterService.
+ - **REFACTOR**(router): log route changes in `onRouteChanged`.
+ - **FEAT**: improve router redirect logging with enhanced user information.
+ - **FEAT**: add initialization state to AuthServiceProviderRepository and update AuthManagementRiverpodRepository.
+ - **FEAT**: enhance logging for router redirects with detailed information.
+ - **FEAT**(go_router): Introduce GoRouterServiceMixin.
+ - **FEAT**(routing): introduce refreshListenable and observers.
+ - **FEAT**(router): add route change logging and callback.
+ - **FEAT**(route_go_router): Add rootNavigator key to GoRouterService.
+ - **DOCS**(go_router): enhance onRouteChanged documentation.
+ - **DOCS**: Add detailed documentation for onRouteChanged and goRouterRedirect.
+
+#### `example` - `v1.1.0`
+
+ - **FEAT**: optimize loading service delay and enhance task queue processing logic.
+ - **FEAT**: add CoreService implementation extending BaseCoreService.
+
+
+## 2025-06-10
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`auth_management_database_hive_ce` - `v0.0.3`](#auth_management_database_hive_ce---v003)
+ - [`auth_management_database_hive_ce_example` - `v1.2.0`](#auth_management_database_hive_ce_example---v120)
+ - [`auth_management_database_isar_community` - `v0.0.4`](#auth_management_database_isar_community---v004)
+ - [`auth_management_database_isar_community_example` - `v1.3.0`](#auth_management_database_isar_community_example---v130)
+ - [`butterfly_cli` - `v0.0.12`](#butterfly_cli---v0012)
+ - [`core_management` - `v0.0.4`](#core_management---v004)
+ - [`core_management_route_go_router` - `v0.0.2`](#core_management_route_go_router---v002)
+
+---
+
+#### `auth_management_database_hive_ce` - `v0.0.3`
+
+ - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
+
+#### `auth_management_database_hive_ce_example` - `v1.2.0`
+
+ - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
+
+#### `auth_management_database_isar_community` - `v0.0.4`
+
+ - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
+
+#### `auth_management_database_isar_community_example` - `v1.3.0`
+
+ - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
+
+#### `butterfly_cli` - `v0.0.12`
+
+ - **FEAT**: display generated model path.
+
+#### `core_management` - `v0.0.4`
+
+ - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
+ - **FEAT**(core): Introduce TaskQueueMixin for safe UI updates.
+
+#### `core_management_route_go_router` - `v0.0.2`
+
+ - **FEAT**(core_management_route_go_router): Introduce GoRouterService for route management.
+
+
+## 2025-04-14
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`auth_management_database_hive_ce` - `v0.0.2`](#auth_management_database_hive_ce---v002)
+ - [`auth_management_database_hive_ce_example` - `v1.1.0`](#auth_management_database_hive_ce_example---v110)
+ - [`auth_management_database_isar_community` - `v0.0.3`](#auth_management_database_isar_community---v003)
+ - [`auth_management_database_isar_community_example` - `v1.2.0`](#auth_management_database_isar_community_example---v120)
+ - [`butterfly_cli` - `v0.0.11`](#butterfly_cli---v0011)
+
+---
+
+#### `auth_management_database_hive_ce` - `v0.0.2`
+
+ - **FEAT**(docs): add features page to documentation.
+
+#### `auth_management_database_hive_ce_example` - `v1.1.0`
+
+ - **FEAT**(docs): add features page to documentation.
+
+#### `auth_management_database_isar_community` - `v0.0.3`
+
+ - **FEAT**(docs): add features page to documentation.
+
+#### `auth_management_database_isar_community_example` - `v1.2.0`
+
+ - **FEAT**(docs): add features page to documentation.
+ - **FEAT**(riverpod): add auth management provider riverpod.
+ - **DOCS**: add.
+ - **DOCS**: make example for isar repo.
+
+#### `butterfly_cli` - `v0.0.11`
+
+ - **FEAT**: redirect stdout and stderr from pub commands to the console.
+
+
+## 2025-02-17
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`auth_management` - `v0.0.3`](#auth_management---v003)
+ - [`auth_management_provider_riverpod` - `v0.0.2+1`](#auth_management_provider_riverpod---v0021)
+ - [`example` - `v1.1.1`](#example---v111)
+ - [`auth_management_database_isar_community` - `v0.0.2+1`](#auth_management_database_isar_community---v0021)
+ - [`auth_management_firebase` - `v0.0.2+1`](#auth_management_firebase---v0021)
+ - [`auth_management_firebase_google` - `v0.0.2+1`](#auth_management_firebase_google---v0021)
+
+Packages with dependency updates only:
+
+> Packages listed below depend on other packages in this workspace that have had changes. Their versions have been incremented to bump the minimum dependency versions of the packages they depend upon in this project.
+
+ - `auth_management_provider_riverpod` - `v0.0.2+1`
+ - `example` - `v1.1.1`
+ - `auth_management_database_isar_community` - `v0.0.2+1`
+ - `auth_management_firebase` - `v0.0.2+1`
+ - `auth_management_firebase_google` - `v0.0.2+1`
+
+---
+
+#### `auth_management` - `v0.0.3`
+
+ - **FEAT**: add gen_version command to melos.
+
+
+## 2025-02-17
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`core_management` - `v0.0.3`](#core_management---v003)
+
+---
+
+#### `core_management` - `v0.0.3`
+
+ - **FEAT**: export core and theme services.
+
+
+## 2025-02-16
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`butterfly_cli` - `v0.0.10`](#butterfly_cli---v0010)
+
+---
+
+#### `butterfly_cli` - `v0.0.10`
+
+ - **FEAT**: refactor service generation and update core service.
+
+
+## 2025-02-16
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`butterfly_cli` - `v0.0.9+1`](#butterfly_cli---v0091)
+
+---
+
+#### `butterfly_cli` - `v0.0.9+1`
+
+ - **REFACTOR**: rename framework service to core service.
+
+
+## 2025-02-16
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`butterfly_cli` - `v0.0.9`](#butterfly_cli---v009)
+ - [`core_management` - `v0.0.2`](#core_management---v002)
+
+---
+
+#### `butterfly_cli` - `v0.0.9`
+
+ - **FEAT**: add dependency management and core service.
+
+#### `core_management` - `v0.0.2`
+
+ - **FEAT**: add dependency management and core service.
+
+
+## 2025-02-15
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`butterfly_cli` - `v0.0.8+4`](#butterfly_cli---v0084)
+
+---
+
+#### `butterfly_cli` - `v0.0.8+4`
+
+ - **REFACTOR**: move services and generated files to lib folder.
+ - **REFACTOR**: ensure lib folder when creating files.
+ - **FIX**: await some process.
+
+
+## 2025-02-15
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`butterfly_cli` - `v0.0.8+3`](#butterfly_cli---v0083)
+
+---
+
+#### `butterfly_cli` - `v0.0.8+3`
+
+ - **FIX**: change mason target branch.
+
+
+## 2025-02-15
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`butterfly_cli` - `v0.0.8+2`](#butterfly_cli---v0082)
+
+---
+
+#### `butterfly_cli` - `v0.0.8+2`
+
+ - **FIX**: change go router mason file path.
+
+
+## 2025-02-15
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`butterfly_cli` - `v0.0.8+1`](#butterfly_cli---v0081)
+
+---
+
+#### `butterfly_cli` - `v0.0.8+1`
+
+ - **FIX**: add dev mode flag to butterfly CLI.
+
+
+## 2025-02-15
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`butterfly_cli` - `v0.0.8`](#butterfly_cli---v008)
+
+---
+
+#### `butterfly_cli` - `v0.0.8`
+
+ - **FEAT**: update dev mode flag to use uppercase 'D'.
+
+
+## 2025-02-15
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`butterfly_cli` - `v0.0.7`](#butterfly_cli---v007)
+
+---
+
+#### `butterfly_cli` - `v0.0.7`
+
+ - **FEAT**: add dev mode flag to butterfly CLI.
+
+
+## 2025-02-15
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`butterfly_cli` - `v0.0.6`](#butterfly_cli---v006)
+
+---
+
+#### `butterfly_cli` - `v0.0.6`
+
+ - **FEAT**: add version command.
+
+
+## 2025-02-15
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`butterfly_cli` - `v0.0.5`](#butterfly_cli---v005)
+
+---
+
+#### `butterfly_cli` - `v0.0.5`
+
+ - **REFACTOR**: remove non-null assertion for pubspec version.
+ - **FEAT**: add butterfly dependency and router type to project config.
+
+
+## 2025-01-10
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`butterfly_cli` - `v0.0.4+1`](#butterfly_cli---v0041)
+
+---
+
+#### `butterfly_cli` - `v0.0.4+1`
+
+ - **FIX**: bump.
+
+
+## 2025-01-10
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`butterfly_cli` - `v0.0.4`](#butterfly_cli---v004)
+
+---
+
+#### `butterfly_cli` - `v0.0.4`
+
+ - **FEAT**(Model Generator): Add support for imutable model.
+
+
+## 2025-01-06
+
+### Changes
+
+---
+
+Packages with breaking changes:
+
+ - There are no breaking changes in this release.
+
+Packages with other changes:
+
+ - [`auth_management` - `v0.0.2`](#auth_management---v002)
+ - [`auth_management_database_isar_community` - `v0.0.2`](#auth_management_database_isar_community---v002)
+ - [`auth_management_firebase` - `v0.0.2`](#auth_management_firebase---v002)
+ - [`auth_management_firebase_google` - `v0.0.2`](#auth_management_firebase_google---v002)
+ - [`auth_management_provider_riverpod` - `v0.0.2`](#auth_management_provider_riverpod---v002)
+ - [`butterfly_cli` - `v0.0.3`](#butterfly_cli---v003)
+ - [`example` - `v1.1.0`](#example---v110)
+
+---
+
+#### `auth_management` - `v0.0.2`
+
+ - **FEAT**(riverpod): add auth management provider riverpod.
+ - **FEAT**: add repo class for manageging auth management via provider and non provider like firebase.
+ - **FEAT**: add version.
+
+#### `auth_management_database_isar_community` - `v0.0.2`
+
+ - **FEAT**(riverpod): add auth management provider riverpod.
+ - **DOCS**: add.
+ - **DOCS**: make example for isar repo.
+
+#### `auth_management_firebase` - `v0.0.2`
+
+ - **FEAT**(riverpod): add auth management provider riverpod.
+ - **FEAT**: add sign in with google mixin for native and web.
+ - **FEAT**: add sign in with google mixin for native and web.
+
+#### `auth_management_firebase_google` - `v0.0.2`
+
+ - **FEAT**: add sign in with google mixin for native and web.
+ - **FEAT**: add sign in with google mixin for native and web.
+
+#### `auth_management_provider_riverpod` - `v0.0.2`
+
+ - **FEAT**(riverpod): add auth management provider riverpod.
+
+#### `butterfly_cli` - `v0.0.3`
+
+ - **FEAT**: add.
+ - **FEAT**: make.
+ - **FEAT**(riverpod): add auth management provider riverpod.
+ - **DOCS**: add.
+ - **DOCS**: wip.
+ - **DOCS**: wip.
+
+#### `example` - `v1.1.0`
+
+ - **FEAT**(riverpod): add auth management provider riverpod.
+ - **DOCS**: add.
+ - **DOCS**: make example for isar repo.
+
+
 ## 2024-10-26
 
 ### Changes

@@ -1,0 +1,53 @@
+{
+  "name": "Butterfly",
+  "description": "My documentation site",
+  "sidebar": [
+    {
+      "group": "Getting Started",
+      "pages": [
+        {
+          "title": "Getting to know Butterfly",
+          "href": "/",
+          "icon": "rocket"
+        },
+        {
+          "title": "Installation",
+          "href": "/installation",
+          "icon": "arrow-right"
+        },
+        {
+          "title": "Features",
+          "href": "/features",
+          "icon": "fa-solid fa-star"
+        }
+      ]
+    },
+    {
+      "group": "Libraries",
+      "pages": [
+        {
+          "group": "Core",
+          "pages": [
+            {
+              "title": "Introduction",
+              "href": "/libraries/core"
+            },
+            {
+              "title": "Route Service",
+              "href": "/libraries/core/features/route_service"
+            }
+          ]
+        },
+        {
+          "group": "Auth",
+          "pages": [
+            {
+              "title": "Introduction",
+              "href": "/libraries/auth"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

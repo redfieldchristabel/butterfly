@@ -59,13 +59,13 @@ class AuthManagementIsarRepository<T extends BaseUser>
     return user as T?;
   }
 
+  @override
   Stream<T?> streamUser() async* {
     final stream = collection.where().build().watch();
     await for (final event in stream) {
       final user = event.firstOrNull;
 
       if (user != null) {
-        print(user);
         yield user as T;
       } else {
         yield null;

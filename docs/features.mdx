@@ -1,0 +1,121 @@
+---
+title: Features
+description: Explore what Butterfly can do for you
+---
+
+## Features Overview
+
+Butterfly comes packed with a set of tools to help you write clean, structured, and beautiful
+Flutter code — without the heavy cost of boilerplate.
+
+At its core, Butterfly gives you **two powerful tools** for writing beautiful, boilerplate-free code
+
+
+#### 🛠️ 1. CLI-Based (Generator)
+
+The CLI tool helps you scaffold essential parts of your app effortlessly. One of the key features is
+the **model generator**, which saves you from writing repetitive JSON serialization code. It uses
+the popular [json_serializable](https://pub.dev/packages/json_serializable) package under the hood, so your models are fully compatible with the
+wider Dart ecosystem — but without the hassle of manual annotations.
+
+You just define your fields, and Butterfly takes care of the rest.
+
+
+
+#### 📦 2. Library-Based (Helpers)
+
+In addition to the CLI, Butterfly also includes a range of **helper libraries** designed to simplify
+common Flutter patterns. For example, features like `enqueue()` abstract away repetitive Flutter
+scheduling tasks like `WidgetsBinding.instance.addPostFrameCallback()`, making your code cleaner and
+easier to reason about.
+
+Modules like `CoreService`, `AuthService`, and `ThemeService` are all designed with this idea:
+**cut boilerplate, keep clarity**.
+
+
+Whether you're bootstrapping models or just looking for utility helpers that play well with your
+existing codebase, Butterfly's got your back.
+
+## 🛠️ CLI Features
+
+Butterfly's CLI tool offers powerful generators to streamline your Flutter development process.
+These tools can be used independently of the Butterfly core library, providing flexibility for
+various project setups.
+
+### 📄 Model Generation
+
+Generate Dart models effortlessly using the
+[json_serializable](https://pub.dev/packages/json_serializable) package, a widely adopted library
+maintained by Google. This approach minimizes boilerplate code and ensures compatibility with the
+broader Dart ecosystem.
+
+<Info>We understand this approach may feel like vendor lock-in since we depend on specific libraries
+like `json_serializable` and `built_value`. However, both are developed and maintained by Google,
+and we trust their long-term stability. While there's little alternative to `json_serializable`, for
+immutables, `freezed` is a solid option — though simpler than `built_value`. For now, we believe
+`built_value` covers more edge cases and flexibility, and you can always implement `freezed`
+manually if preferred as it simple enough.</Info>
+
+**Basic Command:**
+```sh
+butterfly generate model <ModelName>
+```
+**Alias:**
+- generate -> gen -> g
+- model -> m
+
+**Example:**
+```sh
+butterfly g m Booking
+butterfly gen model UserProfile
+```
+**Options:**
+- `-p`:  Specify a subdirectory within the models folder. Example: `-p booking` places the model in
+models/booking/.
+- `-i`: Generate an immutable model using the [built_value](https://pub.dev/packages/built_value)
+package.
+
+<Info>Note: All generated folders follow `snake_case` naming conventions, and class names follow
+`CamelCase`, adhering to Dart best practices.</Info>
+
+### 🔢 Version File Generation
+
+Generate a `version.dart` file at the root of your project, containing constants derived from your
+`pubspec.yaml`, such as the app version. This is useful for displaying version information within
+your application.
+
+**Command:**
+```sh
+butterfly generate version
+```
+<Info>Note: For more comprehensive app metadata, consider using the
+[package_info_plus](https://pub.dev/packages/network_info_plus) package.</Info>
+
+### 📝 Conventional Commit Messages
+
+Butterfly simplifies your commit process by providing a command that helps you craft messages
+adhering to the [Conventional Commits](https://www.conventionalcommits.org/) specification. This
+promotes a consistent and meaningful commit history, facilitating better collaboration and
+automation.
+
+**Command:**
+```sh
+butterfly commit
+```
+**Alias:**
+- commit -> c
+
+When you run this command, Butterfly will prompt you to enter details for your commit message,
+ensuring it follows the Conventional Commits format.
+
+## 📚 Library Features
+
+Butterfly isn't just about CLI tools—it also offers a suite of library packages designed to streamline your Flutter development. Each library focuses on reducing boilerplate and enhancing code clarity.
+
+Explore the features provided by each library:
+
+- [Core Library Features](/libraries/core)
+- [Auth Library Features](/libraries/auth)
+- [Theme Library Features](/docs/libraries/theme)
+- [Routing Library Features](/docs/libraries/routing)
+- [Service Library Features](/docs/libraries/service)

@@ -9,7 +9,7 @@ import 'package:isar/isar.dart';
 part 'main.g.dart';
 
 final isarRepo = AuthManagementIsarRepository<MyUser>();
-final authManagement = AuthService(dbRepo: isarRepo);
+final authManagement = AuthService();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -78,29 +78,17 @@ class MyUser extends BaseUser {
   MyUser({required super.id});
 }
 
-abstract class MockAuthManagement<T> extends AuthServiceRepository<T> {
-  MockAuthManagement({required super.dbRepo});
-
+class AuthService extends AuthServiceRepository<MyUser> {
   void signIn() {
-    dbRepo.addUser(MyUser(id: 1) as T);
+    dbRepo.addUser(MyUser(id: 1));
   }
 
   @override
-  FutureOr<T?> getUser() {
-    return dbRepo.getUser();
-  }
+  AuthManagementDatabaseRepository<MyUser> get dbRepo => isarRepo;
 
   @override
-  FutureOr<void> signOut() {
-    dbRepo.clearUser();
+  FutureOr<MyUser> fetchUser() {
+    // actual api call
+    return MyUser(id: 1);
   }
-
-  @override
-  Stream<T?> streamUser() {
-    return dbRepo.streamUser();
-  }
-}
-
-class AuthService extends MockAuthManagement<MyUser> {
-  AuthService({required super.dbRepo});
 }

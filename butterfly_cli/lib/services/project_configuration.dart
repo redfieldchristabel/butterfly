@@ -5,7 +5,6 @@ import 'package:butterfly_cli/models/project_configuration.dart';
 import 'package:butterfly_cli/readable_exception.dart';
 import 'package:butterfly_cli/services/framework.dart';
 import 'package:checked_yaml/checked_yaml.dart';
-import 'package:yaml_edit/yaml_edit.dart';
 
 class ProjectConfigurationService with ButterflyLogger {
   ProjectConfiguration? _configuration;
@@ -46,7 +45,7 @@ class ProjectConfigurationService with ButterflyLogger {
     return _configuration!;
   }
 
-  Future<void> create([ProjectConfiguration? defaultValue]) async {
+  ProjectConfiguration create([ProjectConfiguration? defaultValue]) {
     frameworkService.ensureRootDirectory();
 
     info('Butterfly Core help you handle Flutter project easily\n'
@@ -70,35 +69,24 @@ class ProjectConfigurationService with ButterflyLogger {
     final useRouter = logger.confirm(
         'Do your project need to use router system',
         defaultValue: defaultValue?.useRouter ?? true);
+    RouterType? routerType;
+
+    if (useRouter) {
+      routerType = logger.chooseOne<RouterType>('Choose your router type',
+          choices: RouterType.values,
+          defaultValue: defaultValue?.routerType ?? RouterType.goRouter);
+    }
 
     final ProjectConfiguration configuration = ProjectConfiguration(
-      version: '0.1.0',
-      useAuth: useAuth,
-      useCore: useCore,
-      useRouter: useRouter,
-      userModelName: userModelName,
-    );
+        useAuth: useAuth,
+        useCore: useCore,
+        useRouter: useRouter,
+        userModelName: userModelName,
+        routerType: routerType);
 
     _configuration = configuration;
 
-    final editor = YamlEditor('');
-    detail('Compile project configuration to yaml');
-    editor.update([], configuration.toJson());
-    detail('check if project configuration is exist');
-
-    if (exists()) {
-      final backupFile = File('.butterfly_project.yaml.bak');
-      detail(
-          'make a backup for last config to ${Uri.file(backupFile.absolute.path)}');
-      backupFile.writeAsStringSync(_file.readAsStringSync());
-      detail('delete previous config file');
-      _file.deleteSync();
-    }
-
-    detail('Writing project configuration to ${_file.path}');
-    _file.writeAsStringSync(editor.toString());
-    info('Write project configuration to butterfly_project.yaml\n'
-        'You can find it at ${Uri.file(_file.absolute.path)}');
+    return configuration;
   }
 
   String _askUserModel(String? defaultValue) {

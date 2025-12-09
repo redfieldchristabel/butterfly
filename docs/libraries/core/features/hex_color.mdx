@@ -1,0 +1,155 @@
+---
+title: HexColor Extension
+description: Convert between Color objects and hex string representations
+---
+
+## HexColor Extension
+
+The `HexColor` extension provides convenient methods for working with colors in hex format in Flutter. It extends the `Color` class with static methods for creating colors from hex strings and instance methods for converting colors to hex strings.
+
+## Features
+
+- Convert hex strings to `Color` objects with `HexColor.fromHex()`
+- Convert `Color` objects to hex strings with `color.toHex()`
+- Support for both 6-digit and 8-digit (with alpha) hex formats
+- Optional hash prefix and alpha channel in output
+
+## Installation
+
+This extension is part of the `core_management` package. Make sure it's imported in your Dart file:
+
+```dart
+import 'package:core_management/core_management.dart';
+```
+
+## Usage
+
+### Creating a Color from Hex String
+
+Convert a hex string to a `Color` object:
+
+```dart
+// With hash prefix
+final color1 = HexColor.fromHex('#42A5F5');
+
+// Without hash prefix
+final color2 = HexColor.fromHex('42A5F5');
+
+// With alpha channel (opacity)
+final color3 = HexColor.fromHex('#8042A5F5'); // 50% opacity blue
+```
+
+### Converting a Color to Hex String
+
+Convert a `Color` object to a hex string:
+
+```dart
+final color = Colors.blue;
+
+// Default: with hash and alpha
+final hex1 = color.toHex(); // "#4285F4FF"
+
+// Without hash
+final hex2 = color.toHex(leadingHashSign: false); // "4285F4FF"
+
+// Without alpha channel
+final hex3 = color.toHex(withOpacityFormat: false); // "#4285F4"
+```
+
+## API Reference
+
+### Static Methods
+
+#### `HexColor.fromHex(String hexString) → Color`
+
+Creates a `Color` instance from a hex string.
+
+**Parameters:**
+- `hexString`: A string representing the color in hex format (e.g., "#42A5F5" or "42A5F5")
+
+**Returns:** A `Color` instance
+
+**Throws:**
+- `FormatException` if the input string is not a valid hex color
+
+### Instance Methods
+
+#### `toHex({bool leadingHashSign = true, bool withOpacityFormat = true}) → String`
+
+Converts the color to a hex string representation.
+
+**Parameters:**
+- `leadingHashSign`: Whether to include a leading "#" character (default: `true`)
+- `withOpacityFormat`: Whether to include the alpha channel (default: `true`)
+
+**Returns:** A hex string representation of the color
+
+## Examples
+
+### Basic Usage
+
+```dart
+// Import the extension
+import 'package:core_management/core_management.dart';
+
+class MyWidget extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    // Create color from hex
+    final backgroundColor = HexColor.fromHex('#42A5F5');
+    
+    // Convert color to hex
+    final textColor = Colors.white;
+    final textHex = textColor.toHex();
+    
+    return Container(
+      color: backgroundColor,
+      child: Text(
+        'This text is $textHex color',
+        style: TextStyle(color: textColor),
+      ),
+    );
+  }
+}
+```
+
+### Theming with Hex Colors
+
+```dart
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+        scaffoldBackgroundColor: HexColor.fromHex('#F5F5F5'),
+        textTheme: TextTheme(
+          headline4: TextStyle(
+            color: HexColor.fromHex('#333333'),
+          ),
+        ),
+      ),
+      home: MyHomePage(),
+    );
+  }
+}
+```
+
+## Best Practices
+
+1. **Consistent Formatting**: Choose one hex format (with or without #) and stick with it throughout your codebase.
+2. **Error Handling**: Always handle potential `FormatException` when parsing user input.
+3. **Constants**: For frequently used colors, define them as constants.
+
+```dart
+class AppColors {
+  static final primary = HexColor.fromHex('#42A5F5');
+  static final secondary = HexColor.fromHex('#FF7043');
+  static final background = HexColor.fromHex('#F5F5F5');
+}
+```
+
+## Related Topics
+
+- [Flutter Colors Documentation](https://api.flutter.dev/flutter/material/Colors-class.html)
+- [Material Design Color System](https://material.io/design/color/)

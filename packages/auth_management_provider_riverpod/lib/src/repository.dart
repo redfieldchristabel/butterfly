@@ -2,13 +2,17 @@ import 'dart:async';
 
 import 'package:auth_management/auth_management_provider.dart';
 import 'package:auth_management_provider_riverpod/src/user.dart';
-import 'package:riverpod/riverpod.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class AuthManagementIsarRepository<T extends RiverpodUser>
-    implements AuthServiceProviderRepository<T> {
-  late final Ref ref;
+class AuthManagementRiverpodRepository<T extends RiverpodUser>
+    extends AuthServiceProviderRepository<T> {
+  late final WidgetRef ref;
 
-  void initialize(Ref ref) {
+  void initialize(WidgetRef ref) {
+    if (initialized) {
+      return;
+    }
+    initialized = true;
     this.ref = ref;
   }
 

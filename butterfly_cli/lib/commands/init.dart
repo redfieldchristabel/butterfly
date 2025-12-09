@@ -3,7 +3,9 @@ import 'dart:io';
 import 'package:args/command_runner.dart';
 import 'package:butterfly_cli/extensions/command_helper.dart';
 import 'package:butterfly_cli/models/project_configuration.dart';
+import 'package:butterfly_cli/services/framework.dart';
 import 'package:butterfly_cli/services/project_configuration.dart';
+import 'package:butterfly_cli/services/pubspec.dart';
 
 class InitCommand extends Command with ButterflyLogger {
   @override
@@ -11,52 +13,63 @@ class InitCommand extends Command with ButterflyLogger {
       'Initializes a Flutter project for butterfly pattern.';
 
   @override
+  bool get takesArguments => false;
+
+  @override
   String get name => 'init';
 
   @override
-  void run() {
+  Future<void> run() async {
     ensureRoot();
 
-    ProjectConfiguration? defaultValue;
+    final config = projectConfigurationService.create();
 
-    if (projectConfigurationService.exists()) {
-      projectConfigurationService.ensureValid();
+    info("Creating project Structure");
 
-      logger.warn('You seem to have an existing project configuration');
-      final ConfigExistAction action = logger.chooseOne<ConfigExistAction>(
-          'What do you want to do',
-          choices: ConfigExistAction.values,
-          defaultValue: ConfigExistAction.skip,
-          display: (choice) => '${choice.name}, $description');
+    // frameworkService.changeWorkingDirectory('lib');
+    frameworkService.ensureLibFolder();
 
-      switch (action) {
-        case ConfigExistAction.skip:
-          info('Skipping initialization, exiting...');
-          exit(0);
-        case ConfigExistAction.overwrite:
-          defaultValue = projectConfigurationService.configuration;
-          detail('Use default value for new initialization');
-          break;
-        case ConfigExistAction.replace:
-          defaultValue = null;
-          break;
-      }
+    detail("Check if models directory exist");
+
+    _checkAndCreateDirectory('models');
+    _checkAndCreateDirectory('services');
+    _checkAndCreateDirectory('screens');
+    _checkAndCreateDirectory('widgets');
+
+    info('Project structure created successfully');
+
+    info('Creating initial files');
+
+    if (config.useCore) {
+      // TODO: import code library
+      pubspecService.addButterflyDependency("core_management");
+      await frameworkService.createCoreService();
+      await frameworkService.createThemeService();
     }
 
-    projectConfigurationService.create(defaultValue);
+    if (config.useAuth) {
+      pubspecService.addButterflyDependency("auth_management");
+      await frameworkService.createAuthService();
+    }
 
-    // TODO: add butterfly core to pubspec yaml.
+    // TODO: create even for other type
+    if (config.useRouter && config.routerType != RouterType.other) {
+      await pubspecService.addDependency('go_router');
+      await pubspecService.addDependency('build_runner', dev: true);
+      await pubspecService.addDependency('go_router_builder', dev: true);
+
+
+      await frameworkService.createRouteFile(config.routerType!);
+    }
+
+    info('Initial files created successfully');
   }
-}
 
-enum ConfigExistAction {
-  skip('Do noting and exit'),
-  overwrite('Overwrite existing project configuration,'
-      ' use as default value for new initialization'),
-  replace('Replace existing project configuration and reinitialize'),
-  ;
-
-  const ConfigExistAction(this.description);
-
-  final String description;
+  void _checkAndCreateDirectory(final String dirName) {
+    final dir = Directory(dirName);
+    if (!dir.existsSync()) {
+      info("Directory not exist, creating");
+      dir.createSync();
+    }
+  }
 }

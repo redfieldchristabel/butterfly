@@ -1,0 +1,122 @@
+---
+title: Welcome to Butterfly!
+description: Get started with Butterlfy Code Optimizer
+---
+
+### What is Butterfly?
+
+**Butterfly** is a tool that helps you structure your code to be as beautiful and elegant as its
+name suggests.
+It’s not a framework — just a lightweight collection of packages designed to reduce boilerplate and
+make your Flutter development smoother.
+
+Rest assured, Butterfly is completely optional and non-intrusive. We've built it with
+[removability](#removable-library) in mind from day one. Most of our helper documentation includes a
+detailed explanation of what happens behind the scenes, along with side-by-side tabs showing how to
+achieve the same result using native Flutter code — without Butterfly.
+
+So, if you ever decide to remove it from your project, you'll know exactly how to do it. But of
+course, we hope this project continues to grow with your support — let’s not say goodbye too soon.
+
+
+### Initialization
+
+For us taste a little bit of Butterfly feature, we need to initialize it in our project first. So here 
+the first backstage we talking about earlier, the command
+```bash
+butterfly init
+```
+literally this command just add some folder [models, screens, widgets, services] to your flutter
+root project. then we also will ask if your project need to use authentication, mean like did your
+project need a user or not. then if yes we will create the model, we also ask for the model name.
+Then we also ask this project need to use router mechanism or not. most of big project use this,
+for the Beautiful codebase, this feature is must have. It will make you easier in the feature, trust
+us on this. Btw, we also add a route.dart file if you use router feature. Then we also add some
+services for you to take a look and start with. If you chose yes for router and auth, ypu will get
+"AuthService" and "AuthRouteService" services. Then last but not lease, we have "CoreService" that
+normally the core of all. it will be use to bind all services from Butterfly so you just need to
+initialize one service and the core will take care for others. And Again, all of this service
+can be use without Butterfly at all and a little bit copy paste just all you need to option out
+from this tool.
+
+
+### Why Butterfly?
+
+Butterfly was created to solve real problems we faced in our internal projects. We noticed that each
+new Flutter project involved repeating the same boilerplate code over and over again. So we built a
+tool to help streamline that process.
+
+The first version started as a simple script to reduce this repetition. But as projects grew,
+maintaining and updating those scripts became another form of boilerplate. That’s when we decided to
+turn it into a package-based tool — so you only need to update it once, and it works across your
+codebase.
+
+As we expanded, Butterfly began handling common patterns like authorization logic. Initially, all
+logic (core and auth) lived in the same package, but we realized not every app needs authentication
+— so we split it out to keep things flexible.
+
+Butterfly is now a lightweight ecosystem to help you start building beautiful, maintainable apps
+faster. Earlier versions locked developers into using specific libraries
+(like a default local database), but we've learned from that. The current Butterfly gives you more
+freedom to choose the tech you prefer.
+
+
+<Info>In the early days, only the CLI tool was called "Butterfly CLI." But now, the entire ecosystem
+shares the name: **Butterfly**.</Info>
+
+#### Why the name "Butterfly"?
+
+The name **Butterfly** was inspired by its natural beauty and its connection to Flutter. Just like a
+butterfly flutters gracefully, we want your Flutter app to be elegant and smooth. The word
+“Butterfly” also shares a similar sound with “Flutter,” making it feel right at home. And since
+butterflies are often associated with beauty and transformation, we hope Butterfly helps your
+codebase evolve into something just as beautiful.
+
+
+### Removable Library?
+
+Butterfly is **not** a framework — it's a lightweight tool designed with removability in mind.
+We understand that developers are often cautious about adopting new tools, especially those that
+might be discontinued in the future. That’s why we built Butterfly to be easy to remove from your
+codebase at any time, without hassle.
+
+Our documentation clearly shows how to implement each feature using **Flutter's native approach**,
+without relying on Butterfly. Most of our helper guides come with two tabs: one showing how to do it
+with Butterfly, and the other showing how to do it manually. This ensures you're never locked in —
+you can adopt Butterfly with confidence and remove it whenever you need.
+
+### Project Structure Philosophy
+
+Butterfly doesn’t follow the typical **Clean Architecture** approach. Instead, it uses a simpler,
+more intuitive structure that feels natural for most Flutter projects — with top-level folders like
+`models`, `services`, `screens`, and `widgets` sitting right at the root of your project.
+
+We understand that Clean Architecture aims to group related files by feature to make it easier to
+navigate and manage — and that totally makes sense in theory. But in practice, especially with
+modern IDEs and tools, it’s no longer a must.
+
+Thanks to features like **Ctrl+Click**, **Go to Definition**, and **Find All References**,
+developers can easily jump between classes, services, and widgets without having to manually dig
+through nested folders. So instead of over-complicating the project structure, Butterfly keeps
+things simple and avoids unnecessary indirection.
+
+Even large, mature frameworks like **Laravel** don’t strictly follow Clean Architecture. Open a
+fresh Laravel project and you’ll see it leans more toward organizing by type (models, controllers,
+services) than by feature.
+
+We believe this structure:
+
+- Keeps your codebase clean and easy to follow
+- Avoids premature optimization
+- Feels more natural for everyday development
+- Prevents the headache of deciding where to place shared services or utilities
+
+At the end of the day, it’s not about following trends — it’s about making your development
+experience smoother and your codebase more maintainable.
+
+However, if you prefer the Clean Architecture style, you might consider using the
+[Stacked](https://pub.dev/packages/stacked) package. Stacked is a Flutter framework designed for
+building production applications with testable, scalable, and maintainable code. It provides a
+complete frontend architecture and includes a CLI to generate views, services, and more, adhering to
+the Clean Architecture principles. You can learn more about Stacked in their
+[official documentation](https://stacked.filledstacks.com/docs/getting-started/overview/).

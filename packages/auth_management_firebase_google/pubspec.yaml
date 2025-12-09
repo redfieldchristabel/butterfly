@@ -1,6 +1,6 @@
 name: auth_management_firebase_google
 description: "A library to help with sign in with google for auth management that use firebase repository"
-version: 0.0.1
+version: 0.0.2+4
 homepage:
 
 environment:

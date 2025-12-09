@@ -1,6 +1,6 @@
 name: auth_management_provider_riverpod
 description: "A Dipendency Injection library to support Riverpod for Butterfly Auth Management"
-version: 0.0.1
+version: 0.0.4+2
 homepage:
 
 environment:
@@ -11,7 +11,10 @@ dependencies:
   flutter:
     sdk: flutter
   auth_management:
-  riverpod: ^2.6.1
+    git:
+      url: git@github.com:redfieldchristabel/butterfly.git
+      ref: develop
+      path: packages/auth_management
   flutter_riverpod: ^2.6.1
   riverpod_annotation: ^2.6.1
 

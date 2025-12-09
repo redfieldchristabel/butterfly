@@ -1,0 +1,33 @@
+---
+title: Core Library
+description: Explore the core library of Butterfly
+---
+
+## Introduction
+
+The Core Library provides foundational tools and helpers designed to maintain a beautiful and
+well-structured Flutter codebase. It operates independently from user-specific logic, making it safe
+to use even without the Auth Library.
+
+One of the central pieces in this library is the `CoreService` class. Originally called
+`FrameworkService`, it was renamed to avoid naming collisions with Flutter's internal APIs.
+
+In Butterfly, services that should be extended in your project are typically prefixed with `Base`.
+In this case, the actual base class is called `BaseCoreService`. When you run `butterfly init`, a
+file named `core.dart` is generated inside the `services` folder. It defines your project-specific
+`CoreService` class that extends `BaseCoreService`.
+
+This `CoreService` acts as the bridge to features provided by the Core Library, including:
+
+- Global error handling
+- Theme switching support
+- Full-screen loading UI
+
+> **Can you skip using `CoreService`?**
+> Technically yes — but you'd miss out on those features. We strongly recommend keeping it in place.
+
+## Features
+- [🔁 `enqueue` Helper](libraries/core/features/enqueue)
+- [Hex color Extension](libraries/core/features/hex_color)
+- [Screen Layout Extension](libraries/core/features/screen_layout)
+- [RouteService Mixin](libraries/core/features/route_service)

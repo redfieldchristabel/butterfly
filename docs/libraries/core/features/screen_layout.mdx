@@ -1,0 +1,159 @@
+---
+title: ScreenLayout Extension
+description: Responsive layout utilities for Flutter applications
+---
+
+## ScreenLayout Extension
+
+The `ScreenLayoutExtension` provides convenient methods for creating responsive layouts in Flutter applications. It extends the `BuildContext` class with properties and methods to easily adapt your UI to different screen sizes and orientations.
+
+## Features
+
+- Get screen dimensions and orientation
+- Check device type (mobile, tablet, desktop)
+- Responsive layout utilities
+- Theme data access
+
+## Installation
+
+This extension is part of the `core_management` package. Make sure it's imported in your Dart file:
+
+```dart
+import 'package:core_management/core_management.dart';
+```
+
+## Usage
+
+### Screen Size and Dimensions
+
+Get the screen size and dimensions:
+
+```dart
+// Get the screen size
+final size = context.screenSize;
+final width = size.width;
+final height = size.height;
+
+// Get the shortest side (useful for responsive design)
+final shortest = context.shortestSide;
+```
+
+### Responsive Layout
+
+Check the device type and adjust your layout accordingly:
+
+```dart
+@override
+Widget build(BuildContext context) {
+  // Check if the device is a mobile
+  if (context.mobileLayout) {
+    return _buildMobileLayout();
+  }
+  return _buildDesktopLayout();
+}
+```
+
+### Theme Access
+
+Quickly access the current theme:
+
+```dart
+// Get the current theme
+themeData = context.themeData;
+
+// Use theme colors
+final primaryColor = context.themeData.primaryColor;
+final textTheme = context.themeData.textTheme;
+```
+
+## API Reference
+
+### Properties
+
+#### `screenSize: Size`
+
+Returns the size of the current screen.
+
+#### `shortestSide: double`
+
+Returns the length of the shortest side of the screen.
+
+#### `mobileLayout: bool`
+
+Returns `true` if the shortest side is less than 600 logical pixels (typically mobile devices).
+
+#### `themeData: ThemeData`
+
+Returns the current theme data.
+
+## Examples
+
+### Responsive Layout Example
+
+```dart
+class ResponsiveLayout extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: context.mobileLayout 
+          ? _buildMobileLayout() 
+          : _buildDesktopLayout(),
+    );
+  }
+
+  Widget _buildMobileLayout() {
+    return Column(
+      children: [
+        _buildHeader(),
+        Expanded(child: _buildContent()),
+        _buildFooter(),
+      ],
+    );
+  }
+
+  Widget _buildDesktopLayout() {
+    return Row(
+      children: [
+        _buildSidebar(),
+        Expanded(
+          child: Column(
+            children: [
+              _buildHeader(),
+              Expanded(child: _buildContent()),
+              _buildFooter(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+```
+
+### Responsive Padding
+
+```dart
+class ResponsivePadding extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final padding = context.mobileLayout ? 8.0 : 16.0;
+    
+    return Padding(
+      padding: EdgeInsets.all(padding),
+      child: Text('Responsive padding'),
+    );
+  }
+}
+```
+
+## Best Practices
+
+1. **Mobile-First Approach**: Design for mobile first, then enhance for larger screens.
+2. **Use Breakpoints**: Use `shortestSide` for responsive breakpoints.
+3. **Test on Multiple Devices**: Always test your responsive layouts on different screen sizes.
+4. **Use Theme**: Leverage the `themeData` getter to maintain consistent styling.
+
+## Related Topics
+
+- [Flutter Layouts](https://flutter.dev/docs/development/ui/layout)
+- [Responsive Design in Flutter](https://flutter.dev/docs/development/ui/layout/responsive)
