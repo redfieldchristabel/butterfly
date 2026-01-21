@@ -10,11 +10,11 @@ part of 'user.dart';
 // ignore_for_file: type=lint, type=warning
 
 @ProviderFor(RiverpodUserState)
-final riverpodUserStateProvider = RiverpodUserStateProvider._();
+const riverpodUserStateProvider = RiverpodUserStateProvider._();
 
 final class RiverpodUserStateProvider
     extends $NotifierProvider<RiverpodUserState, RiverpodUser?> {
-  RiverpodUserStateProvider._()
+  const RiverpodUserStateProvider._()
       : super(
           from: null,
           argument: null,
@@ -48,12 +48,13 @@ abstract class _$RiverpodUserState extends $Notifier<RiverpodUser?> {
   @$mustCallSuper
   @override
   void runBuild() {
+    final created = build();
     final ref = this.ref as $Ref<RiverpodUser?, RiverpodUser?>;
     final element = ref.element as $ClassProviderElement<
         AnyNotifier<RiverpodUser?, RiverpodUser?>,
         RiverpodUser?,
         Object?,
         Object?>;
-    element.handleCreate(ref, build);
+    element.handleValue(ref, created);
   }
 }
