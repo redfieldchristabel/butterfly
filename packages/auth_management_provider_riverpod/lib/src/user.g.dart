@@ -6,21 +6,55 @@ part of 'user.dart';
 // RiverpodGenerator
 // **************************************************************************
 
+// GENERATED CODE - DO NOT MODIFY BY HAND
+// ignore_for_file: type=lint, type=warning
+
+@ProviderFor(RiverpodUserState)
+const riverpodUserStateProvider = RiverpodUserStateProvider._();
+
+final class RiverpodUserStateProvider
+    extends $NotifierProvider<RiverpodUserState, RiverpodUser?> {
+  const RiverpodUserStateProvider._()
+      : super(
+          from: null,
+          argument: null,
+          retry: null,
+          name: r'riverpodUserStateProvider',
+          isAutoDispose: false,
+          dependencies: null,
+          $allTransitiveDependencies: null,
+        );
+
+  @override
+  String debugGetCreateSourceHash() => _$riverpodUserStateHash();
+
+  @$internal
+  @override
+  RiverpodUserState create() => RiverpodUserState();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(RiverpodUser? value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<RiverpodUser?>(value),
+    );
+  }
+}
+
 String _$riverpodUserStateHash() => r'a635d76f357d5f7fd522f34e7b9a8b9a8e56614e';
 
-/// See also [RiverpodUserState].
-@ProviderFor(RiverpodUserState)
-final riverpodUserStateProvider =
-    NotifierProvider<RiverpodUserState, RiverpodUser?>.internal(
-  RiverpodUserState.new,
-  name: r'riverpodUserStateProvider',
-  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
-      ? null
-      : _$riverpodUserStateHash,
-  dependencies: null,
-  allTransitiveDependencies: null,
-);
-
-typedef _$RiverpodUserState = Notifier<RiverpodUser?>;
-// ignore_for_file: type=lint
-// ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package
+abstract class _$RiverpodUserState extends $Notifier<RiverpodUser?> {
+  RiverpodUser? build();
+  @$mustCallSuper
+  @override
+  void runBuild() {
+    final created = build();
+    final ref = this.ref as $Ref<RiverpodUser?, RiverpodUser?>;
+    final element = ref.element as $ClassProviderElement<
+        AnyNotifier<RiverpodUser?, RiverpodUser?>,
+        RiverpodUser?,
+        Object?,
+        Object?>;
+    element.handleValue(ref, created);
+  }
+}
