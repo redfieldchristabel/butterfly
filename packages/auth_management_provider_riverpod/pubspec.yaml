@@ -1,11 +1,12 @@
 name: auth_management_provider_riverpod
+resolution: workspace
 description: "A Dipendency Injection library to support Riverpod for Butterfly Auth Management"
 version: 0.0.5
 homepage:
 
 environment:
-  sdk: ^3.0.0
-  flutter: ">=3.38.6"
+  sdk: ^3.12.0
+  flutter: ">=3.44.0"
 
 dependencies:
   flutter:

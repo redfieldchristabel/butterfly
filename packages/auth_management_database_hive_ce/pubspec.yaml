@@ -1,4 +1,5 @@
 name: auth_management_database_hive_ce
+resolution: workspace
 description: "A library to support Hive CE for auth management database"
 version: 0.3.0
 homepage:

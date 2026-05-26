@@ -1,4 +1,5 @@
 name: auth_management
+resolution: workspace
 description: "A library to help with auth management in flutter project"
 version: 0.3.0
 homepage: https://github.com/redfieldchristabel/butterfly

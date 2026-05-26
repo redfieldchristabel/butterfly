@@ -1,4 +1,5 @@
 name: butterfly_cli
+resolution: workspace
 description: A sample command-line application with basic argument parsing.
 version: 0.2.0
 # repository: https://github.com/my_org/my_repo

@@ -1,4 +1,5 @@
 name: core_management
+resolution: workspace
 description: "A new Flutter project."
 version: 0.3.0
 homepage:
