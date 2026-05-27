@@ -15,15 +15,15 @@ final riverpodUserStateProvider = RiverpodUserStateProvider._();
 final class RiverpodUserStateProvider
     extends $NotifierProvider<RiverpodUserState, RiverpodUser?> {
   RiverpodUserStateProvider._()
-      : super(
-          from: null,
-          argument: null,
-          retry: null,
-          name: r'riverpodUserStateProvider',
-          isAutoDispose: false,
-          dependencies: null,
-          $allTransitiveDependencies: null,
-        );
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'riverpodUserStateProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
 
   @override
   String debugGetCreateSourceHash() => _$riverpodUserStateHash();
@@ -49,11 +49,14 @@ abstract class _$RiverpodUserState extends $Notifier<RiverpodUser?> {
   @override
   void runBuild() {
     final ref = this.ref as $Ref<RiverpodUser?, RiverpodUser?>;
-    final element = ref.element as $ClassProviderElement<
-        AnyNotifier<RiverpodUser?, RiverpodUser?>,
-        RiverpodUser?,
-        Object?,
-        Object?>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<RiverpodUser?, RiverpodUser?>,
+              RiverpodUser?,
+              Object?,
+              Object?
+            >;
     element.handleCreate(ref, build);
   }
 }

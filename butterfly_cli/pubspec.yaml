@@ -17,7 +17,7 @@ dependencies:
   mason_logger: ^0.3.1
   meta: ^1.16.0
   pub_semver: ^2.1.4
-  pubspec_manager: ^3.0.1
+  pubspec_manager: ^4.0.1
   recase: ^4.1.0
   yaml_edit: ^2.2.1
 
