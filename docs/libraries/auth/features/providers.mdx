@@ -1,0 +1,61 @@
+---
+title: Auth Providers
+description: Google Sign-In, OAuth2, and rolling your own
+---
+
+### The idea
+
+People want to sign in with their existing accounts. Google, Facebook, GitHub, or a custom OAuth2 provider. Butterfly gives you a few ready-made buttons so you don't have to read each platform's SDK docs from scratch.
+
+### Google Sign-In
+
+One package, one class, one call:
+
+```dart
+import 'package:auth_management_firebase_google/auth_management_firebase_google.dart';
+
+final google = GoogleSignInService();
+
+// Opens the account picker, handles the token exchange
+await google.signIn();
+
+// User is now in AuthService.currentUser
+final name = AuthService.currentUser?.displayName;
+```
+
+It wraps Firebase Auth's Google provider. Requires Firebase setup, but after that it's a single method call.
+
+### OAuth2
+
+For any provider that speaks OAuth2 (GitHub, GitLab, Slack, Notion, etc.):
+
+```dart
+import 'package:auth_management_oauth2/auth_management_oauth2.dart';
+
+final oauth = OAuth2Service(
+  clientId: 'abc123',
+  redirectUri: 'myapp://callback',
+  authorizationEndpoint: 'https://github.com/login/oauth/authorize',
+  tokenEndpoint: 'https://github.com/login/oauth/access_token',
+  scopes: ['read:user', 'repo'],
+);
+
+final token = await oauth.authenticate();
+// Token is stored. AuthService.currentUser is populated.
+```
+
+It handles the redirect URI dance, token exchange, and refresh. You just provide the endpoints.
+
+`OAuth2Provider` is a helper enum for common providers so you don't have to remember URLs:
+
+```dart
+final github = OAuth2Service.fromProvider(
+  OAuth2Provider.github,
+  clientId: 'abc123',
+  redirectUri: 'myapp://callback',
+);
+```
+
+### Rolling your own
+
+Add a new package and implement the flow yourself using `AuthService`'s underlying methods. The base classes are designed to let you plug in any auth mechanism — the rest of your app just reads `AuthService.currentUser` and doesn't know the difference.

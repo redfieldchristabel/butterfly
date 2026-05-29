@@ -1,5 +1,110 @@
 ---
 title: Auth Library
-description: Explore the auth library of Butterfly
+description: Authentication made simple — plug in your database, provider, and go
 ---
 
+### What is Auth?
+
+Auth is that thing every app needs but nobody wants to write from scratch. Sign-in, sign-up, password reset, session management — it's the same dance every time.
+
+So we wrote it once.
+
+Butterfly Auth gives you a plug-and-play authentication layer. Pick your **database** (Hive, Isar, Firebase), pick your **auth provider** (email/password, Google, OAuth2), pick your **state management** (Riverpod or roll your own) — and it just works.
+
+No more wiring `onAuthStateChanged` every project. No more forgetting to persist the session.
+
+### How it's built
+
+Think of it like layers in a sandwich:
+
+```
+┌─────────────────────────────────────┐
+│   AuthService (your best friend)    │  ← the one you call daily
+├─────────────────────────────────────┤
+│   AuthRepository (the brain)        │  ← decides where data goes
+├─────────────────────────────────────┤
+│   AuthDataSource (the hands)        │  ← talks to the actual DB/API
+├─────────────────────────────────────┤
+│   Hive / Isar / Firebase / OAuth2   │  ← pick your fighter
+└─────────────────────────────────────┘
+```
+
+**AuthDataSource** is the lowest layer — it just needs to implement `getUser`, `saveUser`, `deleteUser` and `streamUser`. Pick the implementation that matches your stack.
+
+**AuthRepository** sits on top and orchestrates the data source. Not much to customize here unless you want to add cache logic.
+
+**AuthService** is the star of the show. It's a singleton you call from anywhere:
+
+```dart
+// Signing in
+await AuthService.signIn(email, password);
+
+// Who's the user?
+final user = AuthService.currentUser;
+
+// Signing out
+await AuthService.signOut();
+```
+
+It also exposes a `Stream<User?>` so your UI stays in sync without polling.
+
+### The database you choose matters
+
+| Package | Best for |
+|---|---|
+| `auth_management_database_hive_ce` | Local-only, lightweight, no native deps |
+| `auth_management_database_isar_community` | Local-only, needs complex queries |
+| `auth_management_firebase` | Server-backed, real-time sync |
+| `auth_management_firebase_google` | "Sign in with Google" button |
+
+**Don't see yours?** Implement `AuthDataSource` yourself — it's two methods.
+
+### The auth flow you want
+
+- **Email/password** — comes with the `auth_management` base. Firebase or local DB handles the rest.
+- **Google Sign-In** — `auth_management_firebase_google` has a one-call service.
+- **OAuth2** — `auth_management_oauth2` handles the redirect dance for you.
+
+<Tabs>
+<TabItem value="google" label="Google Sign-In">
+
+```dart
+final googleService = GoogleSignInService();
+await googleService.signIn();
+// That's it. AuthService.currentUser is now populated.
+```
+
+</TabItem>
+
+<TabItem value="oauth" label="OAuth2">
+
+```dart
+final oauth = OAuth2Service(
+  clientId: 'your-client-id',
+  redirectUri: 'com.yourapp://callback',
+  authorizationEndpoint: 'https://provider.com/auth',
+  tokenEndpoint: 'https://provider.com/token',
+);
+
+await oauth.authenticate();
+```
+
+</TabItem>
+</Tabs>
+
+### State management that doesn't fight you
+
+If you use Riverpod, `auth_management_provider_riverpod` gives you free providers:
+
+```dart
+final authState = ref.watch(authStateProvider);
+final currentUser = ref.watch(currentUserProvider);
+```
+
+Your UI rebuilds when auth state changes. No manual listeners.
+
+If you use something else — `AuthService.currentUser` and `AuthService.userStream` work the same with Provider, BLoC, or a callback in a button.
+
+### Removable
+
+Same philosophy as the rest of Butterfly. AuthService is just a class. AuthDataSource is just an abstract class with two methods. You can copy the files out, delete the package, and keep building. We even recommend reading the source to see how thin the layer actually is — it'll make you confident you can replace it anytime.

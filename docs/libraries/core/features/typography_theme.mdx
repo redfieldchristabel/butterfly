@@ -1,0 +1,66 @@
+---
+title: Core Typography Theme
+description: Consistent text styles without repeating yourself
+---
+
+### What is it
+
+`CoreTypographyTheme` is a small helper for keeping your app's text styles in one place. Think of it as `ThemeData`'s text theme, but without the nesting — just grab what you need, wherever you need it.
+
+```dart
+CoreTypographyTheme.bodyText1
+CoreTypographyTheme.headline2
+CoreTypographyTheme.caption
+// etc
+```
+
+### Why it exists
+
+Flutter's `TextTheme` is great, but reaching it requires `Theme.of(context).textTheme.bodyText1` every single time. That's a lot of keystrokes for "give me the normal text style."
+
+`CoreTypographyTheme` exposes the same text styles as static getters so you can use them in widgets, services, or anywhere without a `BuildContext`:
+
+```dart
+// Instead of:
+Text('Hello', style: Theme.of(context).textTheme.headlineMedium)
+
+// Just write:
+Text('Hello', style: CoreTypographyTheme.headlineMedium)
+```
+
+### Wait, won't this break theming?
+
+Nope. The values are pulled from the Material `ThemeData` at app start. If you change your theme at runtime? Then yeah, use `Theme.of(context)` as usual. This is for the 90% case where your typography is static.
+
+### Customizing
+
+You can override individual styles by reassigning:
+
+```dart
+CoreTypographyTheme.bodyText1 = TextStyle(
+  fontSize: 16,
+  fontWeight: FontWeight.w500,
+);
+```
+
+But honestly? If you're customizing heavily, just use Flutter's `TextTheme` directly. This helper shines when you want the defaults without the ceremony.
+
+### When to use it
+
+| ✅ Use CoreTypographyTheme | ❌ Use Theme.of(context) |
+|---|---|
+| Static text styling | Runtime theme switching |
+| StatelessWidgets | Dark/light mode toggles |
+| Quick prototyping | When you need `ThemeData` extensions |
+| Non-widget code (services) | |
+
+Also pairs nicely with `HexColor` for a clean color + typography combo:
+
+```dart
+Text(
+  'Welcome back',
+  style: CoreTypographyTheme.headline2?.copyWith(
+    color: HexColor.fromHex('#333333'),
+  ),
+)
+```

@@ -1,0 +1,81 @@
+---
+title: Loading Overlay
+description: Full-screen loading states without the boilerplate
+---
+
+### The Problem
+
+Every async operation needs a loading state. Show a spinner, block interaction, hide when done. Every screen needs it. You end up copy-pasting the same `Stack` with a `CircularProgressIndicator` across 15 widgets.
+
+### The Fix
+
+Butterfly gives you `LoadingOverlay` — a widget that wraps your screen and handles the showing/hiding with zero extra code:
+
+```dart
+LoadingOverlay(
+  isLoading: isSaving,
+  child: YourScreen(),
+)
+```
+
+When `isLoading` toggles, it fades in a full-screen semi-transparent overlay with a centered spinner. No extra widgets, no manual positioning.
+
+### Behind the scenes — ButterflyLoadingController
+
+For more control, there's `ButterflyLoadingController` and its state enum `ButterflyLoadingState`:
+
+```dart
+enum ButterflyLoadingState { idle, loading, success, error }
+```
+
+You can drive the overlay from a controller manually:
+
+```dart
+final controller = ButterflyLoadingController();
+
+// Later
+controller.startLoading();
+// ... do work ...
+controller.stopLoading();
+```
+
+This is useful when you have complex async flows that need to signal loading from multiple places.
+
+### Customizing the overlay
+
+The overlay is a widget, so you wrap it how you want:
+
+```dart
+LoadingOverlay(
+  isLoading: viewModel.isLoading,
+  opacity: 0.7,               // default
+  indicator: CustomSpinner(), // replace the spinner
+  color: Colors.black,        // overlay color
+  child: Scaffold(
+    body: MyContent(),
+  ),
+)
+```
+
+### When to use what
+
+- `LoadingOverlay` widget — **most of the time**. Clean declarative API.
+- `ButterflyLoadingController` — when you need to control loading state from outside the widget tree (services, view models, etc).
+- `ButterflyLoadingState` — combine with a `Switch` if you want idle/loading/success/error in one variable instead of four booleans.
+
+### Without Butterfly
+
+```dart
+Stack(
+  children: [
+    YourScreen(),
+    if (isLoading)
+      Container(
+        color: Colors.black.withOpacity(0.5),
+        child: Center(child: CircularProgressIndicator()),
+      ),
+  ],
+)
+```
+
+Works, but you write it every time. `LoadingOverlay` is that, but you import instead of type.
