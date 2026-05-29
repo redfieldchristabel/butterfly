@@ -1,0 +1,61 @@
+---
+title: Riverpod Auth State
+description: Reactive auth state management with zero boilerplate
+---
+
+### The idea
+
+You need auth state to flow through your widget tree. User logs in → UI rebuilds. User logs out → UI rebuilds. No manual listeners, no `setState` in random places.
+
+If you use Riverpod, `auth_management_provider_riverpod` gives you ready-made providers so you don't wire it yourself.
+
+### What you get
+
+```dart
+import 'package:auth_management_provider_riverpod/auth_management_provider_riverpod.dart';
+```
+
+| Provider | Type | What it gives you |
+|---|---|---|
+| `authStateProvider` | `AsyncValue<AuthState>` | idle / loading / authenticated / unauthenticated |
+| `currentUserProvider` | `AsyncValue<User?>` | The logged-in user, or null |
+| `authServiceProvider` | `AuthService` | The underlying auth service instance |
+
+### In practice
+
+```dart
+@override
+Widget build(BuildContext context, WidgetRef ref) {
+  final authState = ref.watch(authStateProvider);
+
+  return authState.when(
+    loading: () => SplashScreen(),
+    authenticated: () => HomeScreen(),
+    unauthenticated: () => LoginScreen(),
+    error: (e, _) => ErrorScreen(e),
+  );
+}
+```
+
+No manual stream subscriptions. No `dispose` cleanup. Riverpod handles the lifecycle.
+
+### How it works under the hood
+
+The providers wrap `AuthService.userStream` into Riverpod's `StreamProvider`. When the user signs in or out, the stream fires, the provider invalidates, and every widget watching it rebuilds. That's it.
+
+### Without Butterfly
+
+```dart
+final authStateProvider = StreamProvider<AuthState>((ref) {
+  return AuthService.userStream.map((user) {
+    return user != null ? AuthState.authenticated : AuthState.unauthenticated;
+  });
+});
+```
+
+You'd write this yourself — the package just saves you the 5 lines and the import path guesswork.
+
+### When you don't need this
+
+- Not using Riverpod? Ignore this package. `AuthService.userStream` works with BLoC, Provider, or raw `StreamBuilder`.
+- Simple app with one or two auth-dependent screens? A `StreamBuilder` in your root widget might be enough.

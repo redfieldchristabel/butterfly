@@ -76,6 +76,10 @@
             {
               "title": "Auth Providers",
               "href": "/libraries/auth/features/providers"
+            },
+            {
+              "title": "Riverpod Integration",
+              "href": "/libraries/auth/features/riverpod"
             }
           ]
         }
