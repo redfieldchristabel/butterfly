@@ -35,6 +35,18 @@
             {
               "title": "Route Service",
               "href": "/libraries/core/features/route_service"
+            },
+            {
+              "title": "Enqueue Utility",
+              "href": "/libraries/core/features/enqueue"
+            },
+            {
+              "title": "Hex Color",
+              "href": "/libraries/core/features/hex_color"
+            },
+            {
+              "title": "Screen Layout",
+              "href": "/libraries/core/features/screen_layout"
             }
           ]
         },
