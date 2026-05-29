@@ -47,6 +47,18 @@
             {
               "title": "Screen Layout",
               "href": "/libraries/core/features/screen_layout"
+            },
+            {
+              "title": "Lock Service",
+              "href": "/libraries/core/features/lock_service"
+            },
+            {
+              "title": "Loading Overlay",
+              "href": "/libraries/core/features/loading_overlay"
+            },
+            {
+              "title": "Typography Theme",
+              "href": "/libraries/core/features/typography_theme"
             }
           ]
         },

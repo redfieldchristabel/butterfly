@@ -1,0 +1,76 @@
+---
+title: Lock Service
+description: Prevent duplicate actions with a simple lock mechanism
+---
+
+### The Problem
+
+User taps a button. Nothing happens for 300ms. They tap again. Now the API runs twice, you get two users created, or two payments charged, or two of whatever.
+
+Classic race condition. We've all been there.
+
+### The Fix
+
+`CoreLockService` is a lightweight mutex that prevents the same operation from running twice. Think of it as a "only one at a time, please" sign for your methods.
+
+```dart
+class CoreLockService {
+  bool isLocked(String key);
+  Future<T> runLocked<T>(String key, Future<T> Function() task);
+  void unlock(String key);
+  void unlockAll();
+}
+```
+
+### How it works
+
+You give each operation a key. LockService checks if that key is already running:
+
+```dart
+final lockService = CoreLockService();
+
+Future<void> saveUser() async {
+  await lockService.runLocked('saving-user', () async {
+    // This won't run twice even if tapped 10 times fast
+    await api.saveUser(user);
+  });
+}
+```
+
+Second caller gets the same `Future` as the first one. No duplicate work, no crash, no double-billing your customer.
+
+### LockPersistence
+
+By default, locks are in-memory — they reset when your app restarts. If you need locks to survive app kill (e.g. "don't retry this sync for 5 minutes"), implement `LockPersistence`:
+
+```dart
+class MyPersistentLocks implements LockPersistence {
+  @override
+  bool contains(String key) => /* check SharedPrefs or DB */;
+
+  @override
+  void insert(String key) => /* save to disk */;
+
+  @override
+  void remove(String key) => /* delete from disk */;
+}
+```
+
+Then inject it:
+
+```dart
+final lockService = CoreLockService(persistence: MyPersistentLocks());
+```
+
+### When to use it
+
+| ✅ Do use | ❌ Don't use |
+|---|---|
+| Button taps that trigger API calls | Animations or UI transitions |
+| Duplicate form submissions | Navigation events |
+| Background sync operations | Read-only operations |
+| Payment/checkout flows | Anything idempotent already |
+
+### Removable
+
+`CoreLockService` is a plain Dart class with zero dependencies on anything Butterfly-specific. Copy it out, keep the lock logic, delete the package. The API won't change.
