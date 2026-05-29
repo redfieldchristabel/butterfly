@@ -21,8 +21,8 @@ void main() {
     test('adds no user-defined arguments', () {
       final cmd = VersionCommand();
       // Built-in options (like --help) exist; no user-defined ones
-      final userOptions = cmd.argParser.options.keys
-          .where((k) => k != 'help');
+      final userOptions =
+          cmd.argParser.options.keys.where((k) => k != 'help');
       expect(userOptions, isEmpty);
     });
   });

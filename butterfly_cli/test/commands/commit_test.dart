@@ -1,4 +1,5 @@
 import 'package:butterfly_cli/commands/commit.dart';
+import 'package:butterfly_cli/di/setup_dependencies.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -111,7 +112,6 @@ void main() {
       final actionArg = cmd.argParser.options['action'];
       expect(actionArg, isNotNull);
 
-      // All enum values should be accepted
       for (final commit in ConventionalCommit.values) {
         expect(actionArg!.allowed, contains(commit.name));
       }

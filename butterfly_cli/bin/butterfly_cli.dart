@@ -6,18 +6,12 @@ import 'package:butterfly_cli/commands/commit.dart';
 import 'package:butterfly_cli/commands/generators/index.dart';
 import 'package:butterfly_cli/commands/init.dart';
 import 'package:butterfly_cli/commands/version.dart';
-import 'package:butterfly_cli/extensions/command_helper.dart';
+import 'package:butterfly_cli/di/setup_dependencies.dart';
 import 'package:butterfly_cli/readable_exception.dart';
 import 'package:mason_logger/mason_logger.dart';
 
-bool kDebugMode = false;
-
 void main(List<String> arguments) {
-  assert(() {
-    kDebugMode = true;
-    print("Debug mode: $kDebugMode");
-    return true;
-  }());
+  configureDependencies();
 
   final runner = CommandRunner('butterfly', 'A CLI tool for butterfly project');
 
@@ -25,22 +19,19 @@ void main(List<String> arguments) {
   runner.argParser.addFlag('dev',
       abbr: 'D', help: 'Run in dev mode', defaultsTo: false);
 
-  runner.addCommand(VersionCommand());
-  runner.addCommand(InitCommand());
-  runner.addCommand(CommitCommand());
-  runner.addCommand(GenerateCommand());
+  runner.addCommand(getIt<VersionCommand>());
+  runner.addCommand(getIt<InitCommand>());
+  runner.addCommand(getIt<CommitCommand>());
+  runner.addCommand(getIt<GenerateCommand>());
 
   final result = runner.parse(arguments);
 
   runZonedGuarded(
     () {
-      if (kDebugMode) {
-        ButterflyLogger.level = Level.verbose;
-      } else {
-        ButterflyLogger.level =
-            result.flag('verbose') ? Level.verbose : Level.info;
+      if (result.flag('verbose')) {
+        final logger = Logger();
+        logger.level = Level.verbose;
       }
-
       return runner.run(arguments);
     },
     (error, stack) {
@@ -57,15 +48,10 @@ void main(List<String> arguments) {
         logger.err(error.message);
         logger.info(error.usage);
       } else {
-        if (kDebugMode) {
-          logger.err("Please handle this error, this error"
-              " will not show up in production.\n\n");
-        } else {
-          logger.err('Something went wrong. Please try again.');
-        }
+        logger.err('Something went wrong. Please try again.');
       }
 
-      if (kDebugMode || result.flag('dev')) {
+      if (result.flag('dev')) {
         print('\n\n');
         throw error;
       } else {

@@ -1,9 +1,16 @@
 import 'dart:io';
-
 import 'package:args/command_runner.dart';
 import 'package:butterfly_cli/extensions/command_helper.dart';
 
 class CommitCommand extends Command with ButterflyLogger {
+  CommitCommand() {
+    argParser.addOption('action',
+        abbr: 'a',
+        help: 'Commit actions',
+        allowed: ConventionalCommit.values.map((e) => e.name).toList());
+    argParser.addOption('message', abbr: 'm');
+  }
+
   @override
   String get description =>
       'Commit changes via conventional commits from ${Uri.parse('https://www.conventionalcommits.org/en/v1.0.0/')}';
@@ -14,14 +21,6 @@ class CommitCommand extends Command with ButterflyLogger {
   @override
   List<String> get aliases => ['c', 'comit', 'commits', 'cm'];
 
-  CommitCommand() {
-    argParser.addOption('action',
-        abbr: 'a',
-        help: 'Commit actions',
-        allowed: ConventionalCommit.values.map((e) => e.name).toList());
-    argParser.addOption('message', abbr: 'm');
-  }
-
   @override
   run() async {
     final ConventionalCommit action;
@@ -30,17 +29,17 @@ class CommitCommand extends Command with ButterflyLogger {
     if (argsAction != null) {
       action = ConventionalCommit.fromName(argsAction);
     } else {
-      action = logger.chooseOne<ConventionalCommit>('What is your commit type',
+      action = chooseOne<ConventionalCommit>('What is your commit type',
           choices: ConventionalCommit.values, display: (choice) => choice.name);
     }
 
     final String message =
-        argsMessage ?? logger.prompt('What is your commit message?');
+        argsMessage ?? prompt('What is your commit message?') ?? '';
 
     detail('Run git status to see if any staged changes');
     final statusRes = await Process.run('git', ['status']);
     if (statusRes.stdout.contains('no changes added to commit')) {
-      final stageAll = logger.confirm(
+      final stageAll = confirm(
           'No changes to commit, commit all changes instead?',
           defaultValue: true);
       if (stageAll) {
@@ -55,8 +54,8 @@ class CommitCommand extends Command with ButterflyLogger {
     final res =
         await Process.run('git', ['commit', '-m', '${action.name}: $message']);
 
-    logger.info(res.stdout);
-    logger.info(res.stderr);
+    info(res.stdout);
+    info(res.stderr);
   }
 }
 

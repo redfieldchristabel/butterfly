@@ -27,16 +27,20 @@ class ProjectConfiguration {
     this.routerType,
     this.userModelName,
   }) {
-    assert(useAuth && userModelName != null);
+    assert(!useAuth || userModelName != null);
   }
 
   factory ProjectConfiguration.fromJson(Map json) {
     final Version version = Version.parse(json['version'] as String);
 
+    // Strip 'version' from the map before passing to generated code,
+    // since it's not a recognized key in the serialized model.
+    final configJson = Map<String, dynamic>.from(json)..remove('version');
+
     // TODO: add a new version to support backward config
     switch (version.major) {
       case 0:
-        return _$ProjectConfigurationFromJson(json);
+        return _$ProjectConfigurationFromJson(configJson);
 
       default:
         throw ReadableException(

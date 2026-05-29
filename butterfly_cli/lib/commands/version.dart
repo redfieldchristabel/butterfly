@@ -1,5 +1,4 @@
 import 'dart:async';
-
 import 'package:args/command_runner.dart';
 import 'package:butterfly_cli/extensions/command_helper.dart';
 import 'package:butterfly_cli/version.dart';
@@ -13,6 +12,6 @@ class VersionCommand extends Command with ButterflyLogger {
 
   @override
   FutureOr? run() {
-    logger.info(kVersion);
+    info(kVersion);
   }
 }

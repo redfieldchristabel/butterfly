@@ -1,49 +1,57 @@
-import 'dart:io';
-
 import 'package:args/command_runner.dart';
 import 'package:butterfly_cli/commands/generators/model.dart';
 import 'package:butterfly_cli/commands/generators/index.dart';
+import 'package:butterfly_cli/di/setup_dependencies.dart';
+import 'package:butterfly_cli/interfaces/interfaces.dart';
 import 'package:butterfly_cli/readable_exception.dart';
 import 'package:test/test.dart';
 
+import '../../helpers/mocks.dart';
+
 /// Returns a [CommandRunner] with the generate command registered.
+/// Registers mocks in GetIt so the ButterflyLogger mixin resolves.
 CommandRunner<void> _runner() {
+  getIt.reset();
+  getIt.registerSingleton<ILoggerService>(MockLoggerService());
+  getIt.registerSingleton<IDirectoryService>(MockDirectoryService());
+
+  final masonService = MockMasonService();
   final runner = CommandRunner<void>('test', 'Test runner');
-  runner.addCommand(GenerateCommand());
+  runner.addCommand(GenerateCommand(masonService, MockPubspecService()));
   return runner;
 }
 
 void main() {
   group('ModelGeneratorCommand', () {
     test('has correct command name', () {
-      final cmd = ModelGeneratorCommand();
+      final cmd = ModelGeneratorCommand(MockMasonService());
       expect(cmd.name, equals('model'));
     });
 
     test('has aliases', () {
-      final cmd = ModelGeneratorCommand();
+      final cmd = ModelGeneratorCommand(MockMasonService());
       expect(cmd.aliases, containsAll(['m', 'mdl']));
     });
 
     test('description mentions model generation', () {
-      final cmd = ModelGeneratorCommand();
+      final cmd = ModelGeneratorCommand(MockMasonService());
       expect(cmd.description, contains('model'));
       expect(cmd.description, contains('JsonSerializable'));
     });
 
     group('argument definitions', () {
       test('has --serializable flag', () {
-        final cmd = ModelGeneratorCommand();
+        final cmd = ModelGeneratorCommand(MockMasonService());
         expect(cmd.argParser.options.containsKey('serializable'), isTrue);
       });
 
       test('has --immutable flag', () {
-        final cmd = ModelGeneratorCommand();
+        final cmd = ModelGeneratorCommand(MockMasonService());
         expect(cmd.argParser.options.containsKey('immutable'), isTrue);
       });
 
       test('has --path option', () {
-        final cmd = ModelGeneratorCommand();
+        final cmd = ModelGeneratorCommand(MockMasonService());
         expect(cmd.argParser.options.containsKey('path'), isTrue);
       });
     });
@@ -51,7 +59,6 @@ void main() {
     group('argument parsing', () {
       test('parses simple class name', () {
         final results = _runner().parse(['generate', 'model', 'User']);
-        // The subcommand result is nested inside the 'generate' command
         expect(results.command?.name, equals('generate'));
         final genResult = results.command!;
         expect(genResult.command?.name, equals('model'));
@@ -126,24 +133,20 @@ void main() {
     });
 
     group('execution', () {
-      late String originalCwd;
-      late String projectPath;
-
       setUp(() {
-        originalCwd = Directory.current.path;
-        projectPath = _createTempProject();
-        Directory.current = projectPath;
+        getIt.reset();
+        getIt.registerSingleton<ILoggerService>(MockLoggerService());
+        getIt.registerSingleton<IDirectoryService>(MockDirectoryService());
       });
 
-      tearDown(() {
-        Directory.current = originalCwd;
-        if (Directory(projectPath).existsSync()) {
-          Directory(projectPath).deleteSync(recursive: true);
-        }
-      });
+      CommandRunner<void> _execRunner() {
+        final runner = CommandRunner<void>('test', 'Test runner');
+        runner.addCommand(GenerateCommand(MockMasonService(), MockPubspecService()));
+        return runner;
+      }
 
       test('throws UsageException when no class name provided', () {
-        final runner = _runner();
+        final runner = _execRunner();
         expect(
           () => runner.run(['generate', 'model']),
           throwsA(isA<UsageException>()),
@@ -151,7 +154,7 @@ void main() {
       });
 
       test('throws ReadableException when class name equals path', () {
-        final runner = _runner();
+        final runner = _execRunner();
         expect(
           () => runner.run(['generate', 'model', 'Auth', '--path', 'auth']),
           throwsA(isA<ReadableException>()),
@@ -159,17 +162,4 @@ void main() {
       });
     });
   });
-}
-
-/// Creates a temporary project structure needed by ensureRoot().
-String _createTempProject() {
-  final tmpDir = Directory.systemTemp.createTempSync('butterfly_cli_test_');
-  Directory('${tmpDir.path}/lib').createSync();
-  File('${tmpDir.path}/pubspec.yaml').writeAsStringSync(
-    'name: test_project\n'
-    'version: 0.1.0\n'
-    'environment:\n'
-    '  sdk: ^3.5.0\n',
-  );
-  return tmpDir.path;
 }

@@ -1,45 +1,51 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:butterfly_cli/extensions/command_helper.dart';
+import 'package:butterfly_cli/interfaces/interfaces.dart';
 import 'package:butterfly_cli/readable_exception.dart';
-import 'package:butterfly_cli/services/framework.dart';
-import 'package:pubspec_manager/pubspec_manager.dart';
+import 'package:pub_semver/pub_semver.dart';
+import 'package:pubspec_manager/pubspec_manager.dart' hide Version;
 
-class PubspecService with ButterflyLogger {
+class PubspecService implements IPubspecService {
+  final ILoggerService _logger;
+  final IDirectoryService _directoryService;
   late final File _pubspecFile;
 
-  PubspecService() {
-    frameworkService.ensureRootDirectory();
+  PubspecService(this._logger, this._directoryService) {
     _pubspecFile = File('pubspec.yaml');
   }
 
   PubSpec get _pubspec {
-    detail('Read pubspec.yaml file');
+    _logger.detail('Read pubspec.yaml file');
     return PubSpec.load();
-    // return Pubspec.parse(_pubspecFile.readAsStringSync());
   }
 
-  Future<void> addDependency(final String name, {bool dev = false}) async {
-    frameworkService.ensureRootDirectory();
+  @override
+  Version get version {
+    _logger.detail('Get version from pubspec.yaml file');
+    return _pubspec.version.semVersion;
+  }
 
-    info("cur dir ${Directory.current.path}");
+  @override
+  Future<void> addDependency(final String name, {bool dev = false}) async {
+    _directoryService.ensureRootDirectory();
+
+    _logger.info("cur dir ${Directory.current.path}");
 
     final pubspec = PubSpec.loadFromPath(_pubspecFile.path);
 
-    detail('Check if $name dependency exist');
-    final iDependency = dev ? pubspec.devDependencies : pubspec.devDependencies;
+    _logger.detail('Check if $name dependency exist');
+    final iDependency = dev ? pubspec.devDependencies : pubspec.dependencies;
     if (iDependency.exists(name)) {
-      detail('$name dependency already exist, skip');
+      _logger.detail('$name dependency already exist, skip');
       return;
     }
 
-    detail('Dependency not exist, asking to add ${iDependency.exists(name)}');
+    _logger.detail('Dependency not exist, asking to add ${iDependency.exists(name)}');
 
-    // ensureFlutter();
-    detail('Add dependency $name');
+    _logger.detail('Add dependency $name');
 
-    final add = logger.confirm('Add $name dependency', defaultValue: true);
+    final add = _logger.confirm('Add $name dependency', defaultValue: true);
 
     if (add) {
       final mode = stdout.hasTerminal
@@ -67,31 +73,31 @@ class PubspecService with ButterflyLogger {
     return;
   }
 
+  @override
   void addButterflyDependency(String name) {
     final curDir = Directory.current.path;
-    frameworkService.ensureRootDirectory();
+    _directoryService.ensureRootDirectory();
 
     print("cur dir ${Directory.current.path}");
 
     final pubspec = PubSpec.loadFromPath(_pubspecFile.path);
 
-    detail('Check if $name dependency exist');
+    _logger.detail('Check if $name dependency exist');
     if (pubspec.dependencies.exists(name)) {
-      detail('$name dependency already exist, skip');
+      _logger.detail('$name dependency already exist, skip');
       return;
     }
 
-    // ensureFlutter();
-    detail('Add dependency $name');
+    _logger.detail('Add dependency $name');
     pubspec.dependencies.add(DependencyBuilderGit(
       name: name,
       url: 'git@github.com:redfieldchristabel/butterfly.git',
       path: 'packages/$name',
       ref: 'develop',
     ));
-    detail('Write to pubspec.yaml file');
+    _logger.detail('Write to pubspec.yaml file');
     pubspec.save();
-    frameworkService.changeWorkingDirectory(curDir);
+    _directoryService.changeWorkingDirectory(curDir);
   }
 
   void ensureFlutter() {
@@ -103,11 +109,4 @@ class PubspecService with ButterflyLogger {
           hint: 'Try again with flutter project');
     }
   }
-
-  Version get version {
-    detail('Get version from pubspec.yaml file');
-    return _pubspec.version;
-  }
 }
-
-final PubspecService pubspecService = PubspecService();

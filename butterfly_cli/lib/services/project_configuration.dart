@@ -1,22 +1,27 @@
 import 'dart:io';
 
-import 'package:butterfly_cli/extensions/command_helper.dart';
+import 'package:butterfly_cli/interfaces/interfaces.dart';
 import 'package:butterfly_cli/models/project_configuration.dart';
 import 'package:butterfly_cli/readable_exception.dart';
-import 'package:butterfly_cli/services/framework.dart';
 import 'package:checked_yaml/checked_yaml.dart';
 
-class ProjectConfigurationService with ButterflyLogger {
+class ProjectConfigurationService implements IProjectConfigurationService {
+  final ILoggerService _logger;
+  final IDirectoryService _directoryService;
   ProjectConfiguration? _configuration;
   final File _file = File('.butterfly_project.yaml');
 
+  ProjectConfigurationService(this._logger, this._directoryService);
+
+  @override
   bool exists() {
-    frameworkService.ensureRootDirectory();
+    _directoryService.ensureRootDirectory();
     return _file.existsSync();
   }
 
+  @override
   void ensureValid() {
-    frameworkService.ensureRootDirectory();
+    _directoryService.ensureRootDirectory();
 
     if (!exists()) {
       throw ReadableException(
@@ -35,29 +40,27 @@ class ProjectConfigurationService with ButterflyLogger {
     );
 
     _configuration = configuration;
-
-    // pubspecService.ensureFlutter();
   }
 
+  @override
   ProjectConfiguration get configuration {
     assert(_configuration != null,
         'ProjectConfigurationService.ensureValid() must be called first');
     return _configuration!;
   }
 
+  @override
   ProjectConfiguration create([ProjectConfiguration? defaultValue]) {
-    frameworkService.ensureRootDirectory();
+    _directoryService.ensureRootDirectory();
 
-    info('Butterfly Core help you handle Flutter project easily\n'
+    _logger.info('Butterfly Core help you handle Flutter project easily\n'
         'It will help you like manage error handler, loading mechanism, locking mechanism'
         'and so much more');
 
-    // TODO: add a url to view what Butterfly core can help with
-
-    final useCore = logger.confirm('Do your project need to use Butterfly core',
+    final useCore = _logger.confirm('Do your project need to use Butterfly core',
         defaultValue: true);
 
-    final useAuth = logger.confirm('Do your project need to use auth',
+    final useAuth = _logger.confirm('Do your project need to use auth',
         defaultValue: defaultValue?.useAuth ?? true);
     final String? userModelName;
     if (useAuth) {
@@ -66,13 +69,13 @@ class ProjectConfigurationService with ButterflyLogger {
       userModelName = null;
     }
 
-    final useRouter = logger.confirm(
+    final useRouter = _logger.confirm(
         'Do your project need to use router system',
         defaultValue: defaultValue?.useRouter ?? true);
     RouterType? routerType;
 
     if (useRouter) {
-      routerType = logger.chooseOne<RouterType>('Choose your router type',
+      routerType = _logger.chooseOne<RouterType>('Choose your router type',
           choices: RouterType.values,
           defaultValue: defaultValue?.routerType ?? RouterType.goRouter);
     }
@@ -90,18 +93,16 @@ class ProjectConfigurationService with ButterflyLogger {
   }
 
   String _askUserModel(String? defaultValue) {
-    final String answer = logger.prompt(
+    final String answer = _logger.prompt(
         'What is the name of your user model?\n'
         'Cant use User because it is a reserved keyword\n'
         'Example : [Customer, Employee, Manager, etc...]',
-        defaultValue: defaultValue);
+        defaultValue: defaultValue) ??
+        '';
     if (answer.isEmpty) {
-      logger.alert('User model name cannot be empty');
+      _logger.alert('User model name cannot be empty');
       return _askUserModel(defaultValue);
     }
     return answer;
   }
 }
-
-final ProjectConfigurationService projectConfigurationService =
-    ProjectConfigurationService();

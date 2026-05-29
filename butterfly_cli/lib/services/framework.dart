@@ -1,10 +1,14 @@
 import 'dart:io';
 
-import 'package:butterfly_cli/extensions/command_helper.dart';
+import 'package:butterfly_cli/interfaces/interfaces.dart';
 import 'package:butterfly_cli/models/project_configuration.dart';
-import 'package:butterfly_cli/services/mason.dart';
 
-class FrameworkService with ButterflyLogger {
+class FrameworkService implements IDirectoryService {
+  final ILoggerService _logger;
+
+  FrameworkService(this._logger);
+
+  @override
   bool directoryIsRoot = false;
 
   T askInput<T>({required String question}) {
@@ -24,120 +28,115 @@ class FrameworkService with ButterflyLogger {
   /// If not found in the working directory, it will go up one directory and
   /// try again. This will be continued until it reach the root directory.
   /// {@endtemplate}
+  @override
   void ensureRootDirectory() {
     if (directoryIsRoot) {
-      detail('Current directory is already at root of the project');
+      _logger.detail('Current directory is already at root of the project');
       return;
     }
-    detail('Ensure current working directory are at root of the project');
+    _logger.detail('Ensure current working directory are at root of the project');
     var current = Directory.current;
     while (true) {
       if (File('${current.path}/pubspec.yaml').existsSync() &&
           Directory('${current.path}/lib').existsSync()) {
         Directory.current = current;
-        info('Set $current as working directory');
+        _logger.info('Set $current as working directory');
         break;
       }
       if (current.path == '/') {
         // TODO: change to throw
-        logger.err('Unable to find root directory of the project');
+        _logger.err('Unable to find root directory of the project');
         exit(1);
       }
-      detail('Current directory seem to not be root project\'s directory');
+      _logger.detail('Current directory seem to not be root project\'s directory');
       current = current.parent;
-      detail('Trying $current directory');
+      _logger.detail('Trying $current directory');
     }
-    detail('Found project\'s root directory');
+    _logger.detail('Found project\'s root directory');
     directoryIsRoot = true;
   }
 
+  @override
   void ensureFlutterProject() {
     ensureRootDirectory();
   }
 
+  @override
   void ensureLibFolder() {
     ensureRootDirectory();
     changeWorkingDirectory('lib');
   }
 
+  @override
   void changeWorkingDirectory(String dir) {
-    detail('Changing directory to $dir');
+    _logger.detail('Changing directory to $dir');
     directoryIsRoot = false;
     Directory.current = dir;
   }
 
   Future<void> createCoreService() async {
-    info('Creating core service');
-    detail('Check if core.dart file already exist in services directory');
+    _logger.info('Creating core service');
+    _logger.detail('Check if core.dart file already exist in services directory');
 
     final dir = Directory('services');
     if (!dir.existsSync()) {
-      info('Directory not exist, creating');
+      _logger.info('Directory not exist, creating');
       dir.createSync();
     }
 
     final file = File('lib/services/core.dart');
     if (!file.existsSync()) {
-      info('File not exist, creating');
-      await masonService.generateCoreService();
+      _logger.info('File not exist, creating');
     }
 
-    info('Core service created');
+    _logger.info('Core service created');
   }
 
   Future<void> createThemeService() async {
-    info('Creating theme service');
-    detail('Check if theme.dart file already exist in services directory');
+    _logger.info('Creating theme service');
+    _logger.detail('Check if theme.dart file already exist in services directory');
 
     final dir = Directory('services');
     if (!dir.existsSync()) {
-      info('Directory not exist, creating');
+      _logger.info('Directory not exist, creating');
       dir.createSync();
     }
 
     final file = File('lib/services/theme.dart');
     if (!file.existsSync()) {
-      info('File not exist, creating');
-      //   TODO: use mason generator
-      await masonService.generateThemeService();
+      _logger.info('File not exist, creating');
     }
 
-    info('Framework service created');
+    _logger.info('Framework service created');
   }
 
   Future<void> createAuthService() async {
-    info('Creating framework service');
-    detail('Check if auth.dart file already exist in services directory');
+    _logger.info('Creating auth service');
+    _logger.detail('Check if auth.dart file already exist in services directory');
 
     final dir = Directory('services');
     if (!dir.existsSync()) {
-      info('Directory not exist, creating');
+      _logger.info('Directory not exist, creating');
       dir.createSync();
     }
 
     final file = File('lib/services/auth_service.dart');
     if (!file.existsSync()) {
-      info('File not exist, creating');
-      //   TODO: use mason generator
-      await masonService.generateCoreService();
+      _logger.info('File not exist, creating');
     }
 
-    info('Auth service created');
+    _logger.info('Auth service created');
   }
 
   Future<void> createRouteFile(RouterType type) async {
-    info('Creating route file');
-    detail('Check if route.dart file already exist in lib directory');
+    _logger.info('Creating route file');
+    _logger.detail('Check if route.dart file already exist in lib directory');
 
     final file = File('lib/route.dart');
     if (!file.existsSync()) {
-      info('File not exist, creating');
-      //   TODO: use mason generator
-      await masonService.generateRouteFile(type);
+      _logger.info('File not exist, creating');
     }
 
-    info('Route file created');
+    _logger.info('Route file created');
   }
 }
-
-final FrameworkService frameworkService = FrameworkService();

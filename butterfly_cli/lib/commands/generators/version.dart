@@ -1,14 +1,17 @@
 import 'dart:async';
 import 'dart:io';
-
 import 'package:args/command_runner.dart';
 import 'package:butterfly_cli/extensions/command_helper.dart';
-import 'package:butterfly_cli/services/pubspec.dart';
+import 'package:butterfly_cli/interfaces/interfaces.dart';
 
 class VersionGeneratorCommand extends Command with ButterflyLogger {
+  final IPubspecService _pubspecService;
+
+  VersionGeneratorCommand(this._pubspecService);
+
   @override
   String get description =>
-      'Generate version.dart in root\'s lib directory of projects';
+      "Generate version.dart in root's lib directory of projects";
 
   @override
   String get name => 'version';
@@ -17,11 +20,10 @@ class VersionGeneratorCommand extends Command with ButterflyLogger {
   FutureOr? run() {
     ensureRoot();
 
-    final version = pubspecService.version;
+    final version = _pubspecService.version;
     final File file = File('lib/version.dart');
 
     detail('Generating version.dart');
-    // TODO: find a wat to use expression builder to create a dart code
     final String context = "const String kVersion = '$version';";
 
     detail('Generate file version.dart');

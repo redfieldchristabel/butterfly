@@ -58,6 +58,19 @@ void main() {
       );
     });
 
+    test('constructs with useAuth false (no userModelName required)', () {
+      final config = ProjectConfiguration(
+        useAuth: false,
+        useCore: true,
+        useRouter: false,
+      );
+
+      expect(config.useAuth, isFalse);
+      expect(config.useCore, isTrue);
+      expect(config.useRouter, isFalse);
+      expect(config.userModelName, isNull);
+    });
+
     group('JSON serialization (toJson)', () {
       test('produces all fields with goRouter', () {
         final config = ProjectConfiguration(
@@ -111,36 +124,36 @@ void main() {
     });
 
     group('JSON deserialization (fromJson)', () {
-      // NOTE: The hand-written fromJson factory reads 'version' from the map
-      // but passes the SAME map to _$ProjectConfigurationFromJson, which
-      // rejects unrecognized keys via $checkKeys. This means fromJson
-      // cannot successfully parse ANY input in the current code — it is a
-      // known bug in the source. These tests document the current behavior.
+      test('successfully deserializes with version present', () {
+        final config = ProjectConfiguration.fromJson(<String, dynamic>{
+          'useAuth': true,
+          'useCore': true,
+          'useRouter': true,
+          'routerType': 'goRouter',
+          'userModelName': 'Manager',
+          'version': '0.1.0',
+        });
 
-      test('fails with TypeError when version is missing (null cast)', () {
-        expect(
-          () => ProjectConfiguration.fromJson(<String, dynamic>{
-            'useAuth': true,
-            'useCore': true,
-            'useRouter': false,
-            'userModelName': 'User',
-          }),
-          throwsA(isA<TypeError>()),
-        );
+        expect(config.useAuth, isTrue);
+        expect(config.useCore, isTrue);
+        expect(config.useRouter, isTrue);
+        expect(config.routerType, equals(RouterType.goRouter));
+        expect(config.userModelName, equals('Manager'));
       });
 
-      test('fails with CheckedFromJsonException when version is present', () {
-        expect(
-          () => ProjectConfiguration.fromJson(<String, dynamic>{
-            'useAuth': true,
-            'useCore': true,
-            'useRouter': true,
-            'routerType': 'goRouter',
-            'userModelName': 'Manager',
-            'version': '0.1.0',
-          }),
-          throwsA(isA<CheckedFromJsonException>()),
-        );
+      test('successfully deserializes minimal config with version', () {
+        final config = ProjectConfiguration.fromJson(<String, dynamic>{
+          'useAuth': true,
+          'useCore': false,
+          'useRouter': false,
+          'userModelName': 'User',
+          'version': '0.1.0',
+        });
+
+        expect(config.useAuth, isTrue);
+        expect(config.useCore, isFalse);
+        expect(config.useRouter, isFalse);
+        expect(config.userModelName, equals('User'));
       });
 
       test('fails on missing required keys (useAuth, useCore)', () {

@@ -1,24 +1,16 @@
 import 'dart:async';
 import 'dart:io';
-
 import 'package:args/command_runner.dart';
 import 'package:butterfly_cli/extensions/command_helper.dart';
 import 'package:butterfly_cli/readable_exception.dart';
-import 'package:butterfly_cli/services/mason.dart';
+import 'package:butterfly_cli/interfaces/interfaces.dart';
+import 'package:butterfly_cli/models/model_gen_params.dart';
 import 'package:recase/recase.dart';
 
-// TODO: support convert to serializable model instead of generating one
 class ModelGeneratorCommand extends Command with ButterflyLogger {
-  @override
-  String get description => 'Generate a model with JsonSerializable';
+  final IMasonService _masonService;
 
-  @override
-  String get name => 'model';
-
-  @override
-  List<String> get aliases => ['m', 'mdl'];
-
-  ModelGeneratorCommand() {
+  ModelGeneratorCommand(this._masonService) {
     argParser.addFlag('serializable',
         abbr: 's', help: 'Generate serializable version', defaultsTo: true);
     argParser.addFlag('immutable',
@@ -32,6 +24,15 @@ class ModelGeneratorCommand extends Command with ButterflyLogger {
             'If provided, "auth" as param, the directory will be\n'
             '"project_root/lib/models/auth".');
   }
+
+  @override
+  String get description => 'Generate a model with JsonSerializable';
+
+  @override
+  String get name => 'model';
+
+  @override
+  List<String> get aliases => ['m', 'mdl'];
 
   @override
   Future run() async {
@@ -85,7 +86,7 @@ class ModelGeneratorCommand extends Command with ButterflyLogger {
 
     if (generatedFile.existsSync()) {
       info('File already exists at ${generatedFile.absolute.path}');
-      final bool overWrite = logger.confirm('Overwrite?', defaultValue: true);
+      final bool overWrite = confirm('Overwrite?', defaultValue: true);
 
       if (!overWrite) {
         info('Skipping...');
@@ -94,16 +95,16 @@ class ModelGeneratorCommand extends Command with ButterflyLogger {
     }
 
     final params = ModelGenParams(
-      name: className, // Keep the original class name
+      name: className,
       path: directory,
       serializable: serializable,
-      fileName: fileName.snakeCase, // Use the adjusted filename
+      fileName: fileName.snakeCase,
     );
 
     if (immutable) {
-      await masonService.generateImmutableModel(params);
+      await _masonService.generateImmutableModel(params);
     } else {
-      await masonService.generateModel(params);
+      await _masonService.generateModel(params);
     }
 
     info('Model generated at ${generatedFile.absolute.path}');
