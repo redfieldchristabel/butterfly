@@ -13,11 +13,21 @@ After that, you can run the following command to initialize your project:
 ```sh
 butterfly init
 ```
-This command will create a new directory called `butterfly` in your project root, which will contain the following subdirectories:
-- `models`: This directory will contain your data models.
-- `models/providers`: This directory will contain your data providers normally your view model.
-- `screens`: This directory will contain your UI screens.
-- `widgets`: This directory will contain your reusable widgets.
-- `services`: This directory will contain your services.
-- `router`: This directory will contain your router configuration.
+
+The executable is named `butterfly`:
+
+```sh
+butterfly --help
+butterfly init
+butterfly commit
+```
+
+This command creates the following directories directly at your project root:
+
+- `models`: Your data models.
+- `services`: Your service classes.
+- `screens`: Your UI screens.
+- `widgets`: Your reusable widgets.
+
+Beyond folders, `butterfly init` also runs an interactive prompt asking whether to add **Core**, **Auth**, and **Router** features — and automatically adds the required butterfly packages as git dependencies.
 

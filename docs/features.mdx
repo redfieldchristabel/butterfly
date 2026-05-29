@@ -36,6 +36,25 @@ Modules like `CoreService`, `AuthService`, and `ThemeService` are all designed w
 Whether you're bootstrapping models or just looking for utility helpers that play well with your
 existing codebase, Butterfly's got your back.
 
+### 🚩 Global Flags
+
+These flags work with any command:
+
+| Flag | Alias | Description |
+|---|---|---|
+| `--verbose` | `-v` | Print verbose/debug output |
+| `--dev` | `-D` | Run in dev mode — re-throws errors instead of clean exit (useful during development) |
+
+### ℹ️ Version
+
+Display the current version of the Butterfly CLI:
+
+```sh
+butterfly version
+```
+
+No flags or arguments needed.
+
 ## 🛠️ CLI Features
 
 Butterfly's CLI tool offers powerful generators to streamline your Flutter development process.
@@ -60,9 +79,9 @@ manually if preferred as it simple enough.</Info>
 ```sh
 butterfly generate model <ModelName>
 ```
-**Alias:**
+**Aliases:**
 - generate -> gen -> g
-- model -> m
+- model -> m -> mdl
 
 **Example:**
 ```sh
@@ -74,6 +93,8 @@ butterfly gen model UserProfile
 models/booking/.
 - `-i`: Generate an immutable model using the [built_value](https://pub.dev/packages/built_value)
 package.
+- `-s` / `--serializable`: Generate a serializable model using `json_serializable` (default: `true`). Set to
+`false` with `--no-serializable` to skip serialization annotations.
 
 <Info>Note: All generated folders follow `snake_case` naming conventions, and class names follow
 `CamelCase`, adhering to Dart best practices.</Info>
@@ -102,11 +123,20 @@ automation.
 ```sh
 butterfly commit
 ```
-**Alias:**
-- commit -> c
+**Aliases:**
+- commit -> c -> comit -> commits -> cm
 
 When you run this command, Butterfly will prompt you to enter details for your commit message,
 ensuring it follows the Conventional Commits format.
+
+**Options:**
+- `-a` / `--action`: Pre-select the commit type non-interactively. Allowed values: `fix`, `feat`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`.
+- `-m` / `--message`: Pre-set the commit message non-interactively.
+
+**Example with flags:**
+```sh
+butterfly commit -a feat -m "add user registration screen"
+```
 
 ## 📚 Library Features
 

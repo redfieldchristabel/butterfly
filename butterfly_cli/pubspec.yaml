@@ -30,4 +30,4 @@ dev_dependencies:
   test: ^1.24.0
 
 executables:
-  butterfly2: butterfly_cli
+  butterfly: butterfly_cli
