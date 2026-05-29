@@ -1,1 +1,3 @@
 [![Docs](https://img.shields.io/badge/docs-available-blue)](https://docs.page/redfieldchristabel/butterfly)
+[![CI](https://github.com/redfieldchristabel/butterfly/actions/workflows/ci.yml/badge.svg)](https://github.com/redfieldchristabel/butterfly/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/redfieldchristabel/butterfly/branch/master/graph/badge.svg)](https://codecov.io/gh/redfieldchristabel/butterfly)

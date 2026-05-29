@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [master, develop]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: butterfly_cli
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Install dependencies
+        run: dart pub get
+
+      - name: Analyze
+        run: dart analyze
+
+      - name: Run tests with coverage
+        run: |
+          dart test --coverage=./coverage
+          dart run coverage:format_coverage --lcov \
+            -i ./coverage \
+            -o ./coverage/lcov.info \
+            --package=. \
+            --report-on lib/
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          directory: butterfly_cli/coverage
+          files: lcov.info
+          fail_ci_if_error: false
