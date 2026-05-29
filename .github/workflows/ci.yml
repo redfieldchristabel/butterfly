@@ -10,10 +10,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: butterfly_cli
-
     steps:
       - uses: actions/checkout@v4
 
@@ -21,13 +17,19 @@ jobs:
         with:
           sdk: stable
 
-      - name: Install dependencies
-        run: dart pub get
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install workspace dependencies
+        run: flutter pub get
 
       - name: Analyze
+        working-directory: butterfly_cli
         run: dart analyze
 
       - name: Run tests with coverage
+        working-directory: butterfly_cli
         run: |
           dart test --coverage=./coverage
           dart run coverage:format_coverage --lcov \
