@@ -31,8 +31,11 @@ dependencies:
   flutter:
     sdk: flutter
   core_management:
+    path: ../../core_management
   auth_management:
+    path: ../../auth_management
   core_management_route_go_router:
+    path: ../
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.

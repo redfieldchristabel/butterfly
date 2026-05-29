@@ -35,6 +35,7 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   auth_management:
+    path: ../../auth_management
   auth_management_database_hive_ce:
     path: ../
   hive_ce: ^2.10.1
