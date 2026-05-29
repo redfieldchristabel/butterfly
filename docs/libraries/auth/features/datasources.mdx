@@ -1,0 +1,70 @@
+---
+title: Auth Datasources
+description: Swap your database without changing your auth code
+---
+
+### The idea
+
+Authentication needs to store user data somewhere. Maybe locally (Hive, Isar), maybe in the cloud (Firebase). The rest of your app shouldn't care which one you pick.
+
+That's what `AuthDataSource` is for — a two-method contract:
+
+```dart
+abstract class AuthDataSource {
+  User? get currentUser;
+  Stream<User?> get userStream;
+  Future<void> saveUser(User user);
+  Future<void> deleteUser();
+}
+```
+
+That's it. Implement these, and `AuthService` handles the rest.
+
+### What ships with Butterfly
+
+| Package | Class | Storage |
+|---|---|---|
+| `auth_management_database_hive_ce` | `HiveAuthDataSource` | Local Hive box |
+| `auth_management_database_isar_community` | `IsarAuthDataSource` | Local Isar collection |
+| `auth_management_firebase` | `FirebaseAuthDataSource` | Firebase Auth SDK |
+| `auth_management_firebase` | `FirebaseAuthRepository` | Firebase + local cache |
+
+### Picking one
+
+**Hive** — lightest option. No native dependencies, works on web. Good for simple apps that just need "remember who logged in."
+
+**Isar** — also local but supports queries if you need to search users. Heavier dependency.
+
+**Firebase** — full server-backed auth. Email/password, anonymous, phone, and whatever Firebase supports. Also syncs across devices.
+
+### Using a custom datasource
+
+Don't see yours? Implement it:
+
+```dart
+class MySqlAuthDataSource implements AuthDataSource {
+  @override
+  User? get currentUser => _cachedUser;
+
+  @override
+  Stream<User?> get userStream => _db.userChanges();
+
+  @override
+  Future<void> saveUser(User user) async {
+    await _db.insert('users', user.toJson());
+    _cachedUser = user;
+  }
+
+  @override
+  Future<void> deleteUser() async {
+    await _db.delete('users', where: 'id = ?', args: [_cachedUser!.id]);
+    _cachedUser = null;
+  }
+}
+```
+
+Then inject it into `AuthRepository` and you're done. `AuthService` doesn't know or care what's underneath.
+
+### The repository layer
+
+`AuthRepository` wraps the datasource and adds a thin caching layer. You normally don't touch this directly — `AuthService` talks to it. But if you want to add custom logic (migration, encryption, sync strategy), extend `AuthRepository` and override the methods you need.

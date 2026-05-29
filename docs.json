@@ -68,6 +68,14 @@
             {
               "title": "Introduction",
               "href": "/libraries/auth"
+            },
+            {
+              "title": "Datasources",
+              "href": "/libraries/auth/features/datasources"
+            },
+            {
+              "title": "Auth Providers",
+              "href": "/libraries/auth/features/providers"
             }
           ]
         }
