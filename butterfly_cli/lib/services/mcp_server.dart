@@ -1,6 +1,7 @@
 import 'package:dart_mcp/server.dart';
 
 import '../tools/generate_model.dart';
+import '../tools/init.dart';
 import '../tools/test.dart';
 
 base class McpServerService extends MCPServer with ToolsSupport {
@@ -16,6 +17,7 @@ base class McpServerService extends MCPServer with ToolsSupport {
     final tools = [
       TestTool(),
       GenerateModelTool(),
+      InitTool(),
     ];
     for (final t in tools) {
       registerTool(t.definition, t.call);
