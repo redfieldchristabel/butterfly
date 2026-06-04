@@ -1,5 +1,6 @@
 import 'package:dart_mcp/server.dart';
 
+import '../tools/generate_model.dart';
 import '../tools/test.dart';
 
 base class McpServerService extends MCPServer with ToolsSupport {
@@ -9,10 +10,13 @@ base class McpServerService extends MCPServer with ToolsSupport {
             name: 'Butterfly CLI MCP Server',
             version: '0.1.0',
           ),
-          instructions: 'Tools for interacting with butterfly projects. '
-              'Use `test` to verify the server is running and echo messages.',
+          instructions:
+              'Tools for generating butterfly project components.',
         ) {
-    final tools = [TestTool()];
+    final tools = [
+      TestTool(),
+      GenerateModelTool(),
+    ];
     for (final t in tools) {
       registerTool(t.definition, t.call);
     }

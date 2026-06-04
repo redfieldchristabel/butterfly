@@ -61,10 +61,10 @@ class MockPubspecService implements IPubspecService {
 
 class MockMasonService implements IMasonService {
   @override
-  Future<void> generateModel(ModelGenParams params) async {}
+  Future<void> generateModel(ModelGenParams params, {bool overwrite = false}) async {}
 
   @override
-  Future<void> generateImmutableModel(ModelGenParams params) async {}
+  Future<void> generateImmutableModel(ModelGenParams params, {bool overwrite = false}) async {}
 
   @override
   Future<void> generateCoreService() async {}

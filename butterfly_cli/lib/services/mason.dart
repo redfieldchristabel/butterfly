@@ -6,13 +6,28 @@ import 'package:butterfly_cli/models/project_configuration.dart';
 import 'package:dart_style/dart_style.dart';
 import 'package:mason/mason.dart';
 
+class FileAlreadyExistsException implements Exception {
+  final String path;
+  FileAlreadyExistsException(this.path);
+
+  @override
+  String toString() =>
+      'File already exists at $path. Set overwrite=true to replace it.';
+}
+
 class MasonService implements IMasonService {
   final ILoggerService _logger;
 
   MasonService(this._logger);
 
   @override
-  Future<void> generateModel(ModelGenParams params) async {
+  Future<void> generateModel(ModelGenParams params,
+      {bool overwrite = false}) async {
+    final targetFile = File('${params.path.path}/${params.fileName}.dart');
+    if (targetFile.existsSync() && !overwrite) {
+      throw FileAlreadyExistsException(targetFile.absolute.path);
+    }
+
     final generator = await _getGenerator('mason/model');
 
     _logger.detail('generating directory to create this model');
@@ -45,7 +60,13 @@ class MasonService implements IMasonService {
   }
 
   @override
-  Future<void> generateImmutableModel(ModelGenParams params) async {
+  Future<void> generateImmutableModel(ModelGenParams params,
+      {bool overwrite = false}) async {
+    final targetFile = File('${params.path.path}/${params.fileName}.dart');
+    if (targetFile.existsSync() && !overwrite) {
+      throw FileAlreadyExistsException(targetFile.absolute.path);
+    }
+
     final generator = await _getGenerator('mason/immutable_model');
 
     _logger.detail('generating directory to create this model');

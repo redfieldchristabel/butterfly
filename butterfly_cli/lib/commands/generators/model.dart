@@ -102,9 +102,9 @@ class ModelGeneratorCommand extends Command with ButterflyLogger {
     );
 
     if (immutable) {
-      await _masonService.generateImmutableModel(params);
+      await _masonService.generateImmutableModel(params, overwrite: true);
     } else {
-      await _masonService.generateModel(params);
+      await _masonService.generateModel(params, overwrite: true);
     }
 
     info('Model generated at ${generatedFile.absolute.path}');
