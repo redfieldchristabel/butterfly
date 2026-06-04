@@ -5,6 +5,7 @@ import 'package:args/command_runner.dart';
 import 'package:butterfly_cli/commands/commit.dart';
 import 'package:butterfly_cli/commands/generators/index.dart';
 import 'package:butterfly_cli/commands/init.dart';
+import 'package:butterfly_cli/commands/mcp_server.dart';
 import 'package:butterfly_cli/commands/version.dart';
 import 'package:butterfly_cli/di/setup_dependencies.dart';
 import 'package:butterfly_cli/readable_exception.dart';
@@ -16,13 +17,14 @@ void main(List<String> arguments) {
   final runner = CommandRunner('butterfly', 'A CLI tool for butterfly project');
 
   runner.argParser.addFlag('verbose', abbr: 'v', help: 'Print verbose output');
-  runner.argParser.addFlag('dev',
-      abbr: 'D', help: 'Run in dev mode', defaultsTo: false);
+  runner.argParser
+      .addFlag('dev', abbr: 'D', help: 'Run in dev mode', defaultsTo: false);
 
   runner.addCommand(getIt<VersionCommand>());
   runner.addCommand(getIt<InitCommand>());
   runner.addCommand(getIt<CommitCommand>());
   runner.addCommand(getIt<GenerateCommand>());
+  runner.addCommand(getIt<McpServerCommand>());
 
   final result = runner.parse(arguments);
 

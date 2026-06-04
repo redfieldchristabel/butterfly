@@ -10,6 +10,8 @@ import 'package:butterfly_cli/services/project_configuration.dart';
 import 'package:butterfly_cli/services/pubspec.dart';
 import 'package:get_it/get_it.dart';
 
+import '../commands/mcp_server.dart';
+
 final getIt = GetIt.instance;
 
 void configureDependencies() {
@@ -36,4 +38,5 @@ void configureDependencies() {
       GenerateCommand(masonService, pubspecService));
   getIt.registerSingleton<InitCommand>(
       InitCommand(pubspecService, configService, masonService));
+  getIt.registerSingleton<McpServerCommand>(McpServerCommand());
 }
