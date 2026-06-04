@@ -16,8 +16,8 @@ base class McpServerService extends MCPServer with ToolsSupport {
         ) {
     final tools = [
       TestTool(),
-      GenerateModelTool(),
       InitTool(),
+      GenerateModelTool(),
     ];
     for (final t in tools) {
       registerTool(t.definition, t.call);
