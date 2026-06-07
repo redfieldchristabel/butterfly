@@ -81,12 +81,11 @@ class InitTool extends BaseTool {
       }
     }
 
-    getIt<IDirectoryService>().ensureRootDirectory();
-
+    final directoryService = getIt<IDirectoryService>();
     final pubspecService = getIt<IPubspecService>();
     final masonService = getIt<IMasonService>();
-    final output = StringBuffer();
-    output.writeln('Initializing butterfly project...');
+
+    directoryService.ensureRootDirectory();
 
     final config = ProjectConfiguration(
       useAuth: useAuth,
@@ -97,36 +96,61 @@ class InitTool extends BaseTool {
     );
 
     _saveConfig(config);
+
+    final output = StringBuffer();
+    output.writeln('Initializing butterfly project...');
     output.writeln('Configuration saved');
 
-    getIt<IDirectoryService>().ensureLibFolder();
+    // Do the work in a proper async chain
+    return _runInit(directoryService, pubspecService, masonService, config, output);
+  }
 
-    if (config.useCore) {
-      pubspecService.addButterflyDependency('core_management');
-      output.writeln('Added core_management dependency');
-      // These are async but fire-and-forget from the tool perspective
-      masonService.generateCoreService();
-      masonService.generateThemeService();
-      output.writeln('Generated core and theme services');
+  Future<CallToolResult> _runInit(
+    IDirectoryService directoryService,
+    IPubspecService pubspecService,
+    IMasonService masonService,
+    ProjectConfiguration config,
+    StringBuffer output,
+  ) async {
+    // Run all the async steps, catching errors
+    try {
+      // ensureLibFolder moves cwd to lib/ — restore to root after
+      directoryService.ensureLibFolder();
+      directoryService.changeWorkingDirectory('..');
+
+      if (config.useCore) {
+        pubspecService.addButterflyDependency('core_management');
+        output.writeln('Added core_management dependency');
+        await masonService.generateCoreService();
+        await masonService.generateThemeService();
+        output.writeln('Generated core and theme services');
+      }
+
+      if (config.useAuth) {
+        pubspecService.addButterflyDependency('auth_management');
+        output.writeln('Added auth_management dependency');
+        await masonService.generateAuthService();
+        output.writeln('Generated auth service');
+      }
+
+      if (config.useRouter && config.routerType != RouterType.other) {
+        await pubspecService.addDependency('go_router');
+        await pubspecService.addDependency('build_runner', dev: true);
+        await pubspecService.addDependency('go_router_builder', dev: true);
+        await masonService.generateRouteFile(config.routerType!);
+        output.writeln('Generated route file');
+      }
+
+      output.writeln('Butterfly project initialized successfully');
+      return CallToolResult(content: [TextContent(text: output.toString())]);
+    } catch (e) {
+      return CallToolResult(
+        isError: true,
+        content: [
+          TextContent(text: 'Initialization failed: $e'),
+        ],
+      );
     }
-
-    if (config.useAuth) {
-      pubspecService.addButterflyDependency('auth_management');
-      output.writeln('Added auth_management dependency');
-      masonService.generateAuthService();
-      output.writeln('Generated auth service');
-    }
-
-    if (config.useRouter && config.routerType != RouterType.other) {
-      pubspecService.addDependency('go_router');
-      pubspecService.addDependency('build_runner', dev: true);
-      pubspecService.addDependency('go_router_builder', dev: true);
-      masonService.generateRouteFile(config.routerType!);
-      output.writeln('Generated route file');
-    }
-
-    output.writeln('Butterfly project initialized successfully');
-    return CallToolResult(content: [TextContent(text: output.toString())]);
   }
 
   void _saveConfig(ProjectConfiguration config) {
@@ -138,7 +162,6 @@ class InitTool extends BaseTool {
   }
 
   /// Converts a JSON-like map to a simple YAML string.
-  /// JSON is valid YAML, but this produces cleaner human-readable output.
   String jsonToYaml(Map<String, dynamic> map) {
     final buffer = StringBuffer();
     for (final entry in map.entries) {

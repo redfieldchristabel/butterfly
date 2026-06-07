@@ -14,7 +14,7 @@ dependencies:
   auth_management:
     git:
       url: git@github.com:redfieldchristabel/butterfly.git
-      ref: develop
+      ref: master
       path: packages/auth_management
   hive_ce: ^2.10.1
   hive_ce_flutter: ^2.2.0
