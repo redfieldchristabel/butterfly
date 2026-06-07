@@ -145,7 +145,7 @@ class MasonService implements IMasonService {
       GitPath(
         'https://github.com/redfieldchristabel/butterfly',
         path: path,
-        ref: 'develop',
+        ref: 'master',
       ),
     );
     return await MasonGenerator.fromBrick(brick);

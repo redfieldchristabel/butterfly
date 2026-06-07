@@ -93,7 +93,7 @@ class PubspecService implements IPubspecService {
       name: name,
       url: 'git@github.com:redfieldchristabel/butterfly.git',
       path: 'packages/$name',
-      ref: 'develop',
+      ref: 'master',
     ));
     _logger.detail('Write to pubspec.yaml file');
     pubspec.save();
