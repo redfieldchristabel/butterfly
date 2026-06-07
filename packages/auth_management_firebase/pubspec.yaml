@@ -12,6 +12,10 @@ dependencies:
   flutter:
     sdk: flutter
   auth_management:
+    git:
+      url: git@github.com:redfieldchristabel/butterfly.git
+      ref: master
+      path: packages/auth_management
   firebase_core: ^4.2.1
   firebase_auth: ^6.1.2
 
