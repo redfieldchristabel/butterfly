@@ -47,7 +47,7 @@ abstract class _$RiverpodUserState extends $Notifier<RiverpodUser?> {
   RiverpodUser? build();
   @$mustCallSuper
   @override
-  void runBuild() {
+  WhenComplete runBuild() {
     final ref = this.ref as $Ref<RiverpodUser?, RiverpodUser?>;
     final element =
         ref.element
@@ -57,6 +57,6 @@ abstract class _$RiverpodUserState extends $Notifier<RiverpodUser?> {
               Object?,
               Object?
             >;
-    element.handleCreate(ref, build);
+    return element.handleCreate(ref, build);
   }
 }
