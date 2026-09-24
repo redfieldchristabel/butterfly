@@ -93,9 +93,15 @@ abstract class GoRouterAuthRoute<T> extends GoRouterService
       return route;
     }
 
-    if (debugScreen != null &&
-        debugRoutes.contains(state.uri.toString()) == true) {
-      return '/test';
+    if (debugScreen != null) {
+      if (state.matchedLocation == debugRoute) return null;
+
+      if (debugRoutes.contains(state.fullPath) ||
+          debugRoutes.contains(state.matchedLocation)) {
+        return null;
+      }
+
+      return debugRoute;
     }
 
     final matchesPublicRoute = publicRoutes.contains(state.matchedLocation);

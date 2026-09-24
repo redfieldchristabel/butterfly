@@ -12,6 +12,20 @@ import 'package:go_router/go_router.dart';
 abstract class GoRouterService extends BaseRouteService {
   List<RouteBase> get routes;
 
+  List<RouteBase> get accumulatedRoutes {
+    final debugScreen = this.debugScreen;
+    if (debugScreen == null) {
+      return routes;
+    }
+
+    final routerDebugRoute = GoRoute(
+      path: debugRoute,
+      builder: (context, state) => debugScreen,
+    );
+
+    return [...routes, routerDebugRoute];
+  }
+
   /// Optional [Listenable] to trigger route re-evaluation when it notifies its listeners.
   ///
   /// When this notifier triggers (by calling `notifyListeners()`), the router will
@@ -162,7 +176,7 @@ abstract class GoRouterService extends BaseRouteService {
       refreshListenable: refreshListenable,
       observers: observers,
       initialLocation: initialRoute,
-      routes: routes,
+      routes: accumulatedRoutes,
       redirect: goRouterRedirect,
       errorBuilder: errorBuilder,
     );

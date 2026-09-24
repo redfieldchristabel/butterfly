@@ -26,6 +26,8 @@ abstract class BaseRouteService {
   /// Configures the router and returns a router configuration object for [MaterialApp.router].
   RouterConfig<Object> get routerConfig;
 
+  String get debugRoute => '/butterfly-debug';
+
   /// Optional debug screen for bypassing authentication or any other checks
   /// during development.
   Widget? get debugScreen => null;
