@@ -19,9 +19,24 @@ abstract class BaseRouteService {
   /// An optional route path to override the default navigation for one cycle.
   String? redirectOverride;
 
-  /// An optional route path for temporary redirects, such as deep links or notifications.
-  /// Cleared after use to avoid affecting subsequent navigations.
-  String? temporaryRedirect;
+  /// Where a signed-out user was heading when the auth guard sent them to sign
+  /// in, such as a deep link or a notification. The guard sends them there once
+  /// they are signed in, then clears it.
+  ///
+  /// It is only ever used after sign-in. While signed out, public routes and
+  /// auth trigger routes load as requested and leave it untouched.
+  String? postSignInRedirect;
+
+  /// Old name for [postSignInRedirect], kept so existing apps still compile.
+  @Deprecated(
+    'Use postSignInRedirect. It only ever held where to go after sign-in.',
+  )
+  String? get temporaryRedirect => postSignInRedirect;
+
+  @Deprecated(
+    'Use postSignInRedirect. It only ever held where to go after sign-in.',
+  )
+  set temporaryRedirect(String? value) => postSignInRedirect = value;
 
   /// Configures the router and returns a router configuration object for [MaterialApp.router].
   RouterConfig<Object> get routerConfig;

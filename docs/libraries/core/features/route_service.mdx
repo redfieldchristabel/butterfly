@@ -83,12 +83,14 @@ want to redirect the user to a specific route when they try to navigate to the i
 will be reset after the first use. This is not a declarative route since it will be use in runtime
 instead if set it at compiled time so this router is a variable instead of getter.
 
-##### temporaryRedirect
+##### postSignInRedirect
 
-An optional route path for temporary redirects, such as deep links or notifications. Will be reset
-after use to avoid affecting subsequent navigation. This route is also not a declarative route
-and we notice that it kinda conflicting with the **redirectOverride** so we are discussing if we
-can remove it to reduce the confusion in developer.
+Where a signed-out user was heading when the auth guard sent them to sign in, such as a deep link
+or a notification. Once they sign in, the guard sends them there and clears it. It is only used
+after sign-in: while signed out, **publicRoutes** and **authTriggerRoutes** load as requested and
+leave it untouched. Like **redirectOverride**, it is set at runtime rather than declared.
+
+This was called **temporaryRedirect** before. The old name still works but is deprecated.
 
 ##### debugScreen & debugRoutes
 

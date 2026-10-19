@@ -33,7 +33,7 @@ abstract class GoRouterAuthRoute<T> extends GoRouterService
         buffer
           ..writeln('├─ ⚙️ Redirect Details:')
           ..writeln('│   ├─ 🔄 Override: $redirectOverride')
-          ..writeln('│   └─ ⏳ Temporary: $temporaryRedirect');
+          ..writeln('│   └─ ⏳ Post sign-in: $postSignInRedirect');
       }
 
       log(
@@ -109,13 +109,13 @@ abstract class GoRouterAuthRoute<T> extends GoRouterService
       state.matchedLocation,
     );
     if (user == null && !(matchesPublicRoute || matchesAuthTriggerRoute)) {
-      temporaryRedirect = state.uri.toString();
+      postSignInRedirect = state.uri.toString();
       return signInRoute;
     }
 
     if (user != null && authTriggerRoutes.contains(state.matchedLocation)) {
-      final route = temporaryRedirect ?? defaultAuthRoute;
-      temporaryRedirect = null;
+      final route = postSignInRedirect ?? defaultAuthRoute;
+      postSignInRedirect = null;
       return route;
     }
 
@@ -123,9 +123,12 @@ abstract class GoRouterAuthRoute<T> extends GoRouterService
       return null;
     }
 
-    if (temporaryRedirect != null) {
-      final route = temporaryRedirect;
-      temporaryRedirect = null;
+    // Only once signed in. Spending it while signed out sent a public route
+    // such as sign-up to the saved location, which bounced straight back to
+    // sign-in, so public routes never loaded after the first redirect.
+    if (user != null && postSignInRedirect != null) {
+      final route = postSignInRedirect;
+      postSignInRedirect = null;
       return route;
     }
 

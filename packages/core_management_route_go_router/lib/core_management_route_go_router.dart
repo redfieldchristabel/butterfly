@@ -110,7 +110,7 @@ abstract class GoRouterService extends BaseRouteService {
 
       buffer
         ..writeln('└─ ⚙️  Redirect Details:')
-        ..writeln('   ├─ Temporary: $temporaryRedirect')
+        ..writeln('   ├─ Post sign-in: $postSignInRedirect')
         ..writeln('   └─ Redirect: $redirectOverride');
 
       log(
