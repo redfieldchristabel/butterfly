@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:auth_management_database_isar_community/auth_management_database_isar_community.dart';
 import 'package:flutter/material.dart';
 
@@ -7,7 +5,6 @@ import 'package:auth_management/auth_management.dart';
 import 'package:isar_community/isar.dart';
 
 part 'main.g.dart';
-
 
 final isarRepo = AuthManagementIsarRepository<MyUser>();
 final authManagement = AuthService();
@@ -86,10 +83,4 @@ class AuthService extends AuthServiceRepository<MyUser> {
 
   @override
   AuthManagementDatabaseRepository<MyUser> get dbRepo => isarRepo;
-
-  @override
-  FutureOr<MyUser> fetchUser() {
-    // actual api call
-    return MyUser(id: 1);
-  }
 }

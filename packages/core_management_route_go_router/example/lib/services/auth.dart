@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:auth_management/auth_management.dart';
 import 'package:flutter/foundation.dart' show ChangeNotifier;
 import 'package:go_router_example/models/user.dart';
@@ -18,12 +16,6 @@ class AuthService extends AuthServiceRepository<User> with ChangeNotifier {
   @override
   void onUserChanged(User? user) {
     notifyListeners();
-  }
-
-  @override
-  FutureOr<User> fetchUser() {
-    // TODO: actual api call
-    return User(1);
   }
 }
 

@@ -1,21 +1,50 @@
+import 'dart:async';
 import 'dart:developer';
 import 'dart:io' show File;
 
-import 'package:flutter/foundation.dart' show protected;
+import 'package:flutter/foundation.dart' show protected, visibleForOverriding;
 import 'package:http/http.dart' as http;
 import 'package:oauth2/oauth2.dart' as oauth2;
 import 'package:auth_management/auth_management.dart'
-    show AuthServiceRepository;
+    show IdentityAuthRepository;
 import 'package:path_provider/path_provider.dart';
 
-abstract class BaseOauth2AuthManagement extends AuthServiceRepository {
+/// OAuth2 as the identity provider for your app's user model [T].
+///
+/// An OAuth2 sign-in only gives you tokens, no user. Implement [fetchUser]
+/// to call your `/me` or `/userinfo` endpoint with the authenticated
+/// [oauth2.Client] and build [T]:
+///
+/// ```dart
+/// class AuthService extends BaseOauth2AuthManagement<AppUser>
+///     with AuthorizationCodeGrantMixin {
+///   @override
+///   Future<AppUser> fetchUser(oauth2.Client session) async {
+///     final res = await session.get(Uri.parse('https://api.example.com/me'));
+///     return AppUser.fromJson(jsonDecode(res.body));
+///   }
+///   // endpoints, identifier, secret, dbRepo...
+/// }
+/// ```
+///
+/// Credentials are stored on disk, so the session survives restarts until
+/// [signOut].
+abstract class BaseOauth2AuthManagement<T>
+    extends IdentityAuthRepository<oauth2.Client, T> {
+  /// The HTTP client for API calls: the authenticated [oauth2.Client] when
+  /// signed in, a plain [http.Client] otherwise.
   http.Client client = http.Client();
 
+  oauth2.Client? _session;
+  final StreamController<oauth2.Client?> _sessionChanges =
+      StreamController<oauth2.Client?>.broadcast();
+
+  /// Restores stored credentials, then starts listening for the user.
   @override
   Future<void> initialize() async {
     final client = await getClient();
     if (client != null) {
-      this.client = client;
+      _setSession(client);
     }
 
     super.initialize();
@@ -27,11 +56,50 @@ abstract class BaseOauth2AuthManagement extends AuthServiceRepository {
 
   String get secret;
 
+  /// Loads your app's user model [T] for the signed-in [session].
+  ///
+  /// **You implement this.** OAuth2 gives you tokens, not a user: use
+  /// [session] (an authenticated [http.Client]) to call your `/me` or
+  /// `/userinfo` endpoint and build [T].
+  ///
+  /// Called only when there is no cached user: the first sign-in on a
+  /// device or [refreshUser]. The result is cached in [dbRepo] for you.
+  @override
+  @protected
+  @visibleForOverriding
+  FutureOr<T> fetchUser(oauth2.Client session);
+
+  @override
+  @protected
+  Stream<oauth2.Client?> streamIdentity() async* {
+    yield _session;
+    yield* _sessionChanges.stream;
+  }
+
+  @override
+  @protected
+  oauth2.Client? getIdentity() => _session;
+
+  /// Deletes the stored credentials, then clears the cached user and
+  /// provider state.
+  @override
+  Future<void> signOut() async {
+    final credentialsFile = await _credentialsFile();
+    if (await credentialsFile.exists()) {
+      await credentialsFile.delete();
+    }
+
+    _session?.close();
+    _session = null;
+    client = http.Client();
+    _sessionChanges.add(null);
+
+    await super.signOut();
+  }
+
   @protected
   Future<oauth2.Client?> getClient() async {
-    final docDir = await getApplicationDocumentsDirectory();
-
-    final credentialsFile = File('${docDir.path}/credentials.json');
+    final credentialsFile = await _credentialsFile();
 
     final exists = await credentialsFile.exists();
 
@@ -52,9 +120,7 @@ abstract class BaseOauth2AuthManagement extends AuthServiceRepository {
 
   @protected
   Future<void> storeClient(oauth2.Client client) async {
-    final docDir = await getApplicationDocumentsDirectory();
-
-    final credentialsFile = File('${docDir.path}/credentials.json');
+    final credentialsFile = await _credentialsFile();
 
     final exists = await credentialsFile.exists();
 
@@ -68,6 +134,17 @@ abstract class BaseOauth2AuthManagement extends AuthServiceRepository {
     // program.
     await credentialsFile.writeAsString(client.credentials.toJson());
 
-    this.client = client;
+    _setSession(client);
+    _sessionChanges.add(client);
+  }
+
+  void _setSession(oauth2.Client session) {
+    _session = session;
+    client = session;
+  }
+
+  Future<File> _credentialsFile() async {
+    final docDir = await getApplicationDocumentsDirectory();
+    return File('${docDir.path}/credentials.json');
   }
 }

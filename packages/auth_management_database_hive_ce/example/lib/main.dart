@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:auth_management_database_hive_ce/base_user.dart';
 import 'package:flutter/material.dart';
 import 'package:auth_management_database_hive_ce/auth_management_database_hive_ce.dart';
@@ -26,11 +24,6 @@ class AuthService extends AuthServiceRepository<User> {
 
   @override
   AuthManagementDatabaseRepository<User> get dbRepo => hiveCe;
-
-  @override
-  FutureOr<User> fetchUser() {
-    return User('My Id');
-  }
 }
 
 Future<void> main() async {
