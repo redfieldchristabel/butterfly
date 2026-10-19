@@ -5,21 +5,40 @@ description: Publish the signed-in user to Riverpod automatically with one initi
 
 ## Setup
 
-Three steps, and no publish or clear code in your app:
+Four steps, and no publish or clear code in your app:
 
-1. Mix `RiverpodUser` into your user model.
+1. Mix `RiverpodUser` into your user model, and add a typed `userProvider` below it.
 2. Create one top-level `AuthManagementRiverpodRepository` and return it from your auth service's `providerRepo`.
 3. Call `initialize(ref)` on it once from your root widget.
+4. Watch `userProvider` in your widgets.
+
+The typed provider uses Riverpod code generation. Add the packages, then run the generator whenever you change an annotated provider:
+
+```bash
+flutter pub add flutter_riverpod riverpod_annotation
+flutter pub add dev:riverpod_generator dev:build_runner
+dart run build_runner build
+```
 
 <Info>Only `lib/main.dart` is a fixed name. Files marked **(suggested)** follow the `butterfly init` layout; rename or move them freely. Replace `my_app` in imports with the `name` from your `pubspec.yaml`.</Info>
 
 ```dart title="lib/models/app_user.dart (suggested)"
 import 'package:auth_management_provider_riverpod/auth_management_provider_riverpod.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
+
+part 'app_user.g.dart';
 
 class AppUser with RiverpodUser {
   AppUser(this.name);
   final String name;
 }
+
+/// The signed-in [AppUser], or null when signed out.
+///
+/// Generates `userProvider`. Watch it instead of `riverpodUserStateProvider`,
+/// so the cast to [AppUser] lives here once.
+@riverpod
+AppUser? user(Ref ref) => ref.watch(riverpodUserStateProvider) as AppUser?;
 ```
 
 ```dart title="lib/services/auth.dart (suggested)"
@@ -67,7 +86,6 @@ class App extends ConsumerWidget {
 ```
 
 ```dart title="lib/widgets/user_label.dart (suggested)"
-import 'package:auth_management_provider_riverpod/auth_management_provider_riverpod.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:my_app/models/app_user.dart';
@@ -77,7 +95,7 @@ class UserLabel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(riverpodUserStateProvider) as AppUser?;
+    final user = ref.watch(userProvider);
     return Text(user?.name ?? 'Signed out');
   }
 }
@@ -85,7 +103,7 @@ class UserLabel extends ConsumerWidget {
 
 Replace the in-memory cache with a persistent [storage repository](/libraries/auth/features/datasources) in a real app.
 
-From then on, every user change from your auth service is published to `riverpodUserStateProvider`, and `signOut()` clears it. Watch the provider anywhere below `ProviderScope`.
+From then on, every user change from your auth service is published to `riverpodUserStateProvider`, and `signOut()` clears it. `userProvider` follows it, typed as `AppUser?`, anywhere below `ProviderScope`.
 
 Keep the bridge as one top-level instance, as above, so the auth service and the root widget share it. The getter must return that same instance every time; constructing a new one in the getter would leave the initialized bridge disconnected.
 
@@ -99,7 +117,7 @@ Use your root widget: the bridge keeps that `WidgetRef` for the app's lifetime, 
 
 ## What the provider holds
 
-`riverpodUserStateProvider` is a keep-alive notifier holding `RiverpodUser?`, initially null. It is not an `AsyncValue` or an auth-state enum, and the package doesn't define `authStateProvider` or `currentUserProvider`. Cast to your model when reading; the provider isn't generic per app.
+`riverpodUserStateProvider` is a keep-alive notifier holding `RiverpodUser?`, initially null. It is not an `AsyncValue` or an auth-state enum, and the package doesn't define `authStateProvider` or `currentUserProvider`. It isn't generic per app, which is why the setup adds `userProvider`: the cast to your model happens once, in that provider, instead of in every widget. Name the function after what it returns; the generator appends `Provider`, so `user` becomes `userProvider`.
 
 A nullable user can't distinguish "still restoring the session" from "signed out". If your UI needs a splash or error state, keep that in your own state alongside it.
 
