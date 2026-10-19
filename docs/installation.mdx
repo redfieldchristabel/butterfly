@@ -1,9 +1,9 @@
 ---
 title: Installation & Setup
-description: Activate the Butterfly CLI from your checkout, add modular Flutter packages via Git, and understand scaffolding behavior.
+description: Activate the Butterfly CLI from GitHub, add modular Flutter packages via Git, and understand scaffolding behavior.
 ---
 
-You can adopt Butterfly in two ways: add individual Flutter packages directly to your `pubspec.yaml`, or activate the `butterfly` CLI to generate models and project files.
+You can adopt Butterfly in two ways: activate the `butterfly` CLI globally to scaffold models and project files, or add individual Flutter packages directly to your `pubspec.yaml`.
 
 ## Prerequisites
 
@@ -20,34 +20,30 @@ You can adopt Butterfly in two ways: add individual Flutter packages directly to
 
 ## Install the CLI
 
+Activate `butterfly_cli` globally from the GitHub repository using `dart pub global activate`:
+
 <Steps>
-  <Step title="Bootstrap the workspace">
-    From the root of your Butterfly checkout, resolve workspace dependencies and verify the CLI runs:
-
+  <Step title="Activate from GitHub">
     ```bash
-    flutter pub get
-    cd butterfly_cli
-    dart run butterfly_cli --help
-    dart run butterfly_cli version
-    ```
-  </Step>
-  <Step title="Activate globally from your local path">
-    Register the `butterfly` executable on your machine from the repository root so it uses your local checkout:
-
-    ```bash
-    dart pub global activate --source path ./butterfly_cli
-    butterfly --help
+    dart pub global activate \
+      --source git https://github.com/redfieldchristabel/butterfly.git \
+      --git-path butterfly_cli \
+      --git-ref master
     ```
 
     <Info>
-      Make sure your Dart pub-cache `bin` directory (`~/.pub-cache/bin` on Linux/macOS) is on your `PATH`. The executable name is `butterfly` (not `butterfly2`).
+      **Coming soon to pub.dev:** Currently, activating via `--source git` is the only supported installation method. Once `butterfly_cli` is published to pub.dev, you will be able to install it with `dart pub global activate butterfly_cli`.
     </Info>
   </Step>
-</Steps>
+  <Step title="Verify the executable is on your PATH">
+    ```bash
+    butterfly --help
+    butterfly version
+    ```
 
-<Warning>
-  Running `dart pub global activate butterfly_cli` (without `--source path`) pulls the last published version from pub.dev, which will not include local repository updates.
-</Warning>
+    Make sure Dart's global pub-cache `bin` directory (`~/.pub-cache/bin` on Linux/macOS, `%LOCALAPPDATA%\Pub\Cache\bin` on Windows) is in your `PATH`.
+  </Step>
+</Steps>
 
 ---
 

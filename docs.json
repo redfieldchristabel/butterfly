@@ -123,7 +123,7 @@
       "icon": "terminal",
       "pages": [
         { "title": "Commands, Models & MCP", "href": "/features", "icon": "wand-magic-sparkles" },
-        { "title": "Local CLI Activation", "href": "/installation", "icon": "gear" }
+        { "title": "CLI Installation", "href": "/installation", "icon": "gear" }
       ]
     }
   ]
