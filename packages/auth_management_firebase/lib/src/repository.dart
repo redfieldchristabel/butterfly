@@ -4,7 +4,7 @@ import 'package:auth_management/auth_management.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 abstract class FirebaseAuthManagementRepository<T>
-    implements AuthServiceRepository<T> {
+    extends AuthServiceRepository<T> {
   final FirebaseAuth auth = FirebaseAuth.instance;
 
   /// ALso see [FirebaseAuth.signInWithEmailAndPassword]
