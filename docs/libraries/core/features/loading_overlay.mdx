@@ -7,12 +7,13 @@ description: Drive a loading overlay through the core service controller, with e
 
 `LoadingOverlay` accepts `child` and `key`. There are no `isLoading`, `opacity`, `indicator`, or `color` constructor parameters. It obtains its controller from `BaseCoreService.instance.loadingService`, so construct your core service before building it.
 
-```dart
+<Info>Only `lib/main.dart` is a fixed name. Files marked **(suggested)** follow the `butterfly init` layout; rename or move them freely. Replace `my_app` in imports with the `name` from your `pubspec.yaml`.</Info>
+
+```dart title="lib/services/loading.dart (suggested)"
 import 'package:core_management/core_management.dart';
-import 'package:core_management/widgets/loading_overlay.dart';
 import 'package:flutter/material.dart';
 
-class AppLoadingService extends BaseLoadingService {
+class LoadingService extends BaseLoadingService {
   @override
   Widget loadingWidget<T>(T data) => const Stack(
     fit: StackFit.expand,
@@ -22,29 +23,59 @@ class AppLoadingService extends BaseLoadingService {
     ],
   );
 }
+```
 
-class AppCore extends BaseCoreService {
+```dart title="lib/services/core.dart (suggested)"
+import 'package:core_management/core_management.dart';
+import 'package:my_app/services/loading.dart';
+
+class CoreService extends BaseCoreService {
   @override
-  final BaseLoadingService loadingService = AppLoadingService();
+  final BaseLoadingService loadingService = LoadingService();
 }
+
+final coreService = CoreService();
+```
+
+```dart title="lib/screens/home.dart (suggested)"
+import 'package:core_management/widgets/loading_overlay.dart';
+import 'package:flutter/material.dart';
+import 'package:my_app/services/core.dart';
+
+class HomeScreen extends StatelessWidget {
+  const HomeScreen({super.key});
+
+  Future<void> _load() async {
+    final controller = coreService.loadingService.controller;
+    controller.state = ButterflyLoadingState.loading;
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    } finally {
+      controller.state = ButterflyLoadingState.idle;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: Center(
+      child: ElevatedButton(onPressed: _load, child: const Text('Load')),
+    ),
+  );
+}
+```
+
+```dart title="lib/main.dart"
+import 'package:core_management/widgets/loading_overlay.dart';
+import 'package:flutter/material.dart';
+import 'package:my_app/screens/home.dart';
+import 'package:my_app/services/core.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  final core = AppCore();
+  coreService.errorHandler(); // first access constructs the core service
   runApp(MaterialApp(
     builder: (context, child) => LoadingOverlay(child: child!),
-    home: Scaffold(body: Center(child: ElevatedButton(
-      onPressed: () async {
-        final controller = core.loadingService.controller;
-        controller.state = ButterflyLoadingState.loading;
-        try {
-          await Future<void>.delayed(const Duration(milliseconds: 300));
-        } finally {
-          controller.state = ButterflyLoadingState.idle;
-        }
-      },
-      child: const Text('Load'),
-    ))),
+    home: const HomeScreen(),
   ));
 }
 ```

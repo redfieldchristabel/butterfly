@@ -7,10 +7,10 @@ description: Resolve application users from Firebase or OAuth2 and configure Goo
 
 Initialize Firebase and your user cache before constructing/initializing the auth service. Your model mixes in `FirebaseUser`; its `firebaseUid` must equal the Firebase account's UID.
 
-```dart
-import 'package:auth_management/auth_management.dart';
+<Info>Only `lib/main.dart` is a fixed name. Files marked **(suggested)** follow the `butterfly init` layout; rename or move them freely. Replace `my_app` in imports with the `name` from your `pubspec.yaml`.</Info>
+
+```dart title="lib/models/app_user.dart (suggested)"
 import 'package:auth_management_firebase/auth_management_firebase.dart';
-import 'package:firebase_auth/firebase_auth.dart' as firebase;
 
 class AppUser with FirebaseUser {
   AppUser({required this.uid, required this.role});
@@ -20,9 +20,16 @@ class AppUser with FirebaseUser {
   @override
   String get firebaseUid => uid;
 }
+```
 
-class AppAuth extends FirebaseAuthManagementRepository<AppUser> {
-  AppAuth({required this.dbRepo, required this.loadProfile});
+```dart title="lib/services/auth.dart (suggested)"
+import 'package:auth_management/auth_management.dart';
+import 'package:auth_management_firebase/auth_management_firebase.dart';
+import 'package:firebase_auth/firebase_auth.dart' as firebase;
+import 'package:my_app/models/app_user.dart';
+
+class AuthService extends FirebaseAuthManagementRepository<AppUser> {
+  AuthService({required this.dbRepo, required this.loadProfile});
 
   @override
   final AuthManagementDatabaseRepository<AppUser> dbRepo;
@@ -56,18 +63,22 @@ The web mixin creates `GoogleAuthProvider` and calls Firebase popup or redirect 
 
 Extend `BaseOauth2AuthManagement<T>`, provide `dbRepo`, `authorizationEndpoint`, `identifier`, `secret`, and implement `fetchUser(oauth2.Client session)`. That callback must load your app's user, typically using an authenticated profile endpoint.
 
-```dart
-import 'dart:convert';
-import 'package:auth_management_oauth2/auth_management_oauth2.dart';
-import 'package:oauth2/oauth2.dart' as oauth2;
-
+```dart title="lib/models/app_user.dart (suggested)"
 class AppUser {
   AppUser(this.id);
   final String id;
 }
+```
+
+```dart title="lib/services/auth.dart (suggested)"
+import 'dart:convert';
+
+import 'package:auth_management_oauth2/auth_management_oauth2.dart';
+import 'package:my_app/models/app_user.dart';
+import 'package:oauth2/oauth2.dart' as oauth2;
 
 // Profile-resolution skeleton only: supply configuration, dbRepo, and sign-in.
-abstract class AppOauth extends BaseOauth2AuthManagement<AppUser> {
+abstract class AuthService extends BaseOauth2AuthManagement<AppUser> {
   Uri get profileEndpoint;
 
   @override

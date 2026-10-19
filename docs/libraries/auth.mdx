@@ -20,13 +20,18 @@ Authentication is state-management-agnostic. BLoC/Cubit, Provider, a `StreamBuil
 
 This example injects a login function and a cache. The login function is application code, not a Butterfly API.
 
-```dart
-import 'package:auth_management/auth_management.dart';
+<Info>Only `lib/main.dart` is a fixed name. Files marked **(suggested)** follow the `butterfly init` layout; rename or move them freely. Replace `my_app` in imports with the `name` from your `pubspec.yaml`.</Info>
 
+```dart title="lib/models/app_user.dart (suggested)"
 class AppUser {
   const AppUser(this.id);
   final String id;
 }
+```
+
+```dart title="lib/services/auth.dart (suggested)"
+import 'package:auth_management/auth_management.dart';
+import 'package:my_app/models/app_user.dart';
 
 class AuthService extends AuthServiceRepository<AppUser> {
   AuthService({required this.dbRepo, required this.login});

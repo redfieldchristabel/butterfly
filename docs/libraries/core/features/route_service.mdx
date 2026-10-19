@@ -7,18 +7,23 @@ description: Configure GoRouter and preserve protected destinations across authe
 
 Extend `GoRouterService` for routing without authentication guards. Extend `GoRouterAuthRoute<T>` for user-aware guards and implement both `routes` and the synchronous `user` getter. The auth-aware class is an abstract class, not a mixin, and requires its separate import.
 
-```dart
-import 'package:core_management_route_go_router/go_router_auth_route.dart';
-import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
+<Info>Only `lib/main.dart` is a fixed name. Files marked **(suggested)** follow the `butterfly init` layout; rename or move them freely. Replace `my_app` in imports with the `name` from your `pubspec.yaml`.</Info>
 
+```dart title="lib/models/app_user.dart (suggested)"
 class AppUser {
   const AppUser(this.id);
   final String id;
 }
+```
 
-class AppRoutes extends GoRouterAuthRoute<AppUser> {
-  AppRoutes(this.session);
+```dart title="lib/services/route.dart (suggested)"
+import 'package:core_management_route_go_router/go_router_auth_route.dart';
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:my_app/models/app_user.dart';
+
+class RouteService extends GoRouterAuthRoute<AppUser> {
+  RouteService(this.session);
   final ValueNotifier<AppUser?> session;
 
   @override
@@ -38,11 +43,16 @@ class AppRoutes extends GoRouterAuthRoute<AppUser> {
     GoRoute(path: '/about', builder: (context, state) => const Text('About')),
   ];
 }
+```
+
+```dart title="lib/main.dart"
+import 'package:flutter/material.dart';
+import 'package:my_app/models/app_user.dart';
+import 'package:my_app/services/route.dart';
 
 void main() {
   final session = ValueNotifier<AppUser?>(null);
-  final service = AppRoutes(session);
-  final router = service.routerConfig;
+  final router = RouteService(session).routerConfig; // build once, keep it
   runApp(MaterialApp.router(routerConfig: router));
 }
 ```

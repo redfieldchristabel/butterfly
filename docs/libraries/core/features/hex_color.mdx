@@ -7,17 +7,20 @@ description: Parse RGB or ARGB strings and format Flutter colors with alpha firs
 
 Import the extension directly; it is not exported by the core barrel.
 
-```dart
+```dart title="test/hex_color_test.dart (suggested)"
 import 'package:core_management/extensions/hex_color.dart';
+import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  final color = HexColor.fromHex('#42A5F5');
-  assert(color.toHex() == '#ff42a5f5');
-  assert(color.toHex(leadingHashSign: false) == 'ff42a5f5');
-  assert(color.toHex(withOpacityFormat: false) == '#42a5f5');
+  test('converts between hex strings and colors', () {
+    final color = HexColor.fromHex('#42A5F5');
+    expect(color.toHex(), '#ff42a5f5');
+    expect(color.toHex(leadingHashSign: false), 'ff42a5f5');
+    expect(color.toHex(withOpacityFormat: false), '#42a5f5');
 
-  final translucent = HexColor.fromHex('8042A5F5');
-  assert(translucent.toHex() == '#8042a5f5');
+    final translucent = HexColor.fromHex('8042A5F5');
+    expect(translucent.toHex(), '#8042a5f5');
+  });
 }
 ```
 

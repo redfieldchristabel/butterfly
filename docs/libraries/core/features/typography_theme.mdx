@@ -7,7 +7,7 @@ description: Wrap ThemeData with overridable instance getters for current Materi
 
 `CoreTypographyTheme` takes a `ThemeData` instance. Its getters are not static, and it does not provide legacy `bodyText1`, `headline2`, or `caption` names.
 
-```dart
+```dart title="lib/widgets/welcome_text.dart (suggested)"
 import 'package:core_management/core_typography_theme.dart';
 import 'package:flutter/material.dart';
 
@@ -34,7 +34,7 @@ Each has a corresponding primary getter, such as `primaryHeadlineMedium` or `pri
 
 Getters have no setters. Override them in a subclass rather than assigning to a static property.
 
-```dart
+```dart title="lib/services/typography.dart (suggested)"
 import 'package:core_management/core_typography_theme.dart';
 import 'package:flutter/material.dart';
 

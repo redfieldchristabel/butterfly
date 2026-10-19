@@ -11,17 +11,22 @@ Three steps, and no publish or clear code in your app:
 2. Create one top-level `AuthManagementRiverpodRepository` and return it from your auth service's `providerRepo`.
 3. Call `initialize(ref)` on it once from your root widget.
 
-```dart
-import 'package:auth_management/auth_management.dart';
-import 'package:auth_management/auth_management_provider.dart';
+<Info>Only `lib/main.dart` is a fixed name. Files marked **(suggested)** follow the `butterfly init` layout; rename or move them freely. Replace `my_app` in imports with the `name` from your `pubspec.yaml`.</Info>
+
+```dart title="lib/models/app_user.dart (suggested)"
 import 'package:auth_management_provider_riverpod/auth_management_provider_riverpod.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class AppUser with RiverpodUser {
   AppUser(this.name);
   final String name;
 }
+```
+
+```dart title="lib/services/auth.dart (suggested)"
+import 'package:auth_management/auth_management.dart';
+import 'package:auth_management/auth_management_provider.dart';
+import 'package:auth_management_provider_riverpod/auth_management_provider_riverpod.dart';
+import 'package:my_app/models/app_user.dart';
 
 final riverpodProvider = AuthManagementRiverpodRepository<AppUser>();
 
@@ -34,6 +39,13 @@ class AuthService extends AuthServiceRepository<AppUser> {
 }
 
 final authService = AuthService();
+```
+
+```dart title="lib/main.dart"
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:my_app/services/auth.dart';
+import 'package:my_app/widgets/user_label.dart';
 
 void main() {
   authService.initialize();
@@ -49,6 +61,13 @@ class App extends ConsumerWidget {
     return const MaterialApp(home: UserLabel());
   }
 }
+```
+
+```dart title="lib/widgets/user_label.dart (suggested)"
+import 'package:auth_management_provider_riverpod/auth_management_provider_riverpod.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:my_app/models/app_user.dart';
 
 class UserLabel extends ConsumerWidget {
   const UserLabel({super.key});

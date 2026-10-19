@@ -7,7 +7,7 @@ description: Use synchronous in-memory acquisition and release without assuming 
 
 `CoreLockService.acquire` and `release` return `bool` synchronously. There is no `runLocked`, `unlock`, or `unlockAll` method, and callers do not share a result `Future` automatically.
 
-```dart
+```dart title="lib/services/save_guard.dart (suggested)"
 import 'package:core_management/services/core_lock.dart';
 
 final locks = CoreLockService();

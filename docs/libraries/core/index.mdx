@@ -7,22 +7,31 @@ description: Initialize error handling, provide a theme, and opt into independen
 
 Extend `BaseCoreService`. Construct one instance for the application: its constructor assigns the static `late final BaseCoreService.instance`, so constructing a second instance in the same isolate fails.
 
-```dart
-import 'package:core_management/core_management.dart';
-import 'package:flutter/material.dart';
+<Info>Only `lib/main.dart` is a fixed name. Files marked **(suggested)** follow the `butterfly init` layout; rename or move them freely. Replace `my_app` in imports with the `name` from your `pubspec.yaml`.</Info>
 
-class AppCoreService extends BaseCoreService {}
+```dart title="lib/services/core.dart (suggested)"
+import 'package:core_management/core_management.dart';
+
+class CoreService extends BaseCoreService {}
+
+final coreService = CoreService();
+```
+
+```dart title="lib/main.dart"
+import 'package:flutter/material.dart';
+import 'package:my_app/services/core.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  final core = AppCoreService();
-  core.errorHandler();
-  runApp(MaterialApp(home: Builder(
-    builder: (context) => Theme(
-      data: core.getTheme(context),
-      child: const Scaffold(body: Center(child: Text('Butterfly'))),
+  coreService.errorHandler(); // first access constructs the core service
+  runApp(MaterialApp(
+    home: Builder(
+      builder: (context) => Theme(
+        data: coreService.getTheme(context),
+        child: const Scaffold(body: Center(child: Text('Butterfly'))),
+      ),
     ),
-  )));
+  ));
 }
 ```
 
@@ -39,18 +48,25 @@ void main() {
 
 For stateful or customized services, override getters with stable instances. `BaseThemeService` accepts a named `colorSeed`, not a positional context. Its `theme(context)` reads the surrounding theme's brightness, builds a seeded color scheme, then applies its overridable component-theme getters. It does not supply a theme-mode notifier or automatic runtime switching.
 
-```dart
+```dart title="lib/services/theme.dart (suggested)"
 import 'package:core_management/core_management.dart';
 import 'package:flutter/material.dart';
 
-class AppTheme extends BaseThemeService {
-  AppTheme() : super(colorSeed: Colors.teal);
+class ThemeService extends BaseThemeService {
+  ThemeService() : super(colorSeed: Colors.teal);
+}
+```
+
+```dart title="lib/services/core.dart (suggested)"
+import 'package:core_management/core_management.dart';
+import 'package:my_app/services/theme.dart';
+
+class CoreService extends BaseCoreService {
+  @override
+  final BaseThemeService themeService = ThemeService();
 }
 
-class AppCore extends BaseCoreService {
-  @override
-  final BaseThemeService themeService = AppTheme();
-}
+final coreService = CoreService();
 ```
 
 Call `theme(context)` before accessing getters that depend on initialized `iTheme` or `darkTheme`.
