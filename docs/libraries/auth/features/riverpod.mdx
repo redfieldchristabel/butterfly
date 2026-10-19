@@ -31,6 +31,9 @@ import 'package:my_app/models/app_user.dart';
 final riverpodProvider = AuthManagementRiverpodRepository<AppUser>();
 
 class AuthService extends AuthServiceRepository<AppUser> {
+  // Use any user storage you prefer here: Sembast, Hive CE, Isar, or your
+  // own AuthManagementDatabaseRepository. In-memory keeps this example
+  // simple, but it forgets the user when the app restarts.
   @override
   final dbRepo = InMemoryDatabaseRepository<AppUser>();
 
