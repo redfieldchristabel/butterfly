@@ -38,17 +38,22 @@ abstract class AuthServiceRepository<T> {
   /// so it is safe to read from route guards and build methods.
   T? currentUser;
 
+  AuthServiceProviderRepository<T>? _provider;
+
   /// Registers this as [instance] and starts listening to [streamUser],
-  /// keeping [currentUser] in sync and calling [onUserChanged].
+  /// keeping [currentUser] and [providerRepo] in sync and calling
+  /// [onUserChanged].
   ///
   /// Call once at app start, before reading [currentUser].
   @mustCallSuper
   void initialize() {
     instance = this;
+    _provider = providerRepo;
     streamUser().listen(
       (event) {
         currentUser = event;
         log('Auth User Stream $event', name: '🦋 Auth Management', level: 800);
+        _syncProvider(event);
         onUserChanged(event);
       },
       onError: onUserError,
@@ -59,12 +64,25 @@ abstract class AuthServiceRepository<T> {
   AuthManagementDatabaseRepository<T> get dbRepo;
 
   /// Optional state-management bridge (for example Riverpod).
+  ///
+  /// Return the same instance every time, for example from a `final` field.
+  /// After [initialize], every user change is published to it and sign-out
+  /// clears it, so app code never binds or clears the user itself.
   AuthServiceProviderRepository<T>? get providerRepo => null;
 
   /// Clears the cached user and the provider state.
   FutureOr<void> signOut() async {
     await dbRepo.clearUser();
-    await providerRepo?.clearUser();
+    await (_provider ?? providerRepo)?.sync(null);
+  }
+
+  void _syncProvider(T? user) {
+    final provider = _provider;
+    if (provider == null) return;
+
+    unawaited(
+      Future<void>.sync(() => provider.sync(user)).catchError(onUserError),
+    );
   }
 
   /// Emits the signed-in user, or `null` when signed out.
