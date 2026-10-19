@@ -1,11 +1,13 @@
 ---
-title: Lock service
-description: Use synchronous in-memory acquisition and release without assuming distributed-lock guarantees.
+title: Lock Service
+description: Guard duplicate in-isolate actions with synchronous acquire/release locks and expiring keys.
 ---
 
-## Guard an operation
+`CoreLockService` (`package:core_management/services/core_lock.dart`) provides synchronous, key-based in-memory locks with automatic expiration—ideal for preventing double-taps or concurrent triggers of the same client-side action within a single Dart isolate.
 
-`CoreLockService.acquire` and `release` return `bool` synchronously. There is no `runLocked`, `unlock`, or `unlockAll` method, and callers do not share a result `Future` automatically.
+## Guard a client operation
+
+Call `acquire(key)` synchronously before starting your async work, and always pair it with `release(key)` in a `finally` block:
 
 ```dart title="lib/services/save_guard.dart (suggested)"
 import 'package:core_management/services/core_lock.dart';
@@ -23,42 +25,61 @@ Future<bool> saveOnce(Future<void> Function() save) async {
 }
 ```
 
-Use this only when the operation fits within the lock duration and all participants share the same isolate. It is not a substitute for server-side idempotency or database transactions.
+<Info>
+  There are no `runLocked`, `unlock`, or `unlockAll` methods on `CoreLockService`, and concurrent callers do not automatically share a single result `Future`.
+</Info>
 
-## API
+---
 
-| Member | Behavior |
-| --- | --- |
-| `CoreLockService({persistence, defaultLockDuration, pollingInterval})` | Default duration is 30 seconds; a supplied nonpositive polling interval is rejected |
-| `acquire(key, {timeout, lockDuration})` | Attempts to acquire an in-memory lock until its expiry |
-| `release(key)` | Removes the in-memory lock, returning whether it existed |
-| `isLocked(key)` | Checks memory and removes an expired entry |
-| `getLockExpiry(key)` | Returns a live in-memory expiry or null |
-| `cleanupExpiredLocks()` | Removes expired in-memory entries |
-| `cleanupExpiredLocksAsync()` | Cleans memory, then delegates persistence cleanup |
-| `dispose()` | Clears shared in-memory state and disposes this instance's persistence |
+## `CoreLockService` API reference
 
-The lock map and release-controller map are static, so instances in one isolate share them. Disposing one instance affects all those instances. There is no owner token or lease renewal: if an operation outlives its expiry, another caller can acquire the same key, and the first caller's later `release` can remove that newer lock.
+<Property name="CoreLockService({LockPersistence? persistence, Duration defaultLockDuration, Duration pollingInterval})" type="constructor">
+  Creates a lock service instance. `defaultLockDuration` defaults to `Duration(seconds: 30)`. Passing a zero or negative `pollingInterval` throws an `ArgumentError`.
+</Property>
 
-## Persistence contract
+---
 
-Import `package:core_management/repositories/lock.dart` to implement `LockPersistence`:
+<Property name="acquire(String key, {Duration? timeout, Duration? lockDuration})" type="bool">
+  Attempts to acquire an in-memory lock for `key` until `DateTime.now().add(lockDuration ?? defaultLockDuration)`. Returns `true` immediately when the key is unlocked or its previous expiry has passed. (Keep `timeout` unset or `Duration.zero`—see the warning below.)
+</Property>
 
-| Method | Return type |
-| --- | --- |
-| `createOrUpdateLock(String key, DateTime expiryTime)` | `FutureOr<void>` |
-| `getLockExpiry(String key)` | `FutureOr<DateTime?>` |
-| `deleteLock(String key)` | `FutureOr<bool>` |
-| `watchLockRelease(String key)` | `Stream<void>?` |
-| `cleanupExpiredLocks()` | `FutureOr<void>` |
-| `dispose()` | `void` |
+---
 
-Acquire/release mirror changes to persistence in background microtasks, with errors printed rather than propagated. Acquisition does not atomically consult the persistent store, so adding a backend does not make this a reliable distributed lock or restore prior locks after restart.
+<Property name="release(String key)" type="bool">
+  Removes `key` from the in-memory lock map and notifies any release stream listeners. Returns `true` if the lock existed.
+</Property>
 
-## Avoid timed waiting in the current implementation
+---
 
-A contended `acquire` with a positive `timeout` enters a synchronous waiting path. Without a watch stream, it busy-waits and blocks the isolate. With a watch stream, it sets up asynchronous work but returns `false` without awaiting acquisition. The constructor's positive `pollingInterval` is not retained or used to pace that path.
+<Property name="isLocked(String key) / getLockExpiry(String key)" type="bool / DateTime?">
+  Checks whether `key` currently holds an unexpired in-memory lock (cleaning up the entry if expired), or returns its `DateTime` expiry (`null` if unlocked/expired). Note that `isLockedAsync` and `getLockExpiryAsync` mentioned in doc comments are not implemented.
+</Property>
 
-Prefer immediate acquisition and handle `false` in your application. Despite mentions in source comments, `isLockedAsync` and `getLockExpiryAsync` are not implemented methods.
+---
 
-Implementation: `packages/core_management/lib/services/core_lock.dart` and `lib/repositories/lock.dart`.
+<Property name="cleanupExpiredLocks() / cleanupExpiredLocksAsync()" type="void / Future<void>">
+  Purges all expired entries from the in-memory map (`cleanupExpiredLocksAsync` also calls `persistence?.cleanupExpiredLocks()`).
+</Property>
+
+---
+
+<Property name="dispose()" type="void">
+  Clears the static in-memory lock and release-controller maps and disposes `persistence`. Because `_locks` and `_releaseControllers` are `static` on `CoreLockService`, all instances in the same isolate share them—and calling `dispose()` on one instance clears locks for all of them.
+</Property>
+
+---
+
+## Important implementation caveats
+
+<Error>
+  **Do not pass a positive `timeout` to `acquire()`:** When a key is already locked and `timeout > Duration.zero`, `_waitForLockSync` enters a broken synchronous path. Without a persistence watch stream, it runs a tight synchronous `while` loop that **freezes the Dart isolate** until the lock expires. With a watch stream, it schedules async listeners and immediately returns `false` without waiting. Always call `acquire('key')` without `timeout` and handle `false` gracefully.
+</Error>
+
+<AccordionGroup>
+  <Accordion defaultOpen title="No owner tokens or lease renewal">
+    If an async operation takes longer than `lockDuration` (default 30s), a second caller can acquire the same `key`. When the first caller eventually hits its `finally` block and calls `release(key)`, it will delete the second caller's active lock. Size `lockDuration` generously for slow network calls.
+  </Accordion>
+  <Accordion title="Persistence is fire-and-forget mirroring, not distributed locking">
+    You can implement `LockPersistence` (`package:core_management/repositories/lock.dart`) with `createOrUpdateLock`, `getLockExpiry`, `deleteLock`, `watchLockRelease`, `cleanupExpiredLocks`, and `dispose`. However, `acquire()` and `release()` only mirror updates to `persistence` inside unawaited background microtasks (`Future.microtask`), printing errors to the console. `acquire()` never reads from `persistence` before granting a lock, so it does not coordinate across multiple isolates, processes, or servers.
+  </Accordion>
+</AccordionGroup>

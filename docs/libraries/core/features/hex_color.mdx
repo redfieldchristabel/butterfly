@@ -1,11 +1,13 @@
 ---
-title: Hex colors
-description: Parse RGB or ARGB strings and format Flutter colors with alpha first.
+title: Hex Colors
+description: Parse 6-digit RGB or 8-digit ARGB hex strings and format Flutter Color instances.
 ---
 
-## Convert colors
+The `HexColor` extension on `Color` converts between hexadecimal color strings and Flutter's `Color` class, using **alpha-first (`#aarrggbb`)** ordering for 8-digit values.
 
-Import the extension directly; it is not exported by the core barrel.
+## Quickstart & runnable test
+
+Import `package:core_management/extensions/hex_color.dart` directly:
 
 ```dart title="test/hex_color_test.dart (suggested)"
 import 'package:core_management/extensions/hex_color.dart';
@@ -24,19 +26,29 @@ void main() {
 }
 ```
 
-## API
+---
 
-| API | Behavior |
-| --- | --- |
-| `HexColor.fromHex(String hexString)` | Parses hexadecimal into a `Color` |
-| `color.toHex()` | Lowercase `#aarrggbb` by default |
-| `leadingHashSign: false` | Omits `#` |
-| `withOpacityFormat: false` | Omits the alpha byte |
+## API reference
 
-Use six-digit `RRGGBB` or eight-digit `AARRGGBB`, optionally prefixed with `#`. Six-digit input gets opaque alpha `ff`. Eight-digit input has **alpha first**, not CSS-style `RRGGBBAA`.
+<Property name="HexColor.fromHex(String hexString)" type="Color" required>
+  Parses a 6-digit (`RRGGBB` / `#RRGGBB`) or 8-digit (`AARRGGBB` / `#AARRGGBB`) hexadecimal string into a `Color`.
+  - **6-digit input** (total string length `6` or `7`): Automatically prepends opaque alpha `ff`.
+  - **8-digit input:** Interprets the first two hex digits as the alpha channel (`AARRGGBB`), **not** CSS-style `RRGGBBAA`.
+</Property>
 
-## Input limitations
+---
 
-The implementation detects six-digit input by total string length (6 or 7), removes the first `#`, and delegates to `int.parse(..., radix: 16)`. It does not trim, expand shorthand such as `#fff`, or strictly validate the documented lengths. Invalid hexadecimal can throw `FormatException`; do not assume every unsupported length is rejected. Validate user-entered color strings before conversion.
+<Property name="color.toHex({bool leadingHashSign = true, bool withOpacityFormat = true})" type="String">
+  Formats a `Color` as a lowercase hexadecimal string:
+  - `toHex()` → `'#ff42a5f5'` (default: `#` prefix + 2-digit alpha + 6-digit RGB)
+  - `toHex(leadingHashSign: false)` → `'ff42a5f5'`
+  - `toHex(withOpacityFormat: false)` → `'#42a5f5'` (strips the alpha byte)
+</Property>
 
-Implementation: `packages/core_management/lib/extensions/hex_color.dart`.
+---
+
+## Input validation & caveats
+
+<Warning>
+  **Validate user input before calling `fromHex`:** The implementation checks `hexString.length == 6 || hexString.length == 7` to decide whether to prepend `'ff'`, strips the first `'#'`, and passes the result to `int.parse(..., radix: 16)`. It does **not** expand 3-digit CSS shorthand (`#fff`), trim whitespace, or reject arbitrary string lengths that happen to parse as base-16 integers. Invalid characters throw a `FormatException`.
+</Warning>

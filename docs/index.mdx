@@ -1,54 +1,100 @@
 ---
 title: Butterfly
-description: Dart CLI generators and optional Flutter libraries for core services, routing, and authentication.
+description: Modular Flutter architecture packages and Dart CLI generators for core services, GoRouter auth guards, and zero-boilerplate identity management.
 ---
 
-## What is Butterfly?
+Butterfly is a **modular toolkit of Flutter packages and a Dart CLI**, not a rigid monolithic framework. Pull in a single package for GoRouter authentication redirects, wire up zero-boilerplate Riverpod user state, or use the CLI to scaffold `built_value` and `json_serializable` models.
 
-Butterfly is a collection of optional packages, not an application framework. Use the CLI to scaffold Dart files, or use individual Flutter libraries without running the CLI.
+<Info>
+  **Ground-truth documentation:** Every guide and code block on this site is verified directly against the current repository source code and compiler—including honest callouts where packages have sharp edges or unfinished wiring.
+</Info>
 
-These guides describe the repository implementation, including its current limitations. A published CLI release or a previously pinned Git dependency can behave differently from your checkout.
+## Explore the ecosystem
 
-## Choose a starting point
+<CardGroup cols={2}>
+  <Card title="Installation & Quickstart" icon="download" href="/installation">
+    Activate the local CLI, add Git package dependencies to your `pubspec.yaml`, and configure your workspace.
+  </Card>
+  <Card title="Riverpod Auto-Sync" icon="bolt" href="/libraries/auth/features/riverpod">
+    Publish and clear your signed-in `AppUser` automatically across your widget tree with one `initialize(ref)` call.
+  </Card>
+  <Card title="Core & Theme Services" icon="layer-group" href="/libraries/core">
+    Centralize Flutter/platform error handling, Material 3 seeded themes, typography, and app-wide loading overlays.
+  </Card>
+  <Card title="GoRouter & Auth Guards" icon="signs-post" href="/libraries/core/features/route_service">
+    Protect routes, allow public paths, and preserve deep-linked destinations across sign-in and sign-up flows.
+  </Card>
+  <Card title="Authentication & Storage" icon="shield-halved" href="/libraries/auth">
+    Decouple external identity (Firebase, Google, OAuth2) from your app user model and local cache (Sembast, Hive, Isar).
+  </Card>
+  <Card title="CLI & MCP Server" icon="terminal" href="/features">
+    Generate serializable or immutable models, stamp `lib/version.dart`, create conventional commits, or run the stdio MCP server.
+  </Card>
+</CardGroup>
 
-- [Installation](/installation): set up the local CLI and select library dependencies.
-- [CLI reference](/features): model and version generation, initialization, commits, and MCP tools.
-- [Core services](/libraries/core): application error handling, themes, and loading.
-- [Routing](/libraries/core/features/route_service): GoRouter configuration and authentication redirects.
-- [Authentication](/libraries/auth): separate provider identity, application user data, and local storage.
+## How the pieces fit together
 
-## Package map
+Butterfly separates your app into clean, replaceable layers so your UI never talks directly to raw storage or third-party auth SDKs:
 
-| Package | Responsibility |
-| --- | --- |
-| `butterfly_cli` | Commands and Mason-based scaffolding |
-| `core_management` | Core service base classes, extensions, queue, loading, and locks |
-| `core_management_route_go_router` | GoRouter integration and authentication redirects |
-| `auth_management` | Auth service, identity resolution, and repository contracts |
-| `auth_management_database_hive_ce` | Hive CE user cache |
-| `auth_management_database_isar_community` | Isar Community user cache |
-| `auth_management_database_sembast` | JSON user cache in an existing Sembast database |
-| `auth_management_firebase` | Firebase identity mapped to your application user |
-| `auth_management_firebase_google` | Native Google sign-in mixin for Firebase |
-| `auth_management_oauth2` | OAuth2 sessions and grant mixins |
-| `auth_management_provider_riverpod` | Explicit bridge to Riverpod user state |
+<Tabs>
+  <TabItem label="Authentication flow" value="auth-flow">
+    1. **External Identity (`IdentityAuthRepository`):** Watches Firebase Auth or an OAuth2 session.
+    2. **Profile Resolution (`fetchUser`):** Maps that raw identity to your own `AppUser` domain model.
+    3. **Local Cache (`dbRepo`):** Persists `AppUser` in Sembast, Hive CE, Isar, or memory so repeat startups resolve without unnecessary network calls.
+    4. **State Bridge (`providerRepo`):** Automatically pushes every user emission and sign-out event into Riverpod (`userProvider`) or your custom state adapter.
+  </TabItem>
+  <TabItem label="Core & routing flow" value="core-flow">
+    1. **App Bootstrap (`BaseCoreService`):** Installs `FlutterError.onError` and `PlatformDispatcher.instance.onError` hooks before `runApp`.
+    2. **Theme & Typography (`BaseThemeService`):** Builds a seeded Material 3 `ColorScheme` and exposes typed `CoreTypographyTheme` styles.
+    3. **Auth-Aware Routing (`GoRouterAuthRoute`):** Evaluates route guards in a strict 8-step sequence, saving blocked deep links in `postSignInRedirect` and replaying them once signed in.
+  </TabItem>
+  <TabItem label="Project conventions" value="conventions">
+    When you scaffold with `butterfly init`, files are organized under `lib/`:
+    - `lib/models/` — Domain models (`AppUser`, generated `.g.dart` parts)
+    - `lib/services/` — App singletons (`CoreService`, `ThemeService`, `AuthService`, `RouteService`)
+    - `lib/screens/` — Top-level route destinations
+    - `lib/widgets/` — Reusable UI components
 
-## Structure and adoption
+    These folders are a helpful convention, not a requirement enforced by the runtime packages.
+  </TabItem>
+</Tabs>
 
-The CLI's project folders belong under `lib/`: `models`, `services`, `screens`, and `widgets`. They are a scaffolding convention, not a requirement imposed on library consumers.
+## Package catalog
 
-You own concrete services such as `AuthService` and `CoreService`. Butterfly supplies base classes, not a built-in static `AuthService.signIn()` facade. Imports are explicit: the core barrel exports service base classes, but utilities such as `HexColor` and `TaskQueueMixin` need their own imports.
+| Package | Role | Key Exports |
+| --- | --- | --- |
+| `butterfly_cli` | CLI & Mason scaffolding | `butterfly` executable (`init`, `generate`, `commit`, `mcp-server`) |
+| `core_management` | Core services & runtime utilities | `BaseCoreService`, `BaseThemeService`, `CoreLockService`, `TaskQueueMixin`, `HexColor` |
+| `core_management_route_go_router` | GoRouter integration | `GoRouterService`, `GoRouterAuthRoute<T>`, `GoRouterServiceMixin` |
+| `auth_management` | Auth contracts & base lifecycle | `AuthServiceRepository<T>`, `IdentityAuthRepository<I, T>`, `AuthServiceProviderRepository<T>` |
+| `auth_management_provider_riverpod` | Riverpod state bridge | `RiverpodUser`, `AuthManagementRiverpodRepository<T>`, `riverpodUserStateProvider` |
+| `auth_management_database_sembast` | Sembast JSON user cache | `AuthManagementDatabaseSembast<T>` |
+| `auth_management_database_hive_ce` | Hive CE box user cache | `AuthManagementDatabaseHiveCe<T>`, `BaseUser` |
+| `auth_management_database_isar_community` | Isar Community user cache | `AuthManagementIsarRepository<T>`, `BaseUser` |
+| `auth_management_firebase` | Firebase Auth identity adapter | `FirebaseAuthManagementRepository<T>`, `FirebaseUser`, `SignInWithGoogleWebMixin` |
+| `auth_management_firebase_google` | Native Google Sign-In for Firebase | `SignInWithGoogleFirebase` |
+| `auth_management_oauth2` | OAuth2 client & grant mixins | `BaseOauth2AuthManagement<T>`, `AuthorizationCodeGrantMixin`, `ClientCredential` |
 
-Adopt only the packages you need. Removing a package means replacing the APIs your application uses; it is not automatically dependency-free or a guaranteed copy-and-paste migration.
+## Design principles & adoption rules
 
-## Documentation maintenance
+<AccordionGroup>
+  <Accordion defaultOpen title="You own the concrete service classes">
+    Butterfly does not lock you into hidden static singletons like `AuthService.signIn()`. Instead, you subclass `BaseCoreService` or `AuthServiceRepository<AppUser>` in your own project, wire only the adapters you want, and expose your own instance.
+  </Accordion>
+  <Accordion title="Explicit, tree-shakeable utility imports">
+    The main `package:core_management/core_management.dart` barrel exports the core service base classes (`BaseCoreService`, `BaseThemeService`, `BaseErrorHandlerService`, `BaseLoadingService`, `BaseRouteService`). Standalone utilities such as `HexColor`, `ScreenLayout`, `TaskQueueMixin`, `CoreLockService`, and `LoadingOverlay` use dedicated sub-imports so you always see what a file depends on.
+  </Accordion>
+  <Accordion title="Verifying docs and code locally">
+    This documentation site is powered by [docs.page](https://use.docs.page/authoring/write) using root `docs.json` configuration and MDX pages under `docs/`. Validate links, frontmatter, and MDX syntax anytime from the repository root:
 
-This site uses root `docs.json`, MDX files under `docs/`, YAML `title` and `description` frontmatter, and root-relative page links, following the [current docs.page authoring guide](https://use.docs.page/authoring/write).
+    ```bash
+    npx --yes @docs.page/cli@latest check
+    ```
 
-From the repository root, validate MDX, metadata, links, and assets with:
+    To preview changes live in your browser while editing:
 
-```bash
-npx --yes @docs.page/cli@latest check
-```
-
-That validates the site, not Dart behavior. Run the analyzer and relevant package tests as well; see [verification](/features#verification). Local edits do not publish until they are committed and pushed to the branch docs.page serves.
+    ```bash
+    npx --yes @docs.page/cli@latest preview --no-browser
+    ```
+  </Accordion>
+</AccordionGroup>

@@ -1,103 +1,121 @@
 ---
-title: Loading overlay
-description: Drive a loading overlay through the core service controller, with explicit current implementation limits.
+title: Loading Overlay
+description: Display an app-wide loading barrier driven by your CoreService controller, with workarounds for current controller quirks.
 ---
 
-## Connect the overlay
+`LoadingOverlay` (`package:core_management/widgets/loading_overlay.dart`) wraps your app and inserts a Flutter `OverlayEntry` whenever `coreService.loadingService.controller.state` transitions to `ButterflyLoadingState.loading`.
 
-`LoadingOverlay` accepts `child` and `key`. There are no `isLoading`, `opacity`, `indicator`, or `color` constructor parameters. It obtains its controller from `BaseCoreService.instance.loadingService`, so construct your core service before building it.
+## Complete setup with modal barrier
+
+The default `DefaultLoadingService` renders a bare `CupertinoActivityIndicator()` without centering, background dimming, or touch blocking. For a production-ready modal blocker, override `loadingService` on your `CoreService`:
 
 <Info>Only `lib/main.dart` is a fixed name. Files marked **(suggested)** follow the `butterfly init` layout; rename or move them freely. Replace `my_app` in imports with the `name` from your `pubspec.yaml`.</Info>
 
-```dart title="lib/services/loading.dart (suggested)"
-import 'package:core_management/core_management.dart';
-import 'package:flutter/material.dart';
+<Steps>
+  <Step title="Define a custom LoadingService with ModalBarrier">
+    ```dart title="lib/services/loading.dart (suggested)"
+    import 'package:core_management/core_management.dart';
+    import 'package:flutter/material.dart';
 
-class LoadingService extends BaseLoadingService {
-  @override
-  Widget loadingWidget<T>(T data) => const Stack(
-    fit: StackFit.expand,
-    children: [
-      ModalBarrier(dismissible: false, color: Color(0x66000000)),
-      Center(child: CircularProgressIndicator()),
-    ],
-  );
-}
-```
-
-```dart title="lib/services/core.dart (suggested)"
-import 'package:core_management/core_management.dart';
-import 'package:my_app/services/loading.dart';
-
-class CoreService extends BaseCoreService {
-  @override
-  final BaseLoadingService loadingService = LoadingService();
-}
-
-final coreService = CoreService();
-```
-
-```dart title="lib/screens/home.dart (suggested)"
-import 'package:core_management/widgets/loading_overlay.dart';
-import 'package:flutter/material.dart';
-import 'package:my_app/services/core.dart';
-
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
-
-  Future<void> _load() async {
-    final controller = coreService.loadingService.controller;
-    controller.state = ButterflyLoadingState.loading;
-    try {
-      await Future<void>.delayed(const Duration(milliseconds: 300));
-    } finally {
-      controller.state = ButterflyLoadingState.idle;
+    class LoadingService extends BaseLoadingService {
+      @override
+      Widget loadingWidget<T>(T data) => const Stack(
+        fit: StackFit.expand,
+        children: [
+          ModalBarrier(dismissible: false, color: Color(0x66000000)),
+          Center(child: CircularProgressIndicator()),
+        ],
+      );
     }
-  }
+    ```
+  </Step>
+  <Step title="Register LoadingService on your CoreService">
+    ```dart title="lib/services/core.dart (suggested)"
+    import 'package:core_management/core_management.dart';
+    import 'package:my_app/services/loading.dart';
 
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    body: Center(
-      child: ElevatedButton(onPressed: _load, child: const Text('Load')),
-    ),
-  );
-}
-```
+    class CoreService extends BaseCoreService {
+      @override
+      final BaseLoadingService loadingService = LoadingService();
+    }
 
-```dart title="lib/main.dart"
-import 'package:core_management/widgets/loading_overlay.dart';
-import 'package:flutter/material.dart';
-import 'package:my_app/screens/home.dart';
-import 'package:my_app/services/core.dart';
+    final coreService = CoreService();
+    ```
+  </Step>
+  <Step title="Trigger loading and idle around async work">
+    ```dart title="lib/screens/home.dart (suggested)"
+    import 'package:core_management/widgets/loading_overlay.dart';
+    import 'package:flutter/material.dart';
+    import 'package:my_app/services/core.dart';
 
-void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-  coreService.errorHandler(); // first access constructs the core service
-  runApp(MaterialApp(
-    builder: (context, child) => LoadingOverlay(child: child!),
-    home: const HomeScreen(),
-  ));
-}
-```
+    class HomeScreen extends StatelessWidget {
+      const HomeScreen({super.key});
 
-The custom service provides the centered spinner and input-blocking barrier. The default service returns only a `CupertinoActivityIndicator`; it does not itself provide a modal barrier, centered layout, or dimmed background.
+      Future<void> _load() async {
+        final controller = coreService.loadingService.controller;
+        controller.state = ButterflyLoadingState.loading;
+        try {
+          await Future<void>.delayed(const Duration(milliseconds: 300));
+        } finally {
+          controller.state = ButterflyLoadingState.idle;
+        }
+      }
 
-## Controller API
+      @override
+      Widget build(BuildContext context) => Scaffold(
+        body: Center(
+          child: ElevatedButton(onPressed: _load, child: const Text('Load')),
+        ),
+      );
+    }
+    ```
+  </Step>
+  <Step title="Mount LoadingOverlay inside MaterialApp.builder">
+    ```dart title="lib/main.dart"
+    import 'package:core_management/widgets/loading_overlay.dart';
+    import 'package:flutter/material.dart';
+    import 'package:my_app/screens/home.dart';
+    import 'package:my_app/services/core.dart';
 
-`ButterflyLoadingController<T>` extends `ChangeNotifier`. Use its `state` and `data` properties; there are no `startLoading()` or `stopLoading()` methods.
+    void main() {
+      WidgetsFlutterBinding.ensureInitialized();
+      coreService.errorHandler(); // first access constructs the core service
+      runApp(MaterialApp(
+        builder: (context, child) => LoadingOverlay(child: child!),
+        home: const HomeScreen(),
+      ));
+    }
+    ```
+  </Step>
+</Steps>
 
-The enum has exactly `idle`, `loading`, and `completed`. It has no `success` or `error` values. `idle` removes an existing overlay entry; entering `loading` notifies listeners so an entry can be inserted.
+---
 
-## Current limitations
+## Controller API (`ButterflyLoadingController<T>`)
 
-These describe the implementation, not intended behavior:
+<Property name="LoadingOverlay({Key? key, required Widget child})" type="Widget">
+  Reads `BaseCoreService.instance.loadingService` in `initState`. Make sure your `CoreService` has been constructed before `LoadingOverlay` mounts. There are no `isLoading`, `opacity`, `color`, or `indicator` constructor parameters on `LoadingOverlay`.
+</Property>
 
-- Assigning `completed` schedules a transition to `idle` after `kThemeAnimationDuration`. The setter does not actually assign or notify a `completed` state first. Do not use it as an observable success state.
-- The `data` setter calls `notifyListeners()` but does not assign its argument to `_data`. Consequently, `data` remains null; passing messages through it does not work.
-- A completion timer is not canceled when assigning another ordinary state. A pending completion can therefore hide a later loading operation.
-- The overlay subscribes during `initState` but does not immediately reconcile the controller's existing state. Set loading after the overlay mounts, not before.
-- There is no request counter or per-operation ownership. Concurrent operations can hide one another's loading state.
+---
 
-The example uses `loading` and `idle` with `try/finally`, does not depend on `data`, and supplies its own modal visuals. It does not fix the underlying implementation.
+<Property name="controller.state" type="ButterflyLoadingState">
+  Enum values: `ButterflyLoadingState.idle`, `ButterflyLoadingState.loading`, and `ButterflyLoadingState.completed`. Setting `loading` inserts the `OverlayEntry`; setting `idle` removes it. There are no `startLoading()` or `stopLoading()` methods.
+</Property>
 
-Implementation: `packages/core_management/lib/widgets/loading_overlay.dart`, `lib/services/base_loading.dart`, and `lib/src/services/default_loading.dart`.
+---
+
+## Current implementation bugs & safe usage rules
+
+<Warning>
+  **Stick to `loading` and `idle`, and do not rely on `controller.data`:** Two implementation bugs exist in `ButterflyLoadingController` (`packages/core_management/lib/widgets/loading_overlay.dart`):
+  1. **`controller.data` is never stored:** The `set data(T? value)` setter calls `notifyListeners()` without assigning `_data = value`, so `controller.data` (and the `data` parameter passed to `loadingWidget<T>(T data)`) is always `null`.
+  2. **`ButterflyLoadingState.completed` never emits `completed`:** Setting `controller.state = ButterflyLoadingState.completed` schedules a `Timer(kThemeAnimationDuration, () => state = ButterflyLoadingState.idle)` and returns early without updating `_state` or notifying listeners. Worse, that timer is not canceled if another operation sets `loading` before the 200ms timer fires—causing the timer to prematurely hide the new loading spinner.
+</Warning>
+
+<AccordionGroup>
+  <Accordion title="Mounting order and concurrent operations">
+    - **Trigger after mount:** `LoadingOverlay` attaches its listener in `initState` without checking if `controller.state` is already `loading`. Only set `ButterflyLoadingState.loading` after the widget tree has mounted.
+    - **No reference counting:** The controller holds a single global state rather than a counter of active requests. If two overlapping async tasks toggle `loading` / `idle`, the first one to finish will hide the overlay while the second is still running.
+  </Accordion>
+</AccordionGroup>

@@ -1,39 +1,129 @@
 {
   "$schema": "https://docs.page/schema.json",
   "name": "Butterfly",
-  "description": "Dart CLI generators and optional Flutter libraries for core services, routing, and authentication.",
-  "content": {
-    "headerDepth": 3
+  "description": "Dart CLI generators and modular Flutter packages for core services, GoRouter auth guards, and identity management.",
+  "theme": {
+    "primary": "#0D9488",
+    "primaryLight": "#0F766E",
+    "primaryDark": "#2DD4BF"
   },
+  "header": {
+    "showName": true,
+    "links": [
+      {
+        "title": "Quickstart",
+        "href": "/installation",
+        "cta": true
+      }
+    ]
+  },
+  "content": {
+    "headerDepth": 3,
+    "showPageTitle": true,
+    "automaticPagination": true
+  },
+  "social": {
+    "github": "https://github.com/redfieldchristabel/butterfly"
+  },
+  "tabs": [
+    {
+      "id": "overview",
+      "title": "Get Started",
+      "href": "/"
+    },
+    {
+      "id": "core",
+      "title": "Core & Routing",
+      "href": "/libraries/core"
+    },
+    {
+      "id": "auth",
+      "title": "Authentication",
+      "href": "/libraries/auth"
+    },
+    {
+      "id": "cli",
+      "title": "CLI & Tooling",
+      "href": "/features"
+    }
+  ],
+  "anchors": [
+    {
+      "title": "GitHub Repository",
+      "href": "https://github.com/redfieldchristabel/butterfly",
+      "icon": "github"
+    },
+    {
+      "title": "Riverpod Auto-Sync",
+      "href": "/libraries/auth/features/riverpod",
+      "icon": "bolt"
+    }
+  ],
   "sidebar": [
     {
-      "group": "Getting started",
+      "group": "Introduction",
+      "tab": "overview",
+      "icon": "compass",
       "pages": [
-        { "title": "Introduction", "href": "/", "icon": "rocket" },
-        { "title": "Installation", "href": "/installation" },
-        { "title": "CLI reference", "href": "/features" }
+        { "title": "Overview & Architecture", "href": "/", "icon": "house" },
+        { "title": "Installation & Setup", "href": "/installation", "icon": "download" },
+        { "title": "CLI & MCP Reference", "href": "/features", "icon": "terminal" }
       ]
     },
     {
-      "group": "Core and routing",
+      "group": "Core Foundation",
+      "tab": "core",
+      "icon": "cubes",
       "pages": [
-        { "title": "Core services", "href": "/libraries/core" },
-        { "title": "Route service", "href": "/libraries/core/features/route_service" },
-        { "title": "Task queue", "href": "/libraries/core/features/enqueue" },
-        { "title": "Hex colors", "href": "/libraries/core/features/hex_color" },
-        { "title": "Screen layout", "href": "/libraries/core/features/screen_layout" },
-        { "title": "Lock service", "href": "/libraries/core/features/lock_service" },
-        { "title": "Loading overlay", "href": "/libraries/core/features/loading_overlay" },
-        { "title": "Typography theme", "href": "/libraries/core/features/typography_theme" }
+        { "title": "Core & Theme Service", "href": "/libraries/core", "icon": "layer-group" },
+        { "title": "Typography Theme", "href": "/libraries/core/features/typography_theme", "icon": "font" },
+        { "title": "Loading Overlay", "href": "/libraries/core/features/loading_overlay", "icon": "spinner" }
       ]
     },
     {
-      "group": "Authentication",
+      "group": "Navigation",
+      "tab": "core",
+      "icon": "route",
       "pages": [
-        { "title": "Architecture and lifecycle", "href": "/libraries/auth" },
-        { "title": "User storage", "href": "/libraries/auth/features/datasources" },
-        { "title": "Identity providers", "href": "/libraries/auth/features/providers" },
-        { "title": "Riverpod integration", "href": "/libraries/auth/features/riverpod" }
+        { "title": "GoRouter & Auth Guards", "href": "/libraries/core/features/route_service", "icon": "signs-post" }
+      ]
+    },
+    {
+      "group": "Runtime Utilities",
+      "tab": "core",
+      "icon": "screwdriver-wrench",
+      "pages": [
+        { "title": "Task Queue Mixin", "href": "/libraries/core/features/enqueue", "icon": "list-check" },
+        { "title": "Lock Service", "href": "/libraries/core/features/lock_service", "icon": "lock" },
+        { "title": "Screen Layout", "href": "/libraries/core/features/screen_layout", "icon": "mobile-screen" },
+        { "title": "Hex Colors", "href": "/libraries/core/features/hex_color", "icon": "palette" }
+      ]
+    },
+    {
+      "group": "Auth Architecture",
+      "tab": "auth",
+      "icon": "shield-halved",
+      "pages": [
+        { "title": "Service & Identity Lifecycle", "href": "/libraries/auth", "icon": "key" },
+        { "title": "Riverpod Auto-Sync", "href": "/libraries/auth/features/riverpod", "icon": "bolt" }
+      ]
+    },
+    {
+      "group": "Adapters & Providers",
+      "tab": "auth",
+      "icon": "plug",
+      "pages": [
+        { "title": "User Storage (DB)", "href": "/libraries/auth/features/datasources", "icon": "database" },
+        { "title": "Firebase, Google & OAuth2", "href": "/libraries/auth/features/providers", "icon": "id-card" }
+      ]
+    },
+    {
+      "group": "CLI & Code Generation",
+      "tab": "cli",
+      "icon": "terminal",
+      "pages": [
+        { "title": "Commands, Models & MCP", "href": "/features", "icon": "wand-magic-sparkles" },
+        { "title": "Local CLI Activation", "href": "/installation", "icon": "gear" }
       ]
     }
   ]

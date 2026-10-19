@@ -1,120 +1,135 @@
 ---
-title: Identity providers
-description: Resolve application users from Firebase or OAuth2 and configure Google sign-in with the actual mixins.
+title: Firebase, Google & OAuth2 Providers
+description: Connect Firebase Auth, Google Sign-In, or an OAuth2 server to your domain AppUser model.
 ---
 
-## Firebase
+Butterfly's identity provider packages observe external authentication sessions (Firebase Auth or OAuth2) and resolve your own `AppUser` model through `fetchUser`.
 
-Initialize Firebase and your user cache before constructing/initializing the auth service. Your model mixes in `FirebaseUser`; its `firebaseUid` must equal the Firebase account's UID.
+## Choose an identity provider
 
-<Info>Only `lib/main.dart` is a fixed name. Files marked **(suggested)** follow the `butterfly init` layout; rename or move them freely. Replace `my_app` in imports with the `name` from your `pubspec.yaml`.</Info>
+<Tabs>
+  <TabItem label="Firebase Auth" value="firebase-tab">
+    `FirebaseAuthManagementRepository<T extends FirebaseUser>` (`package:auth_management_firebase/auth_management_firebase.dart`) listens to `FirebaseAuth.instance.authStateChanges()` and maps `firebase.User` to your `AppUser` model.
 
-```dart title="lib/models/app_user.dart (suggested)"
-import 'package:auth_management_firebase/auth_management_firebase.dart';
+    <Info>Only `lib/main.dart` is a fixed name. Files marked **(suggested)** follow the `butterfly init` layout; rename or move them freely. Replace `my_app` in imports with the `name` from your `pubspec.yaml`.</Info>
 
-class AppUser with FirebaseUser {
-  AppUser({required this.uid, required this.role});
-  final String uid;
-  final String role;
+    <Steps>
+      <Step title="Mix FirebaseUser into your AppUser model">
+        Return the Firebase account's UID from `firebaseUid` so the repository can verify whether a cached `AppUser` belongs to the active Firebase session:
 
-  @override
-  String get firebaseUid => uid;
-}
-```
+        ```dart title="lib/models/app_user.dart (suggested)"
+        import 'package:auth_management_firebase/auth_management_firebase.dart';
 
-```dart title="lib/services/auth.dart (suggested)"
-import 'package:auth_management/auth_management.dart';
-import 'package:auth_management_firebase/auth_management_firebase.dart';
-import 'package:firebase_auth/firebase_auth.dart' as firebase;
-import 'package:my_app/models/app_user.dart';
+        class AppUser with FirebaseUser {
+          AppUser({required this.uid, required this.role});
+          final String uid;
+          final String role;
 
-class AuthService extends FirebaseAuthManagementRepository<AppUser> {
-  AuthService({required this.dbRepo, required this.loadProfile});
+          @override
+          String get firebaseUid => uid;
+        }
+        ```
+      </Step>
+      <Step title="Extend FirebaseAuthManagementRepository<AppUser>">
+        Implement `dbRepo` and `fetchUser(firebase.User identity)` to load your app profile from Firestore or your backend API:
 
-  @override
-  final AuthManagementDatabaseRepository<AppUser> dbRepo;
-  final Future<AppUser> Function(String uid) loadProfile;
+        ```dart title="lib/services/auth.dart (suggested)"
+        import 'package:auth_management/auth_management.dart';
+        import 'package:auth_management_firebase/auth_management_firebase.dart';
+        import 'package:firebase_auth/firebase_auth.dart' as firebase;
+        import 'package:my_app/models/app_user.dart';
 
-  @override
-  Future<AppUser> fetchUser(firebase.User identity) => loadProfile(identity.uid);
-}
-```
+        class AuthService extends FirebaseAuthManagementRepository<AppUser> {
+          AuthService({required this.dbRepo, required this.loadProfile});
 
-`loadProfile` is application code that loads a profile from your API or database. Butterfly does not automatically create or watch a Firestore document.
+          @override
+          final AuthManagementDatabaseRepository<AppUser> dbRepo;
+          final Future<AppUser> Function(String uid) loadProfile;
 
-Call instance `signInWithEmailAndPassword(email, password)` with positional strings. It returns Firebase's `UserCredential`, not your application model; profile resolution happens through the identity flow. Use `getUser()`, `streamUser()`, and initialized `currentUser` to read that model.
+          @override
+          Future<AppUser> fetchUser(firebase.User identity) => loadProfile(identity.uid);
+        }
+        ```
+      </Step>
+    </Steps>
 
-The repository observes `FirebaseAuth.authStateChanges()`, not `idTokenChanges()` or a profile-document stream. Matching cached users are reused; call `refreshUser()` when application profile data needs reloading. `signOut()` signs out of Firebase before clearing cache/provider state. Registration and password-reset wrappers are not implemented here; use the Firebase SDK as appropriate.
+    - **Sign-in helper:** Call `await authService.signInWithEmailAndPassword(email, password)` (positional strings). It returns Firebase's `UserCredential` while `authStateChanges()` triggers `fetchUser` and updates `streamUser()` / `currentUser` / `providerRepo`.
+    - **Cache matching:** `isCachedUserFor` compares `cachedUser.firebaseUid == identity.uid`. Call `await authService.refreshUser()` whenever you want to bypass the cache and re-run `fetchUser`.
+  </TabItem>
+  <TabItem label="Google Sign-In Mixins" value="google-tab">
+    Two mixins add Google Sign-In on top of `FirebaseAuthManagementRepository`:
 
-## Google sign-in
+    | Target Platform | Import Path | Mixin & Methods |
+    | --- | --- | --- |
+    | **Native (Android / iOS)** | `package:auth_management_firebase_google/auth_management_firebase_google.dart` | `SignInWithGoogleFirebase` → `signInWithGoogle()` |
+    | **Web (Popup / Redirect)** | `package:auth_management_firebase/auth_management_firebase_google.dart` | `SignInWithGoogleWebMixin` → `signInWithGoogle()`, `signInWithGoogleRedirect()` |
 
-There is no `GoogleSignInService`. Use one of the supplied mixins on a compatible application service.
+    <Error>
+      **Generic constraint bug on `SignInWithGoogleFirebase`:** The native mixin declares a raw `on FirebaseAuthManagementRepository` constraint (without `<T extends FirebaseUser>`). Mixing it onto `class AuthService extends FirebaseAuthManagementRepository<AppUser>` causes a Dart analyzer error (`can't implement both AuthServiceRepository<AppUser> and AuthServiceRepository<FirebaseUser>`). Parameterize the mixin as `mixin SignInWithGoogleFirebase<T extends FirebaseUser> on FirebaseAuthManagementRepository<T>` in the package source before applying it to a typed `AppUser` subclass.
+    </Error>
 
-| Platform/flow | Import | Mixin and methods |
-| --- | --- | --- |
-| Native Google account flow | `package:auth_management_firebase_google/auth_management_firebase_google.dart` | `SignInWithGoogleFirebase`, `signInWithGoogle()` |
-| Firebase web popup/redirect | `package:auth_management_firebase/auth_management_firebase_google.dart` | `SignInWithGoogleWebMixin`, `signInWithGoogle()`, `signInWithGoogleRedirect()` |
+    <Warning>
+      **Override `scopes` and `customParameters` on `SignInWithGoogleWebMixin`:** The web mixin's built-in defaults request the `contacts.readonly` scope and set `'login_hint': 'user@example.com'`. Always override both getters in your `AuthService` with your real scopes and parameters.
+    </Warning>
+  </TabItem>
+  <TabItem label="OAuth2" value="oauth2-tab">
+    `BaseOauth2AuthManagement<T>` (`package:auth_management_oauth2/auth_management_oauth2.dart`) manages an `oauth2.Client` session and resolves your `AppUser` via `fetchUser(oauth2.Client session)`:
 
-The native mixin uses a raw `on FirebaseAuthManagementRepository` constraint. Applying it directly to `FirebaseAuthManagementRepository<AppUser>` produces conflicting generic-interface analyzer errors (the raw constraint resolves to `FirebaseUser`). Repair that generic constraint or implement a correctly typed integration before composing it with the typed example above. Its current method calls `GoogleSignIn.instance.authenticate()`, creates a Firebase credential using the ID token, and signs in with that credential. Configure Firebase, platform IDs, and Google Sign-In initialization in your application; the mixin does not initialize Google Sign-In itself. Treat it as the native flow described by the package, not a universal browser implementation.
-
-The web mixin creates `GoogleAuthProvider` and calls Firebase popup or redirect APIs. Override its `scopes` and `customParameters`: the current defaults request contacts-readonly access and include `login_hint: user@example.com`, which are sample defaults rather than a sensible universal configuration. Both integrations use `FirebaseAuth.instance`.
-
-## OAuth2
-
-Extend `BaseOauth2AuthManagement<T>`, provide `dbRepo`, `authorizationEndpoint`, `identifier`, `secret`, and implement `fetchUser(oauth2.Client session)`. That callback must load your app's user, typically using an authenticated profile endpoint.
-
-```dart title="lib/models/app_user.dart (suggested)"
-class AppUser {
-  AppUser(this.id);
-  final String id;
-}
-```
-
-```dart title="lib/services/auth.dart (suggested)"
-import 'dart:convert';
-
-import 'package:auth_management_oauth2/auth_management_oauth2.dart';
-import 'package:my_app/models/app_user.dart';
-import 'package:oauth2/oauth2.dart' as oauth2;
-
-// Profile-resolution skeleton only: supply configuration, dbRepo, and sign-in.
-abstract class AuthService extends BaseOauth2AuthManagement<AppUser> {
-  Uri get profileEndpoint;
-
-  @override
-  Future<AppUser> fetchUser(oauth2.Client session) async {
-    final response = await session.get(profileEndpoint);
-    if (response.statusCode != 200) {
-      throw StateError('Profile request failed: ${response.statusCode}');
+    ```dart title="lib/models/app_user.dart (suggested)"
+    class AppUser {
+      AppUser(this.id);
+      final String id;
     }
-    final json = jsonDecode(response.body) as Map<String, dynamic>;
-    return AppUser(json['id'] as String);
-  }
-}
-```
+    ```
 
-There is no `OAuth2Service`, `OAuth2Provider` enum, or `fromProvider` constructor. Endpoints are `Uri` getters, not string constructor arguments.
+    ```dart title="lib/services/auth.dart (suggested)"
+    import 'dart:convert';
 
-### Grant mixins
+    import 'package:auth_management_oauth2/auth_management_oauth2.dart';
+    import 'package:my_app/models/app_user.dart';
+    import 'package:oauth2/oauth2.dart' as oauth2;
 
-Import grant mixins separately; the package's main library does not export them. All three currently use a raw `on BaseOauth2AuthManagement` constraint. Applying them directly to `BaseOauth2AuthManagement<AppUser>` produces conflicting generic-interface analyzer errors. The typed skeleton above deliberately omits them: it demonstrates profile resolution, not a complete sign-in implementation. Repair the mixins' generic constraints or supply a correctly typed grant implementation before using this combination; the table describes the methods present in source, not a verified typed composition.
+    // Profile-resolution skeleton only: supply configuration, dbRepo, and sign-in.
+    abstract class AuthService extends BaseOauth2AuthManagement<AppUser> {
+      Uri get profileEndpoint;
 
-| Library under `package:auth_management_oauth2/` | Mixin | Method and extra configuration |
-| --- | --- | --- |
-| `mixins/authorization_code_grant.dart` | `AuthorizationCodeGrantMixin` | `signInWithAuthorizationCode()`; requires `tokenEndpoint` and `redirectUrl` |
-| `mixins/client_credential.dart` | `ClientCredential` | `signInWithClientCredential()`; uses `authorizationEndpoint` as the token endpoint |
-| `mixins/resource_owner_password_grant.dart` | `ResourceOwnerPasswordGrant` | `signInWithPassword(username: ..., password: ...)`; uses `authorizationEndpoint` as the token endpoint |
+      @override
+      Future<AppUser> fetchUser(oauth2.Client session) async {
+        final response = await session.get(profileEndpoint);
+        if (response.statusCode != 200) {
+          throw StateError('Profile request failed: ${response.statusCode}');
+        }
+        final json = jsonDecode(response.body) as Map<String, dynamic>;
+        return AppUser(json['id'] as String);
+      }
+    }
+    ```
 
-The authorization-code mixin launches the authorization URL and listens for app links beginning with `redirectUrl`. It stops after a matching link or more than ten nonmatching events, not after a time-based timeout. Configure platform app links yourself. The current call to `getAuthorizationUrl` does not supply scopes or state, and this wrapper exposes no PKCE configuration. Review the flow against your provider's security requirements before production use.
+    ### OAuth2 grant mixins
 
-### Session and storage limits
+    | Sub-import under `package:auth_management_oauth2/` | Mixin | Method & Required Getters |
+    | --- | --- | --- |
+    | `mixins/authorization_code_grant.dart` | `AuthorizationCodeGrantMixin` | `signInWithAuthorizationCode()` — requires `tokenEndpoint` & `redirectUrl` |
+    | `mixins/client_credential.dart` | `ClientCredential` | `signInWithClientCredential()` — uses `authorizationEndpoint` |
+    | `mixins/resource_owner_password_grant.dart` | `ResourceOwnerPasswordGrant` | `signInWithPassword(username: ..., password: ...)` |
 
-Await OAuth2 `initialize()` to restore stored credentials before the base auth subscription starts. The public `client` is authenticated when a session is present and otherwise is a plain HTTP client.
+    <Error>
+      **Generic constraint bug on all three OAuth2 grant mixins:** Like the native Google mixin, `AuthorizationCodeGrantMixin`, `ClientCredential`, and `ResourceOwnerPasswordGrant` declare raw `on BaseOauth2AuthManagement` constraints, causing a conflicting generic interface error when mixed into `BaseOauth2AuthManagement<AppUser>`. Add `<T> on BaseOauth2AuthManagement<T>` to the mixin declarations before combining them with a typed `AppUser`.
+    </Error>
+  </TabItem>
+</Tabs>
 
-Credentials are JSON in `credentials.json` under the application documents directory, not encrypted secure storage. The implementation imports `dart:io`, so this is not a browser-compatible persistence layer. Do not embed a confidential client secret in a distributed app; the wrapper's `secret` getter is not secure secret storage.
+---
 
-Grant methods call `storeClient` without awaiting its future. Their completion does not guarantee credentials have finished writing or the application user has resolved. Token refresh behavior comes from the underlying OAuth2 client; this wrapper does not register a callback to persist every later refreshed credential automatically.
+## OAuth2 session & security checklist
 
-OAuth2 inherits the default cache-match behavior (`true`). Clear the old session/cache before account switching or provide an appropriate identity-match override; do not assume Firebase-style UID protection. `signOut()` deletes the credentials file, closes the session, resets the HTTP client, emits signed-out state, then clears cache/provider state. It does not call a token-revocation endpoint.
-
-Implementation: `packages/auth_management_firebase/lib/`, `packages/auth_management_firebase_google/lib/`, and `packages/auth_management_oauth2/lib/`.
+<AccordionGroup>
+  <Accordion defaultOpen title="Plaintext credentials.json & platform support">
+    `BaseOauth2AuthManagement` persists OAuth2 credentials as plaintext JSON in `<appDocumentsDir>/credentials.json` using `dart:io`. It does **not** use encrypted keychain/keystore storage and does **not** work on Flutter Web. Furthermore, never ship a confidential OAuth2 `secret` inside a mobile or desktop client binary.
+  </Accordion>
+  <Accordion title="Await initialize() & watch out for unawaited storeClient()">
+    - Call `await authService.initialize()` at startup so any existing `credentials.json` is restored before listening to `streamUser()`.
+    - The grant mixins call `storeClient(...)` without `await`, so a completed sign-in future does not guarantee `credentials.json` has finished flushing to disk.
+    - Unlike Firebase, `BaseOauth2AuthManagement` inherits the base `isCachedUserFor` (`true`). Override `isCachedUserFor` or clear `dbRepo` before switching accounts so a previous user's cached profile is never reused.
+  </Accordion>
+</AccordionGroup>

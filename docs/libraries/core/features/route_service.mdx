@@ -1,108 +1,172 @@
 ---
-title: Route service
-description: Configure GoRouter and preserve protected destinations across authentication.
+title: GoRouter & Auth Guards
+description: Configure GoRouter with automatic authentication redirects, public route allowlists, and deep-link restoration.
 ---
 
-## Choose the service
+`core_management_route_go_router` integrates Flutter's `go_router` with Butterfly's routing contracts. Choose between two base classes depending on whether your app needs authentication guards:
 
-Extend `GoRouterService` for routing without authentication guards. Extend `GoRouterAuthRoute<T>` for user-aware guards and implement both `routes` and the synchronous `user` getter. The auth-aware class is an abstract class, not a mixin, and requires its separate import.
+<CardGroup cols={2}>
+  <Card title="GoRouterService" icon="route">
+    Import `package:core_management_route_go_router/core_management_route_go_router.dart`. Provides route logging, `onRouteChanged`, debug screen mounting, and one-shot `redirectOverride` without auth checks.
+  </Card>
+  <Card title="GoRouterAuthRoute<T>" icon="user-shield">
+    Import `package:core_management_route_go_router/go_router_auth_route.dart`. Adds an 8-stage authentication guard pipeline, public route allowlists, deep-link preservation (`postSignInRedirect`), and `roleBasedRedirect`.
+  </Card>
+</CardGroup>
+
+---
+
+## Set up an auth-guarded router
 
 <Info>Only `lib/main.dart` is a fixed name. Files marked **(suggested)** follow the `butterfly init` layout; rename or move them freely. Replace `my_app` in imports with the `name` from your `pubspec.yaml`.</Info>
 
-```dart title="lib/models/app_user.dart (suggested)"
-class AppUser {
-  const AppUser(this.id);
-  final String id;
-}
-```
+<Steps>
+  <Step title="Define your user model">
+    ```dart title="lib/models/app_user.dart (suggested)"
+    class AppUser {
+      const AppUser(this.id);
+      final String id;
+    }
+    ```
+  </Step>
+  <Step title="Subclass GoRouterAuthRoute<AppUser>">
+    Implement `routes`, the synchronous `user` getter, and `refreshListenable` so GoRouter re-evaluates redirects whenever authentication state changes:
 
-```dart title="lib/services/route.dart (suggested)"
-import 'package:core_management_route_go_router/go_router_auth_route.dart';
-import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
-import 'package:my_app/models/app_user.dart';
+    ```dart title="lib/services/route.dart (suggested)"
+    import 'package:core_management_route_go_router/go_router_auth_route.dart';
+    import 'package:flutter/material.dart';
+    import 'package:go_router/go_router.dart';
+    import 'package:my_app/models/app_user.dart';
 
-class RouteService extends GoRouterAuthRoute<AppUser> {
-  RouteService(this.session);
-  final ValueNotifier<AppUser?> session;
+    class RouteService extends GoRouterAuthRoute<AppUser> {
+      RouteService(this.session);
+      final ValueNotifier<AppUser?> session;
 
-  @override
-  AppUser? get user => session.value;
+      @override
+      AppUser? get user => session.value;
 
-  @override
-  Listenable get refreshListenable => session;
+      @override
+      Listenable get refreshListenable => session;
 
-  @override
-  List<String> get publicRoutes => ['/about'];
+      @override
+      List<String> get publicRoutes => ['/about'];
 
-  @override
-  List<RouteBase> get routes => [
-    GoRoute(path: '/', builder: (context, state) => const Text('Home')),
-    GoRoute(path: '/login', builder: (context, state) => const Text('Sign in')),
-    GoRoute(path: '/signup', builder: (context, state) => const Text('Sign up')),
-    GoRoute(path: '/about', builder: (context, state) => const Text('About')),
-  ];
-}
-```
+      @override
+      List<RouteBase> get routes => [
+        GoRoute(path: '/', builder: (context, state) => const Text('Home')),
+        GoRoute(path: '/login', builder: (context, state) => const Text('Sign in')),
+        GoRoute(path: '/signup', builder: (context, state) => const Text('Sign up')),
+        GoRoute(path: '/about', builder: (context, state) => const Text('About')),
+      ];
+    }
+    ```
+  </Step>
+  <Step title="Build and retain routerConfig once">
+    ```dart title="lib/main.dart"
+    import 'package:flutter/material.dart';
+    import 'package:my_app/models/app_user.dart';
+    import 'package:my_app/services/route.dart';
 
-```dart title="lib/main.dart"
-import 'package:flutter/material.dart';
-import 'package:my_app/models/app_user.dart';
-import 'package:my_app/services/route.dart';
+    void main() {
+      final session = ValueNotifier<AppUser?>(null);
+      final router = RouteService(session).routerConfig; // build once, keep it
+      runApp(MaterialApp.router(routerConfig: router));
+    }
+    ```
+  </Step>
+</Steps>
 
-void main() {
-  final session = ValueNotifier<AppUser?>(null);
-  final router = RouteService(session).routerConfig; // build once, keep it
-  runApp(MaterialApp.router(routerConfig: router));
-}
-```
+<Warning>
+  `routerConfig` constructs a **brand-new `GoRouter` instance on every getter call**. Always store the returned `GoRouter` once (for example, in `main()` or a retained field) rather than reading `routeService.routerConfig` directly inside a widget's `build()` method.
+</Warning>
 
-Replace the example screens and connect your auth service's `onUserChanged` to the notifier. Setting a user in some unrelated service does not itself refresh GoRouter. Use `refreshListenable` or explicitly refresh your retained router when auth state changes.
+---
 
-The `routerConfig` getter constructs a **new** `GoRouter` on every access. Retain one configuration rather than calling it repeatedly from `build`; dispose owned routers/notifiers when their lifecycle ends. Navigation remains GoRouter's API (`go`, `push`, `pop`, and typed routes).
+## The 8-stage redirect pipeline
 
-## Defaults
+On every navigation event, `GoRouterAuthRoute<T>` evaluates the following sequence in strict order:
 
-| Property | Default |
-| --- | --- |
-| `initialRoute` | `/` |
-| `signInRoute` | `/login` |
-| `signUpRoute` | `/signup` |
-| `authTriggerRoutes` | Both `signInRoute` and `signUpRoute` |
-| `defaultAuthRoute` | `/` |
-| `publicRoutes` | Empty list |
-| `debugRoute` | `/butterfly-debug` |
-| `debugScreen` | null |
-| `debugRoutes` | Empty list |
-| `observers`, `errorBuilder`, `refreshListenable` | null |
+<Steps>
+  <Step title="Log & notify">
+    Logs the transition in debug mode and calls `onRouteChanged(context, state)`.
+  </Step>
+  <Step title="Consume one-shot redirectOverride">
+    If `redirectOverride` is non-null, clears it and immediately redirects there—bypassing all subsequent auth checks.
+  </Step>
+  <Step title="Enforce debugScreen lock (if set)">
+    When `debugScreen` is non-null, only `debugRoute` (`/butterfly-debug`) and paths listed in `debugRoutes` are permitted; every other path redirects to `debugRoute`.
+  </Step>
+  <Step title="Block signed-out access to protected routes">
+    If `user == null` and `state.matchedLocation` is neither in `publicRoutes` nor in `authTriggerRoutes`, saves the full target URI (including query parameters and fragment) into `postSignInRedirect` and redirects to `signInRoute` (`/login`).
+  </Step>
+  <Step title="Bounce signed-in users off login/signup">
+    If `user != null` and the user lands on an `authTriggerRoutes` path (`/login` or `/signup`), consumes and returns `postSignInRedirect` if one was saved, or redirects to `defaultAuthRoute` (`/`).
+  </Step>
+  <Step title="Allow signed-out login/signup navigation">
+    If `user == null` on `/login` or `/signup`, allows navigation without overwriting `postSignInRedirect`—so switching from `/login` to `/signup` or visiting `/about` preserves the original deep link.
+  </Step>
+  <Step title="Replay pending postSignInRedirect">
+    If `user != null` on any other route while `postSignInRedirect` is still queued, consumes and redirects to that saved URI.
+  </Step>
+  <Step title="Evaluate roleBasedRedirect">
+    For authenticated requests with no pending redirect, returns `roleBasedRedirect(user, state)` (defaults to `null`, allowing navigation).
+  </Step>
+</Steps>
 
-There is no `requiresAuth` switch in the implementation. Use the non-auth base class when guards are unwanted. Auth-trigger and public-route membership uses exact `state.matchedLocation` matches, not prefixes or wildcard patterns.
+---
 
-## Redirect order
+## Configuration properties & defaults
 
-The auth router performs these checks in order:
+<Property name="initialRoute" type="String" optional>
+  Starting location passed to `GoRouter`. Defaults to `'/'`.
+</Property>
 
-1. Log and call `onRouteChanged(context, state)`.
-2. Consume and clear a non-null `redirectOverride`, before auth checks.
-3. If `debugScreen` is non-null, permit the debug route and allowed `debugRoutes`; redirect all other locations to the debug route.
-4. For a signed-out user on a protected location, save the full URI in `postSignInRedirect` and return `signInRoute`.
-5. For a signed-in user on an auth-trigger route, consume the saved URI or return `defaultAuthRoute`.
-6. Permit an auth-trigger route while signed out.
-7. For a signed-in user elsewhere with a saved URI, consume it.
-8. For other signed-in requests, call `roleBasedRedirect(user, state)`; otherwise allow navigation.
+---
 
-A signed-out public or auth-trigger route does not consume the saved destination. The saved URI includes query and fragment. `temporaryRedirect` remains a deprecated getter/setter alias for `postSignInRedirect`; it is not separate state.
+<Property name="signInRoute / signUpRoute" type="String" optional>
+  Defaults to `'/login'` and `'/signup'`. Both are included in `authTriggerRoutes` by default.
+</Property>
 
-The non-auth `GoRouterService` only logs, invokes `onRouteChanged`, and consumes `redirectOverride`. It does not implement the auth guard sequence.
+---
 
-## Debug and security boundaries
+<Property name="defaultAuthRoute" type="String" optional>
+  Fallback destination after sign-in when no `postSignInRedirect` was captured. Defaults to `'/'`.
+</Property>
 
-`debugScreen` adds a route through `accumulatedRoutes`. In the auth router, its redirect bypass is **not** gated by `kDebugMode`; only logging is. Leave it null in production. `debugRoutes` checks both full route pattern and matched location.
+---
 
-`redirectOverride` is a one-use override on any route, not only the initial route, and takes precedence over guards. These client-side redirects are navigation conveniences, not backend authorization. Enforce permissions in your API or data rules.
+<Property name="publicRoutes" type="List<String>" optional>
+  Exact `state.matchedLocation` strings accessible while signed out without triggering a redirect to `signInRoute`. Defaults to `[]`. Note that matching is an exact `List.contains` check on `state.matchedLocation`, not a wildcard or prefix matcher.
+</Property>
 
-## Core integration
+---
 
-`RouteServiceMixin` lives in `package:core_management/mixins/router_service.dart`. `GoRouterServiceMixin` lives in `package:core_management_route_go_router/router_service_mixin.dart`. Both expose a route service through a `BaseCoreService` subclass; neither creates an auth listener for you. The GoRouter mixin's `routerConfig` also delegates to the fresh-router getter, so the same caching guidance applies.
+<Property name="roleBasedRedirect(T user, GoRouterState state)" type="FutureOr<String?>" optional>
+  Override to enforce role or permission checks for signed-in users. Return a redirect path string or `null` to permit access.
+</Property>
 
-Implementation: `packages/core_management/lib/services/base_route.dart`, `lib/mixins/auth_route.dart`, and `packages/core_management_route_go_router/lib/`.
+---
+
+<Property name="refreshListenable" type="Listenable?" optional>
+  Passed to `GoRouter(refreshListenable: ...)`. Wire this to your auth notifier so sign-in and sign-out events immediately re-run the redirect pipeline.
+</Property>
+
+---
+
+## Important security & lifecycle notes
+
+<AccordionGroup>
+  <Accordion defaultOpen title="Never leave debugScreen non-null in production">
+    Setting `debugScreen` appends the debug route via `accumulatedRoutes` and redirects all non-debug paths to `/butterfly-debug`. Unlike route logging, **the `debugScreen` redirect bypass is not gated by `kDebugMode`**. Always leave `debugScreen` as `null` in release builds.
+  </Accordion>
+  <Accordion title="Attaching RouteService to BaseCoreService">
+    Two optional mixins expose a route service on your `CoreService`:
+    - `RouteServiceMixin` in `package:core_management/mixins/router_service.dart`
+    - `GoRouterServiceMixin` in `package:core_management_route_go_router/router_service_mixin.dart`
+
+    Both are convenience accessors; neither connects an auth stream automatically, and `GoRouterServiceMixin.routerConfig` still delegates to `routeService.routerConfig` (so cache the router instance).
+  </Accordion>
+  <Accordion title="Client-side guards vs. backend security">
+    Route guards and `redirectOverride` control UI navigation on the client. Always enforce authorization rules on your API and database layer as well. Note that `temporaryRedirect` is a deprecated alias for `postSignInRedirect`.
+  </Accordion>
+</AccordionGroup>

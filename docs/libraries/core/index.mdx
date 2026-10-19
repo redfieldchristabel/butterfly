@@ -1,89 +1,127 @@
 ---
-title: Core services
-description: Initialize error handling, provide a theme, and opt into independent Flutter utilities.
+title: Core & Theme Services
+description: Bootstrap global error handling, configure a seeded Material 3 theme, and explore standalone core utilities.
 ---
 
-## Create your service
+`core_management` provides the foundation of a Butterfly app: a singleton `BaseCoreService` that wires error handling, theming (`BaseThemeService`), and app-wide loading overlays (`BaseLoadingService`), alongside standalone mixins and extensions.
 
-Extend `BaseCoreService`. Construct one instance for the application: its constructor assigns the static `late final BaseCoreService.instance`, so constructing a second instance in the same isolate fails.
+## Quickstart setup
 
 <Info>Only `lib/main.dart` is a fixed name. Files marked **(suggested)** follow the `butterfly init` layout; rename or move them freely. Replace `my_app` in imports with the `name` from your `pubspec.yaml`.</Info>
 
-```dart title="lib/services/core.dart (suggested)"
-import 'package:core_management/core_management.dart';
+<Steps>
+  <Step title="Define your CoreService (and optional ThemeService)">
+    Subclass `BaseCoreService` once for your application. Its constructor registers `BaseCoreService.instance` (`late final`), so only one instance may be created per isolate.
 
-class CoreService extends BaseCoreService {}
+    ```dart title="lib/services/theme.dart (suggested)"
+    import 'package:core_management/core_management.dart';
+    import 'package:flutter/material.dart';
 
-final coreService = CoreService();
-```
+    class ThemeService extends BaseThemeService {
+      ThemeService() : super(colorSeed: Colors.teal);
+    }
+    ```
 
-```dart title="lib/main.dart"
-import 'package:flutter/material.dart';
-import 'package:my_app/services/core.dart';
+    ```dart title="lib/services/core.dart (suggested)"
+    import 'package:core_management/core_management.dart';
+    import 'package:my_app/services/theme.dart';
 
-void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-  coreService.errorHandler(); // first access constructs the core service
-  runApp(MaterialApp(
-    home: Builder(
-      builder: (context) => Theme(
-        data: coreService.getTheme(context),
-        child: const Scaffold(body: Center(child: Text('Butterfly'))),
-      ),
-    ),
-  ));
-}
-```
+    class CoreService extends BaseCoreService {
+      @override
+      final BaseThemeService themeService = ThemeService();
+    }
 
-`errorHandler()` installs handlers on `FlutterError.onError` and `PlatformDispatcher.instance.onError`. The default framework handler presents Flutter errors; the default platform handler returns `false`, so it does not claim to handle platform errors. Constructing the service alone does not install those handlers.
+    final coreService = CoreService();
+    ```
+  </Step>
+  <Step title="Install error handlers and apply the theme in main.dart">
+    Call `coreService.errorHandler()` during startup to attach `FlutterError.onError` and `PlatformDispatcher.instance.onError` hooks, then build your `ThemeData` with `coreService.getTheme(context)`:
 
-## Override services
+    ```dart title="lib/main.dart"
+    import 'package:flutter/material.dart';
+    import 'package:my_app/services/core.dart';
 
-| Getter or method | Contract |
-| --- | --- |
-| `errorHandlerService` | Protected `BaseErrorHandlerService`; override to customize framework/platform error reporting |
-| `themeService` | `BaseThemeService`; defaults to a newly constructed default theme service on each access |
-| `loadingService` | `BaseLoadingService`; defaults to the service's retained loading instance |
-| `getTheme(context)` | Calls `themeService.theme(context)` |
+    void main() {
+      WidgetsFlutterBinding.ensureInitialized();
+      coreService.errorHandler(); // first access constructs the core service
+      runApp(MaterialApp(
+        home: Builder(
+          builder: (context) => Theme(
+            data: coreService.getTheme(context),
+            child: const Scaffold(body: Center(child: Text('Butterfly'))),
+          ),
+        ),
+      ));
+    }
+    ```
+  </Step>
+</Steps>
 
-For stateful or customized services, override getters with stable instances. `BaseThemeService` accepts a named `colorSeed`, not a positional context. Its `theme(context)` reads the surrounding theme's brightness, builds a seeded color scheme, then applies its overridable component-theme getters. It does not supply a theme-mode notifier or automatic runtime switching.
+<Warning>
+  Simply constructing `CoreService()` does **not** install global error hooks—you must call `coreService.errorHandler()`. Also make sure to retain a `final` field when overriding `themeService` (the base getter constructs a fresh `DefaultThemeService` on every access).
+</Warning>
 
-```dart title="lib/services/theme.dart (suggested)"
-import 'package:core_management/core_management.dart';
-import 'package:flutter/material.dart';
+---
 
-class ThemeService extends BaseThemeService {
-  ThemeService() : super(colorSeed: Colors.teal);
-}
-```
+## `BaseCoreService` API reference
 
-```dart title="lib/services/core.dart (suggested)"
-import 'package:core_management/core_management.dart';
-import 'package:my_app/services/theme.dart';
+<Property name="errorHandler()" type="void">
+  Wires `FlutterError.onError` to `errorHandlerService.recordFlutterError` and `PlatformDispatcher.instance.onError` to `errorHandlerService.recordError`. The default Flutter handler calls `FlutterError.presentError`; the default platform handler returns `false` so unhandled platform errors continue through normal host reporting unless overridden.
+</Property>
 
-class CoreService extends BaseCoreService {
-  @override
-  final BaseThemeService themeService = ThemeService();
-}
+---
 
-final coreService = CoreService();
-```
+<Property name="errorHandlerService" type="BaseErrorHandlerService" optional>
+  Protected getter used by `errorHandler()`. Override it with your own `BaseErrorHandlerService` subclass to forward uncaught exceptions to Crashlytics, Sentry, or your logging backend.
+</Property>
 
-Call `theme(context)` before accessing getters that depend on initialized `iTheme` or `darkTheme`.
+---
 
-## Import utilities explicitly
+<Property name="themeService" type="BaseThemeService" optional>
+  Supplies the theme builder used by `getTheme(context)`. Override with a `final` field holding your custom `BaseThemeService` subclass.
+</Property>
 
-The `core_management.dart` barrel exports `BaseCoreService`, `BaseThemeService`, `BaseErrorHandlerService`, `BaseLoadingService`, and `BaseRouteService`. Other APIs require their own library import.
+---
 
-| Guide | Import path inside `package:core_management/` |
-| --- | --- |
-| [Queue](/libraries/core/features/enqueue) | `mixins/task_queue.dart` |
-| [Hex colors](/libraries/core/features/hex_color) | `extensions/hex_color.dart` |
-| [Screen layout](/libraries/core/features/screen_layout) | `extensions/screen_layout.dart` |
-| [Loading](/libraries/core/features/loading_overlay) | `widgets/loading_overlay.dart` |
-| [Locks](/libraries/core/features/lock_service) | `services/core_lock.dart` |
-| [Typography](/libraries/core/features/typography_theme) | `core_typography_theme.dart` |
+<Property name="loadingService" type="BaseLoadingService" optional>
+  Supplies the controller and widget builder consumed by [`LoadingOverlay`](/libraries/core/features/loading_overlay). Defaults to a retained `DefaultLoadingService` instance.
+</Property>
 
-These helpers are not automatically initialized by `BaseCoreService`. Routing is optional and uses the separate [GoRouter integration](/libraries/core/features/route_service); the core service does not automatically initialize authentication or notify a router.
+---
 
-Implementation: `packages/core_management/lib/services/`, `lib/src/services/`, and `lib/core_management.dart`.
+<Property name="getTheme(BuildContext context)" type="ThemeData">
+  Convenience method that delegates to `themeService.theme(context)`. Reads the ambient brightness (`Theme.of(context).brightness`), generates a Material 3 seeded `ColorScheme` from `colorSeed`, and applies all component theme getters (`appBarTheme`, `elevatedButtonTheme`, `inputDecorationTheme`, etc.).
+
+  Call `theme(context)` (or `getTheme(context)`) before reading getters on `BaseThemeService` that depend on `late ThemeData iTheme` or `late bool darkTheme`.
+</Property>
+
+---
+
+## Standalone core utilities
+
+The main `package:core_management/core_management.dart` barrel exports the service base classes (`BaseCoreService`, `BaseThemeService`, `BaseErrorHandlerService`, `BaseLoadingService`, and `BaseRouteService`). All other utilities use explicit sub-path imports:
+
+<CardGroup cols={2}>
+  <Card title="GoRouter & Auth Guards" icon="signs-post" href="/libraries/core/features/route_service">
+    `package:core_management_route_go_router/...` — Protected routes, public paths, and post-sign-in deep-link restoration.
+  </Card>
+  <Card title="Typography Theme" icon="font" href="/libraries/core/features/typography_theme">
+    `package:core_management/core_typography_theme.dart` — Instance-based Material 3 text style wrapper and primary text theme getters.
+  </Card>
+  <Card title="Loading Overlay" icon="spinner" href="/libraries/core/features/loading_overlay">
+    `package:core_management/widgets/loading_overlay.dart` — App-wide overlay driven by `coreService.loadingService.controller`.
+  </Card>
+  <Card title="Task Queue Mixin" icon="list-check" href="/libraries/core/features/enqueue">
+    `package:core_management/mixins/task_queue.dart` — Scheduler-aware FIFO `enqueue()` for `State<T>` with automatic `mounted` checks.
+  </Card>
+  <Card title="Lock Service" icon="lock" href="/libraries/core/features/lock_service">
+    `package:core_management/services/core_lock.dart` — Synchronous in-isolate operation guards (`acquire` / `release`) with expiring keys.
+  </Card>
+  <Card title="Screen Layout & Hex Colors" icon="palette" href="/libraries/core/features/screen_layout">
+    `extensions/screen_layout.dart` & `extensions/hex_color.dart` — `BuildContext` breakpoint shortcuts and `#aarrggbb` color parsing.
+  </Card>
+</CardGroup>
+
+<Info>
+  **Implementation source:** `packages/core_management/lib/core_management.dart`, `lib/services/`, and `lib/src/services/`.
+</Info>

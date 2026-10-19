@@ -1,24 +1,45 @@
 ---
-title: Authentication
-description: Separate your application user, external identity, local cache, and optional state-management bridge.
+title: Auth Architecture & Lifecycle
+description: Decouple your application user model, external identity provider, local cache, and state-management bridge.
 ---
 
-## Choose a base class
+`auth_management` separates authentication into four distinct concerns so your UI and domain logic never depend on a specific database or identity SDK:
 
-| Situation | Base class |
-| --- | --- |
-| Your sign-in API returns the complete app user | `AuthServiceRepository<T>` |
-| A provider supplies identity and your app loads additional profile data | `IdentityAuthRepository<I, T>` |
-| Firebase Auth supplies identity | `FirebaseAuthManagementRepository<T extends FirebaseUser>` |
-| OAuth2 supplies an authenticated HTTP session | `BaseOauth2AuthManagement<T>` |
+<CardGroup cols={2}>
+  <Card title="1. Service & Identity" icon="key">
+    `AuthServiceRepository<T>` or `IdentityAuthRepository<I, T>` coordinates sign-in, session restoration, and `currentUser`.
+  </Card>
+  <Card title="2. Local User Cache (dbRepo)" icon="database" href="/libraries/auth/features/datasources">
+    `AuthManagementDatabaseRepository<T>` persists your `AppUser` locally (Sembast, Hive CE, Isar, or memory).
+  </Card>
+  <Card title="3. Identity Providers" icon="id-card" href="/libraries/auth/features/providers">
+    Firebase Auth, Google Sign-In, or OAuth2 adapters emit raw identity changes and resolve your `AppUser` via `fetchUser`.
+  </Card>
+  <Card title="4. State Bridge (providerRepo)" icon="bolt" href="/libraries/auth/features/riverpod">
+    `AuthServiceProviderRepository<T>` automatically syncs every user change and sign-out event into Riverpod (`userProvider`) or any other state manager.
+  </Card>
+</CardGroup>
 
-The base `auth_management` package does not implement email/password sign-in, registration, password reset, or a concrete static `AuthService`. Those belong in your application or provider integration.
+---
 
-Authentication is state-management-agnostic. BLoC/Cubit, Provider, a `StreamBuilder`, or another state manager can consume `streamUser()` and call the service methods directly. Riverpod is the supplied adapter, not a requirement. To keep another library in sync automatically, implement `AuthServiceProviderRepository<T>` from `auth_management_provider.dart` and return it from `providerRepo`; see [Riverpod integration](/libraries/auth/features/riverpod#other-state-managers).
+## Which base class should I extend?
 
-## Service for an API that returns the user
+| Scenario | Base Class to Extend | Package |
+| --- | --- | --- |
+| Your own backend login endpoint returns `AppUser` directly | `AuthServiceRepository<T>` | `auth_management` |
+| An external SDK emits an identity `I` and you fetch `AppUser` separately | `IdentityAuthRepository<I, T>` | `auth_management` |
+| Firebase Auth supplies `firebase.User` identity | `FirebaseAuthManagementRepository<T extends FirebaseUser>` | `auth_management_firebase` |
+| An OAuth2 server supplies an `oauth2.Client` session | `BaseOauth2AuthManagement<T>` | `auth_management_oauth2` |
 
-This example injects a login function and a cache. The login function is application code, not a Butterfly API.
+<Info>
+  **State-management agnostic by design:** You can consume `authService.streamUser()` directly from BLoC/Cubit, Provider, `ValueNotifier`, or `StreamBuilder`. If you use Riverpod, the [Riverpod Auto-Sync bridge](/libraries/auth/features/riverpod) wires `providerRepo` for you automatically.
+</Info>
+
+---
+
+## Quickstart: Custom API authentication service
+
+When your backend returns the complete `AppUser` upon login, extend `AuthServiceRepository<AppUser>` and store the authenticated user in `dbRepo`:
 
 <Info>Only `lib/main.dart` is a fixed name. Files marked **(suggested)** follow the `butterfly init` layout; rename or move them freely. Replace `my_app` in imports with the `name` from your `pubspec.yaml`.</Info>
 
@@ -47,49 +68,77 @@ class AuthService extends AuthServiceRepository<AppUser> {
 }
 ```
 
-Initialize the chosen cache first, then call `authService.initialize()` once before relying on `currentUser`. It registers the service in static `AuthServiceRepository.instance` and subscribes to `streamUser()`. The singleton is `late final`, so initializing another service in the same isolate is not supported.
+### Startup & initialization rules
 
-`currentUser` is an **instance field**, initially null and updated when the subscription receives an event. Initialization is not a synchronous guarantee that a persisted user has already been emitted. Model startup/loading separately when a route guard must distinguish unresolved state from signed out.
+1. **Initialize storage first:** Open/initialize your `dbRepo` adapter before calling `authService.initialize()`.
+2. **Call `authService.initialize()` once:** Sets the singleton `AuthServiceRepository.instance` (`late final`) and subscribes to `streamUser()`. Because `instance` is `late final`, initializing a second `AuthServiceRepository` in the same isolate throws a `LateInitializationError`.
+3. **Understand `currentUser` timing:** `currentUser` starts as `null` and updates asynchronously as `streamUser()` emits. If your splash screen or route guard needs to distinguish *"still restoring cached session"* from *"signed out"*, track an explicit initialization flag alongside `currentUser`.
 
-## Public service contract
+---
 
-| Member | Behavior |
-| --- | --- |
-| `dbRepo` | Required local-user repository |
-| `providerRepo` | Optional state-management bridge, published to on every user change and cleared on sign-out; defaults null |
-| `getUser()` | Reads the current user; base class delegates to the cache |
-| `streamUser()` | Emits user changes; base class delegates to the cache |
-| `currentUser` | Most recent user received by the initialized service |
-| `signOut()` | Clears cache, then optional provider state |
-| `onUserChanged(T? user)` | Hook after `currentUser` updates |
-| `onUserError(Object error, StackTrace stackTrace)` | Stream-error hook; default logs the error |
+## `AuthServiceRepository<T>` contract
 
-There is no `userStream` getter. Use `streamUser()`. Base sign-out does not revoke a custom backend session; override it if your backend requires that. After `initialize()`, every user change is forwarded to `providerRepo` automatically; see [Riverpod integration](/libraries/auth/features/riverpod).
+<Property name="dbRepo" type="AuthManagementDatabaseRepository<T>" required>
+  The local cache storing your `AppUser`. Base `getUser()` and `streamUser()` delegate to `dbRepo` unless overridden by `IdentityAuthRepository`.
+</Property>
 
-## Identity resolution
+---
 
-`IdentityAuthRepository<I, T>` adds `streamIdentity()`, `getIdentity()`, `fetchUser(identity)`, `isCachedUserFor(cachedUser, identity)`, and `refreshUser()`.
+<Property name="providerRepo" type="AuthServiceProviderRepository<T>?" optional>
+  Optional state-management bridge (defaults to `null`). Once `initialize()` runs, every `streamUser()` emission automatically calls `providerRepo?.sync(user)` before invoking `onUserChanged`, and `signOut()` calls `providerRepo?.sync(null)`.
+</Property>
 
-Resolution follows this order:
+---
 
-1. No identity: clear the local cache and resolve null.
-2. A cached user matches the identity: reuse it without calling `fetchUser`.
-3. Otherwise: fetch the app user, save it to `dbRepo`, and resolve it.
+<Property name="currentUser" type="T?">
+  Instance field holding the latest user emitted after `initialize()`. Remains unchanged if `streamUser()` emits an error.
+</Property>
 
-The identity stream must emit its initial identity and later changes. The repository shares a pending fetch between concurrent resolutions and replays its latest emitted user to later `streamUser()` listeners. `getUser()` resolves independently and returns its result; it does not itself call the stream's emission method.
+---
 
-Implement `fetchUser` to return the full app model. Do not write to `dbRepo` inside it or call `getUser`, `streamUser`, or `refreshUser` recursively. `isCachedUserFor` defaults to true, so custom providers must override it when switching accounts could otherwise reuse another user's cached data. Firebase supplies a UID comparison.
+<Property name="getUser() / streamUser()" type="FutureOr<T?> / Stream<T?>">
+  Reads or watches the authenticated user. Note that the method is `streamUser()`, not a `userStream` getter.
+</Property>
 
-## Refresh, errors, and lifecycle limits
+---
 
-`refreshUser()` bypasses the cache, fetches again, checks the current identity, saves and emits the result. It returns null if signed out or if the fetched user no longer matches the current identity. It does not clear a cache when called while signed out. Provider profile changes are not automatically database subscriptions.
+<Property name="signOut()" type="Future<void>">
+  Calls `dbRepo.clearUser()` and `providerRepo?.sync(null)`. Override `signOut()` if your backend also requires a token-revocation HTTP call.
+</Property>
 
-An identity-resolution error is emitted on the user stream; a failing `getUser()` or `refreshUser()` throws to its caller. `currentUser` retains its previous value on a stream error. Handle that explicitly rather than assuming it becomes null.
+---
 
-The ordinary resolution path does not recheck the current identity after every awaited fetch; do not assume full account-switch race protection. The service and identity repository do not expose a public disposal method for their internal subscriptions. Design one application-owned service, not a new service per screen.
+<Property name="onUserChanged(T? user) / onUserError(Object error, StackTrace stackTrace)" type="void">
+  Lifecycle hooks triggered by the `initialize()` stream subscription. Override `onUserChanged` to notify a `GoRouter` `refreshListenable`, or `onUserError` to report stream failures (default logs via `dart:developer`).
+</Property>
 
-## Continue
+---
 
-Choose a [storage adapter](/libraries/auth/features/datasources), configure [Firebase, Google, or OAuth2](/libraries/auth/features/providers), then add [Riverpod](/libraries/auth/features/riverpod) or a router listener explicitly.
+## How `IdentityAuthRepository<I, T>` resolves profiles
 
-Implementation: `packages/auth_management/lib/src/repository.dart`, `identity_repository.dart`, `database_repository.dart`, and `provider_repository.dart`.
+When using Firebase, OAuth2, or your own external identity provider, `IdentityAuthRepository<I, T>` bridges raw identity `I` to your domain model `T`:
+
+<Steps>
+  <Step title="Identity stream emits">
+    `streamIdentity()` emits the initial identity `I?` and any subsequent auth state changes.
+  </Step>
+  <Step title="Null identity → clear cache">
+    If `identity == null`, the repository calls `dbRepo.clearUser()` and emits `null`.
+  </Step>
+  <Step title="Cache hit → reuse without network fetch">
+    If `dbRepo.getUser()` returns a cached `T` **and** `isCachedUserFor(cachedUser, identity)` returns `true`, the cached user is returned immediately without calling `fetchUser`.
+  </Step>
+  <Step title="Cache miss → fetchUser(identity) & persist">
+    Calls your `fetchUser(identity)` implementation, writes the returned `T` to `dbRepo.addUser(user)`, and emits it. Concurrent callers share the in-flight fetch future, and late subscribers to `streamUser()` immediately receive the last resolved user.
+  </Step>
+</Steps>
+
+<AccordionGroup>
+  <Accordion defaultOpen title="Rules for implementing fetchUser and isCachedUserFor">
+    - **Keep `fetchUser` pure:** Only fetch and return `T`. Never call `dbRepo.addUser`, `getUser()`, `streamUser()`, or `refreshUser()` inside `fetchUser` (doing so causes redundant writes or infinite recursion).
+    - **Always override `isCachedUserFor` on custom providers:** The base default returns `true` for every non-null user! If a user signs out and signs into a different account before the cache clears, a `true` default would reuse the previous account's cached profile. (`FirebaseAuthManagementRepository` already overrides this to compare `cachedUser.firebaseUid == identity.uid`.)
+  </Accordion>
+  <Accordion title="Force-reloading profile data with refreshUser()">
+    Cached profiles are reused across restarts and token refreshes. When the user edits their profile on the server, call `await authService.refreshUser()` to bypass `dbRepo`, run `fetchUser(identity)` fresh, verify the identity hasn't changed, update `dbRepo`, and broadcast the new `T` on `streamUser()`.
+  </Accordion>
+</AccordionGroup>

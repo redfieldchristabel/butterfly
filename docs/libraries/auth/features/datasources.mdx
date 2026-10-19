@@ -1,90 +1,109 @@
 ---
-title: User storage repositories
-description: Implement the four-method cache contract and choose Sembast, Hive CE, Isar, or memory.
+title: User Storage Repositories
+description: Persist your signed-in AppUser locally with Sembast, Hive CE, Isar Community, or a custom AuthManagementDatabaseRepository.
 ---
 
-## The contract
+Every `AuthServiceRepository<T>` requires a `dbRepo` implementing `AuthManagementDatabaseRepository<T>` (`package:auth_management/auth_management.dart`). This repository caches your resolved `AppUser` locally—it does **not** perform password verification or network sign-in.
 
-The exported interface is `AuthManagementDatabaseRepository<T>`, not `AuthDataSource`. It stores your application user; it does not authenticate passwords.
+## Compare storage adapters
 
-| Method | Return type |
-| --- | --- |
-| `getUser()` | `FutureOr<T?>` |
-| `addUser(T user)` | `FutureOr<void>` |
-| `clearUser()` | `FutureOr<void>` |
-| `streamUser()` | `Stream<T?>` |
+| Package | Repository Class | Model Requirement | Current Status |
+| --- | --- | --- | --- |
+| `auth_management_database_sembast` | `AuthManagementDatabaseSembast<T>` | `fromJson` & `toJson` callbacks | **Recommended** — awaits writes, emits initial snapshot on `streamUser()` |
+| `auth_management_database_hive_ce` | `AuthManagementDatabaseHiveCe<T>` | Extend Hive `BaseUser` + register type adapter | Works with caveats — `addUser`/`clearUser` do not `await` box futures |
+| `auth_management_database_isar_community` | `AuthManagementIsarRepository<T>` | Extend Isar `BaseUser` + supply `CollectionSchema<T>` | **Needs code fixes** — unawaited `getUser()` cast & missing transaction in `clearUser()` |
+| `auth_management` | `InMemoryDatabaseRepository<T>` | None | Testing/prototyping only — non-persistent, no initial stream emission |
 
-Implement this interface for another backend and return it from your auth service's `dbRepo` getter. For predictable startup, a custom stream should emit the current cached value when subscribed, then later changes. Adapters differ in whether they currently satisfy that behavior.
+---
 
-## Adapter map
+## Adapter setup guides
 
-| Package | Concrete repository | Model requirement |
-| --- | --- | --- |
-| `auth_management` | `InMemoryDatabaseRepository<T>` | None |
-| `auth_management_database_sembast` | `AuthManagementDatabaseSembast<T>` | `fromJson` and `toJson` callbacks |
-| `auth_management_database_hive_ce` | `AuthManagementDatabaseHiveCe<T>` | Extend that package's `BaseUser`; register a Hive adapter |
-| `auth_management_database_isar_community` | `AuthManagementIsarRepository<T>` | Extend that package's `BaseUser`; provide a collection schema |
+<Tabs>
+  <TabItem label="Sembast (Recommended)" value="sembast">
+    `AuthManagementDatabaseSembast<T>` attaches to an already-open Sembast `Database` instance that your app owns. It needs no base model inheritance or Hive/Isar binary adapter generation.
 
-Firebase is an identity-provider integration, not an implementation of this cache contract. There is no `FirebaseAuthDataSource`, `HiveAuthDataSource`, or `IsarAuthDataSource` in these packages.
+    <Info>Only `lib/main.dart` is a fixed name. Files marked **(suggested)** follow the `butterfly init` layout; rename or move them freely. Replace `my_app` in imports with the `name` from your `pubspec.yaml`.</Info>
 
-## Sembast
+    ```dart title="lib/models/app_user.dart (suggested)"
+    class AppUser {
+      const AppUser(this.id);
+      final String id;
 
-The repository uses your already-open database. It neither opens nor closes that database and needs no generated adapter or base model class.
+      factory AppUser.fromJson(Map<String, Object?> json) =>
+          AppUser(json['id'] as String);
 
-<Info>Only `lib/main.dart` is a fixed name. Files marked **(suggested)** follow the `butterfly init` layout; rename or move them freely. Replace `my_app` in imports with the `name` from your `pubspec.yaml`.</Info>
+      Map<String, Object?> toJson() => {'id': id};
+    }
+    ```
 
-```dart title="lib/models/app_user.dart (suggested)"
-class AppUser {
-  const AppUser(this.id);
-  final String id;
+    ```dart title="lib/services/user_cache.dart (suggested)"
+    import 'package:auth_management_database_sembast/auth_management_database_sembast.dart';
+    import 'package:my_app/models/app_user.dart';
+    import 'package:sembast/sembast.dart';
 
-  factory AppUser.fromJson(Map<String, Object?> json) =>
-      AppUser(json['id'] as String);
+    AuthManagementDatabaseSembast<AppUser> createUserCache(Database database) {
+      return AuthManagementDatabaseSembast<AppUser>(
+        fromJson: AppUser.fromJson,
+        toJson: (user) => user.toJson(),
+      )..initialize(database);
+    }
+    ```
 
-  Map<String, Object?> toJson() => {'id': id};
-}
-```
+    - **Store & key:** Stores the single active user at key `'current'` inside store `'auth_management_user'` (customizable via constructor `storeName`).
+    - **Lifecycle:** Call `initialize(database)` before any read/write (otherwise a `StateError` is thrown). `streamUser()` emits the initial cached user (or `null`) immediately upon subscription, and `addUser` / `clearUser` properly `await` their Sembast transactions.
+  </TabItem>
+  <TabItem label="Hive CE" value="hive-ce">
+    1. Import `AuthManagementDatabaseHiveCe<T>` from `package:auth_management_database_hive_ce/auth_management_database_hive_ce.dart` and `BaseUser` from `package:auth_management_database_hive_ce/base_user.dart`.
+    2. Subclass `BaseUser` (which extends `HiveObject`) and register your generated Hive `TypeAdapter` **before** calling `await hiveRepo.initialize()`.
+    3. `initialize()` resolves `getApplicationDocumentsDirectory()`, initializes Hive there, and opens box `'currentUser'`, storing the active record at integer key `0`.
 
-```dart title="lib/services/user_cache.dart (suggested)"
-import 'package:auth_management_database_sembast/auth_management_database_sembast.dart';
-import 'package:my_app/models/app_user.dart';
-import 'package:sembast/sembast.dart';
+    <Warning>
+      **Unawaited writes & native-only path:** `AuthManagementDatabaseHiveCe.addUser` calls `_userBox.put(0, user)` and `clearUser` calls `_userBox.clear()` without returning or awaiting the `Future`. In addition, `initialize()` calls `getApplicationDocumentsDirectory()` unconditionally, which is not supported on Flutter Web.
+    </Warning>
+  </TabItem>
+  <TabItem label="Isar Community" value="isar">
+    `AuthManagementIsarRepository<T>` requires your model to extend `BaseUser` from `package:auth_management_database_isar_community/auth_management_database_isar_community.dart` (which provides `Id id = Isar.autoIncrement`) and requires calling `await isarRepo.initialize(AppUserSchema)` before use. It throws `UnsupportedError` on Web.
 
-AuthManagementDatabaseSembast<AppUser> createUserCache(Database database) {
-  return AuthManagementDatabaseSembast<AppUser>(
-    fromJson: AppUser.fromJson,
-    toJson: (user) => user.toJson(),
-  )..initialize(database);
-}
-```
+    <Error>
+      **Current implementation defects in `AuthManagementIsarRepository`:**
+      - **`getUser()` broken cast:** Calls `_userCollection.where().findFirst()` (which returns a `Future<T?>`) and casts it directly `as T?` without `await` or `.findFirstSync()`.
+      - **`clearUser()` missing writeTxn:** Calls `_userCollection.clear()` outside `_isar.writeTxn(...)` and without awaiting the returned `Future`.
+      - **`streamUser()` no initial emission:** Calls `.watch()` without `fireImmediately: true`, so listeners do not receive the cached user at startup until a write occurs.
 
-The default store is `auth_management_user` and the single record key is `current`. Set constructor `storeName` only when a different store is needed. Calling a storage operation before `initialize(database)` throws `StateError`.
+      Fix these three methods in `packages/auth_management_database_isar_community/lib/src/repository.dart` before using Isar in production.
+    </Error>
+  </TabItem>
+  <TabItem label="In-Memory" value="in-memory">
+    `InMemoryDatabaseRepository<T>` (`package:auth_management/auth_management.dart`) wraps a `ValueNotifier<T?>(null)`.
+    - **Best for:** Unit tests, widget previews, and quick Riverpod prototypes.
+    - **Limitations:** Loses state on app restart, does not emit the current value when `streamUser()` is first subscribed to, and does not remove its listener on stream cancellation.
+  </TabItem>
+</Tabs>
 
-`streamUser()` maps record snapshots, including the initial record or null. `addUser` and `clearUser` await their database operations. Convert nested models to maps and dates to supported Sembast values; for generated JSON, configure nested serialization appropriately.
+---
 
-## Hive CE
+## Implementing a custom storage adapter
 
-Import the repository from `auth_management_database_hive_ce.dart`. Its `BaseUser` requires a separate import from `package:auth_management_database_hive_ce/base_user.dart` and extends `HiveObject`.
+To plug in SQLite (`drift` / `sqflite`), `shared_preferences`, or `flutter_secure_storage`, implement the four-method `AuthManagementDatabaseRepository<T>` interface:
 
-Register the user type adapter before calling `initialize()`. Initialization uses `getApplicationDocumentsDirectory()` and opens a typed box named `currentUser`. The current user is stored at integer key `0`. `streamUser()` emits the existing value and then watches that key, canceling its box subscription when the consumer cancels.
+<Property name="getUser()" type="FutureOr<T?>">
+  Returns the currently cached user, or `null` if none is stored.
+</Property>
 
-The adapter's `addUser` and `clearUser` invoke asynchronous Hive operations without returning or awaiting their futures. Awaiting these wrapper methods does not guarantee disk persistence has completed. The implementation relies on a filesystem documents directory; do not infer browser compatibility solely from Hive's capabilities.
+---
 
-## Isar Community
+<Property name="addUser(T user)" type="FutureOr<void>">
+  Persists `user` as the active user and notifies `streamUser()` listeners.
+</Property>
 
-Call `initialize(userSchema, schemas: additionalSchemas)` before use. Initialization opens an Isar instance in the application documents directory and explicitly throws on web. This package exports its own `BaseUser`, containing a required `Id id`; it is different from Hive's `BaseUser`.
+---
 
-Current implementation limitations are important:
+<Property name="clearUser()" type="FutureOr<void>">
+  Deletes the stored user record and emits `null` on `streamUser()`.
+</Property>
 
-- `addUser` writes the model in a synchronous write transaction. It does not replace all other user records.
-- `getUser` calls asynchronous `findFirst()` and casts that result directly to `T?`, rather than awaiting it. It is not a working typed read as written.
-- `clearUser` calls `collection.clear()` without an explicit write transaction and without awaiting/returning its future.
-- The query stream does not request an initial emission (`fireImmediately`); it selects the first returned user after changes.
+---
 
-Review or repair these behaviors before selecting this adapter for production. These docs do not claim that a placeholder package test verifies actual native database operations.
-
-## In-memory storage
-
-`InMemoryDatabaseRepository<T>` holds a `ValueNotifier<T?>`. It loses data on restart. Its stream attaches a notifier listener but does not emit the existing value immediately or unregister that listener on cancellation. It is suitable for limited development scenarios, not a persistent-session solution or a leak-free lifecycle abstraction.
-
-Implementation: each adapter's `lib/repository.dart` or `lib/src/repository.dart`, plus `packages/auth_management/lib/src/in_memory_database_repo.dart`.
+<Property name="streamUser()" type="Stream<T?>">
+  Emits the initial cached user (or `null`) on subscription, followed by every subsequent `addUser` or `clearUser` update.
+</Property>

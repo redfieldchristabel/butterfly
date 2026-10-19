@@ -1,77 +1,166 @@
 ---
-title: Installation
-description: Use the current checkout, install selected Flutter libraries, and understand initialization limits.
+title: Installation & Setup
+description: Activate the Butterfly CLI from your checkout, add modular Flutter packages via Git, and understand scaffolding behavior.
 ---
 
-## Requirements
+You can adopt Butterfly in two ways: add individual Flutter packages directly to your `pubspec.yaml`, or activate the `butterfly` CLI to generate models and project files.
 
-Use Flutter and Dart versions compatible with every selected package, not just the root SDK constraint. The workspace declares Dart `^3.11.0`; its Riverpod package requires Dart `^3.12.0` and Flutter `>=3.44.0`. Check individual `pubspec.yaml` files for dependency constraints.
+## Prerequisites
 
-Git is required for Git dependencies and Mason templates. Some package manifests reference GitHub over SSH, so fetching dependencies may require configured GitHub SSH access.
+<CardGroup cols={2}>
+  <Card title="Dart & Flutter SDK" icon="code">
+    The root workspace requires Dart `^3.11.0`, while `auth_management_provider_riverpod` requires **Dart `^3.12.0`** and **Flutter `>=3.44.0`**. Match your SDK to the highest package you install.
+  </Card>
+  <Card title="Git & SSH Access" icon="git-alt">
+    Required for fetching Git-hosted packages and Mason bricks. Several internal `pubspec.yaml` files reference `git@github.com:...`, so configure GitHub SSH keys on your machine.
+  </Card>
+</CardGroup>
 
-## Run the CLI from this checkout
+---
 
-From the Butterfly repository root:
+## Install the CLI
 
-```bash
-flutter pub get
-cd butterfly_cli
-dart run butterfly_cli --help
-dart run butterfly_cli version
-```
+<Steps>
+  <Step title="Bootstrap the workspace">
+    From the root of your Butterfly checkout, resolve workspace dependencies and verify the CLI runs:
 
-To make this checkout available as `butterfly` from other projects, run the following from the repository root:
+    ```bash
+    flutter pub get
+    cd butterfly_cli
+    dart run butterfly_cli --help
+    dart run butterfly_cli version
+    ```
+  </Step>
+  <Step title="Activate globally from your local path">
+    Register the `butterfly` executable on your machine from the repository root so it uses your local checkout:
 
-```bash
-dart pub global activate --source path ./butterfly_cli
-butterfly --help
-```
+    ```bash
+    dart pub global activate --source path ./butterfly_cli
+    butterfly --help
+    ```
 
-Ensure Dart's pub-cache `bin` directory is on `PATH`. The executable declared in `butterfly_cli/pubspec.yaml` is `butterfly`, not `butterfly2`.
+    <Info>
+      Make sure your Dart pub-cache `bin` directory (`~/.pub-cache/bin` on Linux/macOS) is on your `PATH`. The executable name is `butterfly` (not `butterfly2`).
+    </Info>
+  </Step>
+</Steps>
 
-`dart pub global activate butterfly_cli` selects the package from pub.dev rather than this checkout. Do not assume that published code includes your local changes.
+<Warning>
+  Running `dart pub global activate butterfly_cli` (without `--source path`) pulls the last published version from pub.dev, which will not include local repository updates.
+</Warning>
 
-## Install libraries explicitly
+---
 
-For a Flutter application using core services, add a Git dependency to the application's `pubspec.yaml`:
+## Add Flutter libraries to your app
 
-```yaml
-dependencies:
-  flutter:
-    sdk: flutter
-  core_management:
-    git:
-      url: https://github.com/redfieldchristabel/butterfly.git
-      ref: master
-      path: packages/core_management
-```
+Every library lives under `packages/<package_name>` in the monorepo. Add only the packages your app imports.
 
-Run `flutter pub get`. For another package, change both the dependency key and `path` to its name in the [package map](/). Add direct dependencies for packages you import. Pin a reviewed Git commit or tag instead of `master` when reproducibility matters; selecting HTTPS for one dependency does not rewrite transitive SSH dependencies.
+<Tabs>
+  <TabItem label="Core & Routing" value="core-deps">
+    Add `core_management` and optional GoRouter support to your app's `pubspec.yaml`:
 
-## Optional interactive initialization
+    ```yaml title="pubspec.yaml"
+    dependencies:
+      flutter:
+        sdk: flutter
+      core_management:
+        git:
+          url: https://github.com/redfieldchristabel/butterfly.git
+          ref: master
+          path: packages/core_management
+      core_management_route_go_router:
+        git:
+          url: https://github.com/redfieldchristabel/butterfly.git
+          ref: master
+          path: packages/core_management_route_go_router
+    ```
+  </TabItem>
+  <TabItem label="Auth + Riverpod + Sembast" value="auth-deps">
+    Combine the base auth package with a storage adapter (like Sembast) and the Riverpod auto-sync bridge:
 
-Run from an existing Flutter project containing `pubspec.yaml` and `lib/`:
+    ```yaml title="pubspec.yaml"
+    dependencies:
+      flutter:
+        sdk: flutter
+      auth_management:
+        git:
+          url: https://github.com/redfieldchristabel/butterfly.git
+          ref: master
+          path: packages/auth_management
+      auth_management_database_sembast:
+        git:
+          url: https://github.com/redfieldchristabel/butterfly.git
+          ref: master
+          path: packages/auth_management_database_sembast
+      auth_management_provider_riverpod:
+        git:
+          url: https://github.com/redfieldchristabel/butterfly.git
+          ref: master
+          path: packages/auth_management_provider_riverpod
+    ```
+  </TabItem>
+  <TabItem label="Firebase & OAuth2" value="provider-deps">
+    Add identity provider packages when authenticating against Firebase, Google, or an OAuth2 server:
+
+    ```yaml title="pubspec.yaml"
+    dependencies:
+      auth_management_firebase:
+        git:
+          url: https://github.com/redfieldchristabel/butterfly.git
+          ref: master
+          path: packages/auth_management_firebase
+      auth_management_oauth2:
+        git:
+          url: https://github.com/redfieldchristabel/butterfly.git
+          ref: master
+          path: packages/auth_management_oauth2
+    ```
+  </TabItem>
+</Tabs>
+
+After editing `pubspec.yaml`, run `flutter pub get`.
+
+<Info>
+  **Production tip:** Pin `ref:` to a tested commit SHA or tag rather than `master` so upstream changes never break reproducible builds. Note that using an `https://` URL on one dependency does not rewrite transitive `git@github.com:` SSH URLs inside the workspace packages.
+</Info>
+
+---
+
+## Interactive project scaffolding (`butterfly init`)
+
+Inside an existing Flutter project (one containing both `pubspec.yaml` and `lib/`), you can run the interactive initializer:
 
 ```bash
 butterfly init
 ```
 
-The command searches upward for both of those paths. It asks whether to use core, auth, and routing, plus the user model name and router type when relevant. It creates `lib/models`, `lib/services`, `lib/screens`, and `lib/widgets`.
+The wizard walks upward to locate your project root, creates `lib/models`, `lib/services`, `lib/screens`, and `lib/widgets`, and prompts you to opt into Core, Auth, and Routing scaffolds.
 
-Treat initialization as scaffolding to review, not a finished application:
+<AccordionGroup>
+  <Accordion title="What butterfly init generates">
+    - **Core enabled:** Adds `core_management` and scaffolds `CoreService` and `ThemeService`.
+    - **Auth enabled:** Prompts for a user model name, adds `auth_management`, and scaffolds an auth service file. (It does not generate the user model class or pick a database package.)
+    - **Routing enabled (`goRouter`):** Installs `go_router`, `build_runner`, and `go_router_builder`, then generates typed example routes. Choosing `other` skips route generation.
+    - **Config file:** Interactive `butterfly init` keeps answers in memory and does **not** write `.butterfly_project.yaml` (unlike the MCP `init` tool, which does save `.butterfly_project.yaml`).
+  </Accordion>
+  <Accordion defaultOpen title="Known scaffolding caveats (Read before running)">
+    The Mason bricks fetched from GitHub `master` currently lag behind the latest library APIs in a few places:
+    1. **Auth template base class:** The brick extends `BaseAuthService`, which no longer exists in `auth_management`. Replace it with `AuthServiceRepository<T>` or `IdentityAuthRepository<I, T>`.
+    2. **Theme template constructor:** The brick passes positional `super.context`, whereas `BaseThemeService` only accepts named `{Color? colorSeed}`.
+    3. **Working directory quirk:** Interactive `init` changes directory into `lib/` while service generation targets relative `lib/services`, which can place generated services under `lib/lib/services`. Always inspect generated paths after running `butterfly init`.
+  </Accordion>
+</AccordionGroup>
 
-- Core selection adds `core_management` and requests core and theme service templates.
-- Auth selection adds `auth_management` and requests an auth service template. It does not generate your user model or select/configure a storage adapter.
-- GoRouter selection offers `go_router`, `build_runner`, and `go_router_builder`, then generates typed example routes. It does not install or configure Butterfly's auth-aware router service.
-- Selecting router type `other` skips route generation.
-- The interactive configuration is held in memory; this command does not save `.butterfly_project.yaml`. The MCP initialization tool does save it.
+## Next steps
 
-## Current scaffolding limitations
-
-The local auth template extends `BaseAuthService`, which is not an exported class in current `auth_management`. Replace it with your own implementation of `AuthServiceRepository<T>` or an identity-provider subclass. The theme template forwards `super.context`, but current `BaseThemeService` accepts only the named `colorSeed` argument.
-
-The interactive initializer enters `lib/`, while service template generation uses a relative `lib/services` target. Core/auth dependency addition can restore that `lib/` working directory, so services can be generated under `lib/lib/services`. Router dependency setup returns to the project root before route generation. Check actual output rather than assuming every file lands in the intended place.
-
-Mason templates are fetched from GitHub `master`, even when the CLI is activated from a local checkout. Local unpushed template edits are not automatically used. These docs do not claim generated scaffolds compile unchanged.
-
-For predictable setup today, wire the [core](/libraries/core), [auth](/libraries/auth), and [routing](/libraries/core/features/route_service) examples manually and run your application's analyzer.
+<CardGroup cols={3}>
+  <Card title="Core Services" icon="layer-group" href="/libraries/core">
+    Wire up `CoreService`, `ThemeService`, and global error handlers.
+  </Card>
+  <Card title="Auth & Riverpod" icon="bolt" href="/libraries/auth/features/riverpod">
+    Set up `AuthService` with automatic Riverpod `userProvider` state sync.
+  </Card>
+  <Card title="CLI Reference" icon="wand-magic-sparkles" href="/features">
+    Generate models, version constants, and conventional commits.
+  </Card>
+</CardGroup>

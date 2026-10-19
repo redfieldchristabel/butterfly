@@ -1,9 +1,11 @@
 ---
-title: Screen layout
-description: Read MediaQuery size, a shortest-side breakpoint, and the current theme from BuildContext.
+title: Screen Layout
+description: Ergonomic BuildContext getters for MediaQuery size, shortestSide mobile breakpoints, and ThemeData.
 ---
 
-## Use the extension
+`ScreenLayout` is a `BuildContext` extension in `package:core_management/extensions/screen_layout.dart` that gives widgets concise getters for screen dimensions, a `< 600` shortest-side mobile check, and the ambient `ThemeData`.
+
+## Usage example
 
 ```dart title="lib/widgets/layout_summary.dart (suggested)"
 import 'package:core_management/extensions/screen_layout.dart';
@@ -26,19 +28,32 @@ class LayoutSummary extends StatelessWidget {
 }
 ```
 
-Place the widget under the appropriate `MediaQuery` and theme, normally supplied by `MaterialApp`.
+---
 
-## Available getters
+## Extension getters
 
-| Getter | Exact source |
-| --- | --- |
-| `screenSize` | `MediaQuery.of(context).size` |
-| `shortestSide` | `MediaQuery.of(context).size.shortestSide` |
-| `mobileLayout` | `shortestSide < 600` |
-| `themeData` | `Theme.of(context)` |
+<Property name="context.screenSize" type="Size">
+  Returns `MediaQuery.of(context).size` in logical pixels.
+</Property>
 
-The breakpoint uses logical pixels and the shortest side, not available layout width or the operating system. Exactly 600 returns `false`. A wide window with a short height can still return `true`.
+---
 
-There are no separate tablet/desktop getters, orientation API, or responsive widget builder in this extension. Use `LayoutBuilder` for parent constraints or Flutter's `MediaQuery` APIs when you need more than these four shortcuts.
+<Property name="context.shortestSide" type="double">
+  Returns `MediaQuery.of(context).size.shortestSide`—the smaller of `width` and `height`.
+</Property>
 
-Implementation: `packages/core_management/lib/extensions/screen_layout.dart`.
+---
+
+<Property name="context.mobileLayout" type="bool">
+  Evaluates `shortestSide < 600`. Returns `true` on phone-sized viewports (`< 600` logical pixels) and `false` at `600.0` and above.
+</Property>
+
+---
+
+<Property name="context.themeData" type="ThemeData">
+  Returns `Theme.of(context)`.
+</Property>
+
+<Info>
+  **How `mobileLayout` behaves on desktop/web:** Because `mobileLayout` checks `shortestSide < 600` (not `width < 600`), a wide desktop browser window resized to a short height (`1200 × 500`) will report `mobileLayout == true`. When you need width-driven or parent-constraint layouts, use Flutter's `LayoutBuilder` or check `context.screenSize.width` directly.
+</Info>

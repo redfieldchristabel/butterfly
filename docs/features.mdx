@@ -1,116 +1,177 @@
 ---
-title: CLI reference
-description: Implemented commands, model generation options, MCP tools, and verification workflows.
+title: CLI & MCP Reference
+description: Generate serializable or immutable models, stamp app versions, commit changes, and run the Butterfly MCP server.
 ---
 
-## Commands
+The `butterfly` CLI (`butterfly_cli`) automates repetitive project tasks: generating model boilerplate, stamping `lib/version.dart` from `pubspec.yaml`, creating conventional commits, and exposing an MCP server for AI coding agents.
 
-| Command | Aliases | Effect |
+## Command overview
+
+| Command | Shorthand / Aliases | Description |
 | --- | --- | --- |
-| `butterfly version` | None | Prints the CLI's `kVersion` constant |
-| `butterfly init` | None | Interactive project scaffolding |
-| `butterfly generate model <Name>` | `generate`: `gen`, `g`; `model`: `m`, `mdl` | Generates a model skeleton |
-| `butterfly generate version` | `generate`: `gen`, `g` | Writes `lib/version.dart` |
-| `butterfly commit` | `c`, `comit`, `commits`, `cm` | Invokes Git to create a conventional commit |
-| `butterfly mcp-server` | `mcp`, `mcp-srv` | Starts the stdio MCP server |
+| `butterfly version` | — | Prints the CLI's built-in `kVersion` (`0.2.0`) |
+| `butterfly init` | — | Interactive project wizard (see [Installation](/installation#interactive-project-scaffolding-butterfly-init)) |
+| `butterfly generate model <Name>` | `gen` / `g`, `m` / `mdl` | Scaffolds a model class under `lib/models/` |
+| `butterfly generate version` | `gen` / `g` | Reads `pubspec.yaml` version and writes `lib/version.dart` |
+| `butterfly commit` | `c`, `comit`, `commits`, `cm` | Interactive or flag-driven conventional `git commit` |
+| `butterfly mcp-server` | `mcp`, `mcp-srv` | Launches the stdio Model Context Protocol (MCP) server |
 
-There is no `generate service` command. Use [installation](/installation) for initialization behavior and known template limitations.
+<Info>
+  **Global flags:** Pass `--verbose` (`-v`) on any command for detailed logging, or `--dev` (`-D`) to rethrow caught exceptions with full stack traces instead of taking the standard exit path. There is no `butterfly generate service` subcommand.
+</Info>
 
-Global flags are `--verbose` / `-v` and `--dev` / `-D`. The verbose flag requests verbose logging; the dev flag rethrows errors handled inside the guarded command execution rather than taking the normal error exit path.
+---
 
-## Generate a model
+## Model generator (`generate model`)
 
-Run inside a project with both `pubspec.yaml` and `lib/`:
+Run from any project directory containing `pubspec.yaml` and `lib/`:
 
 ```bash
+# Default: mutable model with json_serializable hooks
 butterfly generate model Booking
+
+# Nested path -> writes lib/models/auth/user.dart with class AuthUser
 butterfly g m AuthUser --path auth
+
+# Plain Dart class without JSON serialization
 butterfly generate model Settings --no-serializable
+
+# Immutable built_value model
 butterfly generate model Invoice --immutable
 ```
 
-| Option | Default | Meaning |
-| --- | --- | --- |
-| `--serializable`, `-s` | `true` | Include serialization support; disable with `--no-serializable` |
-| `--immutable`, `-i` | `false` | Use the `built_value` template instead of the plain model template |
-| `--path`, `-p` | No subdirectory | Subdirectory under `lib/models/` |
+### Generator flags
 
-The name becomes PascalCase; file and directory names become snake_case. `AuthUser --path auth` produces `lib/models/auth/user.dart` while keeping class name `AuthUser`. A class name identical to the path is rejected. Existing target files trigger an overwrite prompt in the CLI; declining skips generation.
+<Property name="--serializable / -s" type="boolean" optional>
+  Defaults to `true`. Generates `fromJson`, `toJson`, `fromJsonRaw`, and `toJsonRaw` helpers. Pass `--no-serializable` for a plain class without JSON hooks.
+</Property>
 
-The generator creates an empty model skeleton. Add fields and constructor parameters yourself. It does not install serialization dependencies or run `build_runner`.
+---
 
-### Plain serializable models
+<Property name="--immutable / -i" type="boolean" optional>
+  Defaults to `false`. Switches from the standard mutable class brick to the `built_value` abstract class template.
+</Property>
 
-Add `json_annotation`, plus development dependencies `json_serializable` and `build_runner`, to your consuming project. After editing fields, run:
+---
 
-```bash
-dart run build_runner build
-```
+<Property name="--path / -p" type="string" optional>
+  Optional subdirectory inside `lib/models/`. Class names are converted to `PascalCase` while file and folder names use `snake_case`. If the model name ends with the folder name (such as `AuthUser` with `--path auth`), the redundant prefix is stripped from the filename (`lib/models/auth/user.dart`) while keeping `class AuthUser`. Passing a model name identical to `--path` is rejected.
+</Property>
 
-The template includes `fromJson`, `toJson`, `fromJsonRaw`, and `toJsonRaw`. Without serialization it creates only the plain class and constructor.
+### Completing generated models
 
-### Immutable models
+The CLI scaffolds the skeleton file (and prompts before overwriting an existing file), but **you add the fields, dependencies, and codegen run**:
 
-Add `built_value` and development dependencies `built_value_generator` and `build_runner`. The template uses Flutter's `@immutable` annotation and always references a generated `.g.dart` part.
+<Tabs>
+  <TabItem label="Standard (@JsonSerializable)" value="json-model">
+    1. Add `json_annotation` plus dev dependencies `json_serializable` and `build_runner`:
+       ```bash
+       flutter pub add json_annotation dev:json_serializable dev:build_runner
+       ```
+    2. Add your fields and constructor parameters to the generated class.
+    3. Generate the `.g.dart` part:
+       ```bash
+       dart run build_runner build
+       ```
+  </TabItem>
+  <TabItem label="Immutable (built_value)" value="built-value-model">
+    1. Add `built_value` plus dev dependencies `built_value_generator` and `build_runner`:
+       ```bash
+       flutter pub add built_value dev:built_value_generator dev:build_runner
+       ```
+    2. Define your getters inside the abstract class.
+    3. **If `--serializable` is enabled (the default):** The template references a project-level `serializers` instance (`serializers.deserializeWith(...)`). Create and import your app's `@SerializersFor([...])` registry (with `StandardJsonPlugin` if using map JSON) before running `build_runner`, otherwise the newly generated file will not compile yet.
+  </TabItem>
+</Tabs>
 
-With serialization enabled, the template also references an application-owned `serializers` registry without generating or importing one. Define that registry, register the model's serializer, configure map-shaped JSON serialization as needed, and import it before running generation. Do not treat the generated immutable file as immediately compilable.
+---
 
-## Generate a version file
+## Stamp app version (`generate version`)
+
+Keep an in-app constant synced with your `pubspec.yaml` version string:
 
 ```bash
 butterfly generate version
 ```
 
-Reads the project's pubspec version and writes a single `const String kVersion` declaration to `lib/version.dart`. It overwrites that file without an overwrite prompt; inspect existing content first. This is different from `butterfly version`, which prints the CLI's own version constant.
+This reads `version:` from your project's `pubspec.yaml` and writes `const String kVersion = '...';` into `lib/version.dart`.
 
-## Conventional commits
+<Warning>
+  `butterfly generate version` overwrites `lib/version.dart` immediately without confirmation. Check `lib/version.dart` first if you keep custom code in that file.
+</Warning>
 
-`butterfly commit` is a write operation, not a message preview. It runs `git commit -m` after collecting the action and message.
+---
 
-`--action` / `-a` accepts `fix`, `feat`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, or `chore`. `--message` / `-m` supplies the subject text. Missing values are prompted for.
+## Conventional commits (`butterfly commit`)
 
-If human-readable `git status` contains `no changes added to commit`, the command asks whether to stage changes, defaulting to yes, then uses `git add .`. That detection depends on Git's output wording. Review and stage only intended files yourself before invoking the command. It does not push, and it does not provide separate scope, body, or breaking-change flags.
+Create a formatted conventional commit (`<action>: <message>`) from the terminal:
 
-## MCP server
+```bash
+butterfly commit -a feat -m "add credit facility model"
+```
+
+- **Supported `--action` (`-a`) types:** `fix`, `feat`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`.
+- **Interactive fallback:** Omit `-a` or `-m` and the CLI prompts you in the terminal.
+- **Staging behavior:** `butterfly commit` executes a real `git commit -m`. If `git status` reports `"no changes added to commit"`, the CLI asks whether to stage all changes (defaulting to **Yes**) and runs `git add .`. Stage specific files manually beforehand if you have unrelated edits in your working tree.
+
+---
+
+## MCP server (`butterfly mcp-server`)
+
+Start the stdio Model Context Protocol server for AI assistants:
 
 ```bash
 butterfly mcp-server
 ```
 
-The server registers three tools:
+<Property name="test" type="MCP tool" optional>
+  Accepts an optional `message` string and echoes it back to verify MCP connectivity. Does not run `dart test`.
+</Property>
 
-| Tool | Inputs and behavior |
-| --- | --- |
-| `test` | Optional `message`; echoes text, not a test-suite runner |
-| `init` | `useCore` defaults true; `useAuth` and `useRouter` default false; `userModelName` is required when auth is selected; router type defaults to `goRouter` when enabled |
-| `generate_model` | Required `name`; optional `serializable` (true), `immutable` (false), and `path` |
+---
 
-MCP `init` saves `.butterfly_project.yaml` with configuration version `0.0.0` and restores the project root before generating services. Unlike interactive `init`, it does not explicitly create all four organizational directories. Dependency installation can still prompt. `generate_model` rejects an existing file instead of asking to overwrite it.
+<Property name="init" type="MCP tool" optional>
+  Initializes a project non-interactively. Parameters:
+  - `useCore` (`bool`, default `true`)
+  - `useAuth` (`bool`, default `false`) — requires `userModelName` when `true`
+  - `useRouter` (`bool`, default `false`) — `routerType` defaults to `goRouter`
 
-These are the registered tools, not a promise of fully unattended operation or compatibility with every MCP client. Project tools depend on the server's working directory, and command logging should be checked for stdio-protocol compatibility in your client.
+  Writes `.butterfly_project.yaml` (version `0.0.0`) and restores the project root directory between steps.
+</Property>
 
-## Verification
+---
 
-The workspace's declared analyzer script is:
+<Property name="generate_model" type="MCP tool" required>
+  Scaffolds a model via MCP. Requires `name` (`String`), with optional `serializable` (`true`), `immutable` (`false`), and `path`. Unlike interactive CLI runs, `generate_model` refuses to overwrite an existing target file.
+</Property>
 
-```bash
-dart run melos run analyze --no-select
-```
+---
 
-The CI workflow analyzes and tests the CLI:
+## Workspace verification cheatsheet
 
-```bash
-cd butterfly_cli
-dart analyze
-dart test
-```
+When contributing to Butterfly or verifying your setup, use these commands from the repository root:
 
-For a Flutter package, run `flutter test --no-pub` in that package after dependencies are resolved. Some checked-in tests are placeholders; a green run is not evidence that every provider, platform, or scaffold works.
+<Tabs>
+  <TabItem label="CLI & Package Tests" value="test-cmds">
+    ```bash
+    # Run the 65 CLI unit & command tests
+    cd butterfly_cli && dart analyze && dart test
 
-Validate the documentation separately from the repository root:
-
-```bash
-npx --yes @docs.page/cli@latest check
-```
-
-See the [official docs.page CLI reference](https://use.docs.page/reference/cli) for local preview and individual validation flags. Documentation checks validate rendering, metadata, links, and assets, not Dart examples or authentication behavior.
+    # Run auth & Riverpod bridge tests
+    cd packages/auth_management && flutter test --no-pub
+    cd packages/auth_management_provider_riverpod && flutter test --no-pub
+    ```
+  </TabItem>
+  <TabItem label="Docs Validation" value="docs-cmds">
+    ```bash
+    # Validate docs.json, MDX syntax, frontmatter, and internal links
+    npx --yes @docs.page/cli@latest check
+    ```
+  </TabItem>
+  <TabItem label="Melos Workspace Analyze" value="melos-cmds">
+    ```bash
+    # Run analyzer across all workspace packages
+    dart run melos run analyze --no-select
+    ```
+  </TabItem>
+</Tabs>

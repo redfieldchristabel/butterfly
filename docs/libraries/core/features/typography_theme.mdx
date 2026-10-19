@@ -1,55 +1,76 @@
 ---
-title: Typography theme
-description: Wrap ThemeData with overridable instance getters for current Material text styles.
+title: Typography Theme
+description: Wrap ThemeData with overridable Material 3 text style getters and integrate custom typography with BaseThemeService.
 ---
 
-## Create a typography instance
+`CoreTypographyTheme` (`package:core_management/core_typography_theme.dart`) wraps a Flutter `ThemeData` instance and exposes overridable getters for every Material 3 text role—both standard (`textTheme`) and primary (`primaryTextTheme`).
 
-`CoreTypographyTheme` takes a `ThemeData` instance. Its getters are not static, and it does not provide legacy `bodyText1`, `headline2`, or `caption` names.
+## Usage & customization
 
-```dart title="lib/widgets/welcome_text.dart (suggested)"
-import 'package:core_management/core_typography_theme.dart';
-import 'package:flutter/material.dart';
+<Tabs>
+  <TabItem label="Read styles in a widget" value="read-typography">
+    Construct `CoreTypographyTheme(Theme.of(context))` inside `build()` so your widget automatically reacts to inherited theme changes:
 
-class WelcomeText extends StatelessWidget {
-  const WelcomeText({super.key});
+    ```dart title="lib/widgets/welcome_text.dart (suggested)"
+    import 'package:core_management/core_typography_theme.dart';
+    import 'package:flutter/material.dart';
 
-  @override
-  Widget build(BuildContext context) {
-    final typography = CoreTypographyTheme(Theme.of(context));
-    return Text('Welcome', style: typography.headlineMedium);
-  }
-}
-```
+    class WelcomeText extends StatelessWidget {
+      const WelcomeText({super.key});
 
-This example creates the wrapper from the current theme in `build`, so it follows inherited theme changes. An instance retained elsewhere continues to reference the `ThemeData` supplied when it was constructed.
+      @override
+      Widget build(BuildContext context) {
+        final typography = CoreTypographyTheme(Theme.of(context));
+        return Text('Welcome', style: typography.headlineMedium);
+      }
+    }
+    ```
+  </TabItem>
+  <TabItem label="Subclass & wire into BaseThemeService" value="subclass-typography">
+    Style properties on `CoreTypographyTheme` are getters (not mutable fields). To customize typography across your app, subclass `CoreTypographyTheme`, override the getters you want to tweak, and return your subclass from `BaseThemeService.coreTypographyTheme`:
 
-## Available styles
+    ```dart title="lib/services/typography.dart (suggested)"
+    import 'package:core_management/core_typography_theme.dart';
+    import 'package:flutter/material.dart';
 
-The instance exposes `displayLarge/Medium/Small`, `headlineLarge/Medium/Small`, `titleLarge/Medium/Small`, `bodyLarge/Medium/Small`, and `labelLarge/Medium/Small`.
+    class AppTypography extends CoreTypographyTheme {
+      AppTypography(super.themeData);
 
-Each has a corresponding primary getter, such as `primaryHeadlineMedium` or `primaryBodyLarge`, backed by `ThemeData.primaryTextTheme`. `textTheme` and `primaryTextTheme` rebuild their respective text themes using these getters; `textSelectionTheme` forwards the supplied theme's value.
+      @override
+      TextStyle get bodyLarge => super.bodyLarge.copyWith(fontWeight: FontWeight.w500);
+    }
+    ```
 
-## Customize by subclassing
+    When overriding `coreTypographyTheme` inside your `ThemeService`, pass `iTheme` (`AppTypography(iTheme)`) and ensure `theme(context)` has been called first.
+  </TabItem>
+</Tabs>
 
-Getters have no setters. Override them in a subclass rather than assigning to a static property.
+---
 
-```dart title="lib/services/typography.dart (suggested)"
-import 'package:core_management/core_typography_theme.dart';
-import 'package:flutter/material.dart';
+## Available style getters
 
-class AppTypography extends CoreTypographyTheme {
-  AppTypography(super.themeData);
+Every role below is an **instance getter** on `CoreTypographyTheme` (there are no static getters and no legacy Material 2 names like `bodyText1`, `headline2`, or `caption`):
 
-  @override
-  TextStyle get bodyLarge => super.bodyLarge.copyWith(fontWeight: FontWeight.w500);
-}
-```
+| Scale Family | Standard (`ThemeData.textTheme`) | Primary (`ThemeData.primaryTextTheme`) |
+| --- | --- | --- |
+| **Display** | `displayLarge`, `displayMedium`, `displaySmall` | `primaryDisplayLarge`, `primaryDisplayMedium`, `primaryDisplaySmall` |
+| **Headline** | `headlineLarge`, `headlineMedium`, `headlineSmall` | `primaryHeadlineLarge`, `primaryHeadlineMedium`, `primaryHeadlineSmall` |
+| **Title** | `titleLarge`, `titleMedium`, `titleSmall` | `primaryTitleLarge`, `primaryTitleMedium`, `primaryTitleSmall` |
+| **Body** | `bodyLarge`, `bodyMedium`, `bodySmall` | `primaryBodyLarge`, `primaryBodyMedium`, `primaryBodySmall` |
+| **Label** | `labelLarge`, `labelMedium`, `labelSmall` | `primaryLabelLarge`, `primaryLabelMedium`, `primaryLabelSmall` |
 
-To integrate with `BaseThemeService`, override its `coreTypographyTheme` getter to return your subclass using initialized `iTheme`. Call `theme(context)` before reading theme-dependent getters.
+### Composite theme getters
 
-## Limitations
+<Property name="textTheme / primaryTextTheme" type="TextTheme">
+  Rebuilds a complete `TextTheme` from all 15 standard or primary getters above, so any getter you override in a subclass automatically flows into the resulting `TextTheme`.
+</Property>
 
-Individual style getters use null assertions on the supplied text themes. Supply fully populated Material text themes; missing styles can throw. The wrapper does not register a global theme, listen for theme changes, or provide runtime theme-mode switching.
+---
 
-Implementation: `packages/core_management/lib/core_typography_theme.dart` and `lib/services/base_theme.dart`.
+<Property name="textSelectionTheme" type="TextSelectionThemeData">
+  Forwards `themeData.textSelectionTheme` directly.
+</Property>
+
+<Warning>
+  Each individual style getter uses a non-null assertion (`!`) on the underlying `ThemeData.textTheme` / `primaryTextTheme` field (for example, `_themeData.textTheme.bodyLarge!`). Always pass a Material `ThemeData` whose text themes are populated.
+</Warning>

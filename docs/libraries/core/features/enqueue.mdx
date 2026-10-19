@@ -1,11 +1,13 @@
 ---
-title: Task queue
-description: Queue mounted-safe synchronous callbacks with scheduler-aware execution.
+title: Task Queue Mixin
+description: Queue mounted-safe synchronous callbacks on StatefulWidget State with scheduler-aware execution.
 ---
 
-## Add the mixin
+`TaskQueueMixin<T>` is a lightweight mixin for `State<T>` that queues `VoidCallback` closures in FIFO order and runs them safely when the widget is mounted and Flutter's scheduler is ready.
 
-`TaskQueueMixin<T>` applies to `State<T>`. Import its library directly.
+## Quickstart example
+
+Import `package:core_management/mixins/task_queue.dart` directly (it is not re-exported by the main `core_management.dart` barrel):
 
 ```dart title="lib/widgets/queued_counter.dart (suggested)"
 import 'package:core_management/mixins/task_queue.dart';
@@ -30,22 +32,41 @@ class _QueuedCounterState extends State<QueuedCounter>
 }
 ```
 
-## Execution contract
+---
 
-`enqueue(VoidCallback callback)` appends work to a FIFO queue. Before invoking each callback, the wrapper checks `mounted`.
+## How `enqueue()` schedules work
 
-- During scheduler `idle` or `postFrameCallbacks`, execution is immediate. It does **not** always wait for the next frame.
-- During other scheduler phases, the queue registers a post-frame callback, then continues processing after that callback runs.
-- `dispose()` clears queued callbacks. A scheduled callback also checks `mounted` before touching the queue.
+When you call `enqueue(VoidCallback callback)`, the mixin wraps your callback in a `if (mounted)` check, pushes it onto an internal `Queue<VoidCallback>`, and inspects `SchedulerBinding.instance.schedulerPhase`:
 
-For an operation that must run after the first frame regardless of the current phase, use Flutter's `addPostFrameCallback` explicitly instead.
+<Steps>
+  <Step title="Idle or postFrameCallbacks phase → runs immediately">
+    If the scheduler is currently in `SchedulerPhase.idle` or `SchedulerPhase.postFrameCallbacks`, the queue drains synchronously right away. It does **not** wait for the next frame.
+  </Step>
+  <Step title="Mid-frame build/layout phase → defers to post-frame">
+    During `transientCallbacks`, `midFrameMicrotasks`, or `persistentCallbacks` (such as inside `build()`), the mixin registers `SchedulerBinding.instance.addPostFrameCallback` and drains the queue once the frame finishes.
+  </Step>
+  <Step title="Automatic cleanup on dispose()">
+    When the widget is disposed, `dispose()` clears any remaining callbacks in `_taskQueue`, and pending post-frame callbacks verify `if (mounted)` before touching state.
+  </Step>
+</Steps>
 
-## Async work and errors
+<Info>
+  Need a callback to **always** wait until after the current or next frame—even when called from an idle event handler? Call `WidgetsBinding.instance.addPostFrameCallback` directly instead of `enqueue()`.
+</Info>
 
-The queue accepts `VoidCallback`, not an asynchronous task contract. Passing an `async` closure does not make the queue await its `Future`; FIFO invocation is not sequential completion of network requests.
+---
 
-The implementation does not catch callback exceptions or reset `_isProcessing` in a `finally` block. A thrown callback can interrupt processing and leave later queued work stuck. Catch expected errors inside callbacks, and handle async errors in the async operation itself.
+## Edge cases & limitations
 
-The mounted check only protects invocation. If a callback starts asynchronous work, check `mounted` again after awaiting before using the widget's state.
+<Warning>
+  **Uncaught exceptions halt the queue:** `_processQueue()` does not wrap `task()` in a `try / finally` block before resetting `_isProcessing = false`. If a queued callback throws an uncaught exception, `_isProcessing` stays `true` and subsequent `enqueue()` calls on that `State` instance will never run. Always catch expected exceptions inside your callback.
+</Warning>
 
-Implementation: `packages/core_management/lib/mixins/task_queue.dart`.
+<AccordionGroup>
+  <Accordion defaultOpen title="Synchronous VoidCallback only (not an async task queue)">
+    `enqueue` takes a synchronous `VoidCallback` (`void Function()`). Passing an `async` closure (`() async { await fetchData(); }`) invokes the closure in FIFO order, but the queue **does not `await` the returned `Future`** before starting the next queued callback.
+  </Accordion>
+  <Accordion title="Check mounted after awaiting inside an async callback">
+    The mixin's `if (mounted)` guard runs immediately before invoking your callback. If your callback kicks off async work, check `if (!mounted) return;` again after every `await` before calling `setState`.
+  </Accordion>
+</AccordionGroup>
