@@ -1,151 +1,116 @@
 ---
-title: Features
-description: Explore what Butterfly can do for you
+title: CLI reference
+description: Implemented commands, model generation options, MCP tools, and verification workflows.
 ---
 
-## Features Overview
+## Commands
 
-Butterfly comes packed with a set of tools to help you write clean, structured, and beautiful
-Flutter code — without the heavy cost of boilerplate.
+| Command | Aliases | Effect |
+| --- | --- | --- |
+| `butterfly version` | None | Prints the CLI's `kVersion` constant |
+| `butterfly init` | None | Interactive project scaffolding |
+| `butterfly generate model <Name>` | `generate`: `gen`, `g`; `model`: `m`, `mdl` | Generates a model skeleton |
+| `butterfly generate version` | `generate`: `gen`, `g` | Writes `lib/version.dart` |
+| `butterfly commit` | `c`, `comit`, `commits`, `cm` | Invokes Git to create a conventional commit |
+| `butterfly mcp-server` | `mcp`, `mcp-srv` | Starts the stdio MCP server |
 
-At its core, Butterfly gives you **two powerful tools** for writing beautiful, boilerplate-free code
+There is no `generate service` command. Use [installation](/installation) for initialization behavior and known template limitations.
 
+Global flags are `--verbose` / `-v` and `--dev` / `-D`. The verbose flag requests verbose logging; the dev flag rethrows errors handled inside the guarded command execution rather than taking the normal error exit path.
 
-#### 🛠️ 1. CLI-Based (Generator)
+## Generate a model
 
-The CLI tool helps you scaffold essential parts of your app effortlessly. One of the key features is
-the **model generator**, which saves you from writing repetitive JSON serialization code. It uses
-the popular [json_serializable](https://pub.dev/packages/json_serializable) package under the hood, so your models are fully compatible with the
-wider Dart ecosystem — but without the hassle of manual annotations.
+Run inside a project with both `pubspec.yaml` and `lib/`:
 
-You just define your fields, and Butterfly takes care of the rest.
-
-
-
-#### 📦 2. Library-Based (Helpers)
-
-In addition to the CLI, Butterfly also includes a range of **helper libraries** designed to simplify
-common Flutter patterns. For example, features like `enqueue()` abstract away repetitive Flutter
-scheduling tasks like `WidgetsBinding.instance.addPostFrameCallback()`, making your code cleaner and
-easier to reason about.
-
-Modules like `CoreService`, `AuthService`, and `ThemeService` are all designed with this idea:
-**cut boilerplate, keep clarity**.
-
-
-Whether you're bootstrapping models or just looking for utility helpers that play well with your
-existing codebase, Butterfly's got your back.
-
-### 🚩 Global Flags
-
-These flags work with any command:
-
-| Flag | Alias | Description |
-|---|---|---|
-| `--verbose` | `-v` | Print verbose/debug output |
-| `--dev` | `-D` | Run in dev mode — re-throws errors instead of clean exit (useful during development) |
-
-### ℹ️ Version
-
-Display the current version of the Butterfly CLI:
-
-```sh
-butterfly version
+```bash
+butterfly generate model Booking
+butterfly g m AuthUser --path auth
+butterfly generate model Settings --no-serializable
+butterfly generate model Invoice --immutable
 ```
 
-No flags or arguments needed.
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--serializable`, `-s` | `true` | Include serialization support; disable with `--no-serializable` |
+| `--immutable`, `-i` | `false` | Use the `built_value` template instead of the plain model template |
+| `--path`, `-p` | No subdirectory | Subdirectory under `lib/models/` |
 
-## 🛠️ CLI Features
+The name becomes PascalCase; file and directory names become snake_case. `AuthUser --path auth` produces `lib/models/auth/user.dart` while keeping class name `AuthUser`. A class name identical to the path is rejected. Existing target files trigger an overwrite prompt in the CLI; declining skips generation.
 
-Butterfly's CLI tool offers powerful generators to streamline your Flutter development process.
-These tools can be used independently of the Butterfly core library, providing flexibility for
-various project setups.
+The generator creates an empty model skeleton. Add fields and constructor parameters yourself. It does not install serialization dependencies or run `build_runner`.
 
-### 📄 Model Generation
+### Plain serializable models
 
-Generate Dart models effortlessly using the
-[json_serializable](https://pub.dev/packages/json_serializable) package, a widely adopted library
-maintained by Google. This approach minimizes boilerplate code and ensures compatibility with the
-broader Dart ecosystem.
+Add `json_annotation`, plus development dependencies `json_serializable` and `build_runner`, to your consuming project. After editing fields, run:
 
-<Info>We understand this approach may feel like vendor lock-in since we depend on specific libraries
-like `json_serializable` and `built_value`. However, both are developed and maintained by Google,
-and we trust their long-term stability. While there's little alternative to `json_serializable`, for
-immutables, `freezed` is a solid option — though simpler than `built_value`. For now, we believe
-`built_value` covers more edge cases and flexibility, and you can always implement `freezed`
-manually if preferred as it simple enough.</Info>
-
-**Basic Command:**
-```sh
-butterfly generate model <ModelName>
+```bash
+dart run build_runner build
 ```
-**Aliases:**
-- generate -> gen -> g
-- model -> m -> mdl
 
-**Example:**
-```sh
-butterfly g m Booking
-butterfly gen model UserProfile
-```
-**Options:**
-- `-p`:  Specify a subdirectory within the models folder. Example: `-p booking` places the model in
-models/booking/.
-- `-i`: Generate an immutable model using the [built_value](https://pub.dev/packages/built_value)
-package.
-- `-s` / `--serializable`: Generate a serializable model using `json_serializable` (default: `true`). Set to
-`false` with `--no-serializable` to skip serialization annotations.
+The template includes `fromJson`, `toJson`, `fromJsonRaw`, and `toJsonRaw`. Without serialization it creates only the plain class and constructor.
 
-<Info>Note: All generated folders follow `snake_case` naming conventions, and class names follow
-`CamelCase`, adhering to Dart best practices.</Info>
+### Immutable models
 
-### 🔢 Version File Generation
+Add `built_value` and development dependencies `built_value_generator` and `build_runner`. The template uses Flutter's `@immutable` annotation and always references a generated `.g.dart` part.
 
-Generate a `version.dart` file at the root of your project, containing constants derived from your
-`pubspec.yaml`, such as the app version. This is useful for displaying version information within
-your application.
+With serialization enabled, the template also references an application-owned `serializers` registry without generating or importing one. Define that registry, register the model's serializer, configure map-shaped JSON serialization as needed, and import it before running generation. Do not treat the generated immutable file as immediately compilable.
 
-**Command:**
-```sh
+## Generate a version file
+
+```bash
 butterfly generate version
 ```
-<Info>Note: For more comprehensive app metadata, consider using the
-[package_info_plus](https://pub.dev/packages/network_info_plus) package.</Info>
 
-### 📝 Conventional Commit Messages
+Reads the project's pubspec version and writes a single `const String kVersion` declaration to `lib/version.dart`. It overwrites that file without an overwrite prompt; inspect existing content first. This is different from `butterfly version`, which prints the CLI's own version constant.
 
-Butterfly simplifies your commit process by providing a command that helps you craft messages
-adhering to the [Conventional Commits](https://www.conventionalcommits.org/) specification. This
-promotes a consistent and meaningful commit history, facilitating better collaboration and
-automation.
+## Conventional commits
 
-**Command:**
-```sh
-butterfly commit
-```
-**Aliases:**
-- commit -> c -> comit -> commits -> cm
+`butterfly commit` is a write operation, not a message preview. It runs `git commit -m` after collecting the action and message.
 
-When you run this command, Butterfly will prompt you to enter details for your commit message,
-ensuring it follows the Conventional Commits format.
+`--action` / `-a` accepts `fix`, `feat`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, or `chore`. `--message` / `-m` supplies the subject text. Missing values are prompted for.
 
-**Options:**
-- `-a` / `--action`: Pre-select the commit type non-interactively. Allowed values: `fix`, `feat`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`.
-- `-m` / `--message`: Pre-set the commit message non-interactively.
+If human-readable `git status` contains `no changes added to commit`, the command asks whether to stage changes, defaulting to yes, then uses `git add .`. That detection depends on Git's output wording. Review and stage only intended files yourself before invoking the command. It does not push, and it does not provide separate scope, body, or breaking-change flags.
 
-**Example with flags:**
-```sh
-butterfly commit -a feat -m "add user registration screen"
+## MCP server
+
+```bash
+butterfly mcp-server
 ```
 
-## 📚 Library Features
+The server registers three tools:
 
-Butterfly isn't just about CLI tools—it also offers a suite of library packages designed to streamline your Flutter development. Each library focuses on reducing boilerplate and enhancing code clarity.
+| Tool | Inputs and behavior |
+| --- | --- |
+| `test` | Optional `message`; echoes text, not a test-suite runner |
+| `init` | `useCore` defaults true; `useAuth` and `useRouter` default false; `userModelName` is required when auth is selected; router type defaults to `goRouter` when enabled |
+| `generate_model` | Required `name`; optional `serializable` (true), `immutable` (false), and `path` |
 
-Explore the features provided by each library:
+MCP `init` saves `.butterfly_project.yaml` with configuration version `0.0.0` and restores the project root before generating services. Unlike interactive `init`, it does not explicitly create all four organizational directories. Dependency installation can still prompt. `generate_model` rejects an existing file instead of asking to overwrite it.
 
-- [Core Library Features](/libraries/core)
-- [Auth Library Features](/libraries/auth)
-- [Theme Library Features](/docs/libraries/theme)
-- [Routing Library Features](/docs/libraries/routing)
-- [Service Library Features](/docs/libraries/service)
+These are the registered tools, not a promise of fully unattended operation or compatibility with every MCP client. Project tools depend on the server's working directory, and command logging should be checked for stdio-protocol compatibility in your client.
+
+## Verification
+
+The workspace's declared analyzer script is:
+
+```bash
+dart run melos run analyze --no-select
+```
+
+The CI workflow analyzes and tests the CLI:
+
+```bash
+cd butterfly_cli
+dart analyze
+dart test
+```
+
+For a Flutter package, run `flutter test --no-pub` in that package after dependencies are resolved. Some checked-in tests are placeholders; a green run is not evidence that every provider, platform, or scaffold works.
+
+Validate the documentation separately from the repository root:
+
+```bash
+npx --yes @docs.page/cli@latest check
+```
+
+See the [official docs.page CLI reference](https://use.docs.page/reference/cli) for local preview and individual validation flags. Documentation checks validate rendering, metadata, links, and assets, not Dart examples or authentication behavior.

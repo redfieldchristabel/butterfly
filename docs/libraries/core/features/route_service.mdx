@@ -1,213 +1,98 @@
 ---
-title: Route Service
-description: Authentication-aware routing for Flutter applications with seamless deep linking support
+title: Route service
+description: Configure GoRouter and preserve protected destinations across authentication.
 ---
 
-### Introduction
+## Choose the service
 
-The Route Service provides a structured way to handle authentication and routing in your Flutter
-Application. In general, it just a class that hold the logic to all the routing strategies that you
-want to enforce in you application. It is **not a wrapper** around the Navigator nor **replacer**
-but sit along side the main router engine your system already using.  for now we only support
-**GoRouter** engine. Don't worry since this is not a wrapper so we don't handle the push, go, pop
-or whatsoever your router provider give you, mean you still get the full control after using this
-feature. You just need to declare some route than **Butterfly** will handle the rest.
+Extend `GoRouterService` for routing without authentication guards. Extend `GoRouterAuthRoute<T>` for user-aware guards and implement both `routes` and the synchronous `user` getter. The auth-aware class is an abstract class, not a mixin, and requires its separate import.
 
-### Why use it?
-
-The library enforce the route base on current environment and current route instead of needing you
-to like push a route when user already login, now you just need to log user in, and the
-**Butterfly** will check the current environment and enforce the route base on your setting on it.
-
-For example, you already declare the the **defaultAuthRoute** to be **/**, then after your
-application login and the user exist, **Butterfly** will check the current user exist and then
-enforce the route to be **/**. So you don't need to push the route when user already login, you
-self. If in the web even the user change the url to **/login** then **Butterfly** will enforce the
-route to be **/** again. Same as if the current user are not there, **Butterfly** will enforce the
-route to be **/login** again. We also support:
-
-- survive deep linking no auth
-- survive no auth
-- debug route for development
-- multiple **authTriggerRoute**
-
-### Initialization
-
-When using `butterfly init` command, it will ask if you need to use the route service, if you
-choose yes here no need to install here.
-
-You can also add this feature by running
 ```dart
-butterfly generate service
-```
-chose the `route` as the feature.
+import 'package:core_management_route_go_router/go_router_auth_route.dart';
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
-When running this command, it just adding a new file called `route.dart` to your `lib` and
-`services` directory.the root level `route.dart` only contain example of 2 routes while the other
-`route.dart` contain a class that extend router provider that you choose, currently we only support
-**GoRouter**.
-
-Normally this feature help an application that use authentication, if your application don't, this
-feature will not help you so much but you can still use it as we support both auth and no auth
-route.
-
-### Removable
-
-Router service are the whole class working together to achieve this gold of declarative routing. So
-you to remove this feature, you will need to copy the extended class and paste it as yours. This
-service won't have the native Flutter tap as most of the feature have. But since it our philosophy,
-you still can remove it and write natively.enforce
-
-### Usage
-
-#### Declaration Route
-
-In **Butterfly**, declaration route mean that you declare a routes as a complete expected behavior.
-this mean that for **Butterfly** to enforce the route, it will check the current environment and
-the route that you declare in this service for example, you declare **/login** as your
-**authTriggerRoutes**, this mean **Butterfly** know that if we on the page and user are exist, we
-need to redirect user to **defaultAuthRoute** route which is also declared by you. But don't worry
-because mostly all the variable have a default value that will mostly be what you want already.
-
-#### Route elements
-
-##### initialRoute
-
-This is the initial route for your application. It is the route that will be displayed when the
-application starts.
-
-##### redirectOverride
-
-An optional route path to override the default navigation for one cycle. This is useful when you
-want to redirect the user to a specific route when they try to navigate to the initial route. This
-will be reset after the first use. This is not a declarative route since it will be use in runtime
-instead if set it at compiled time so this router is a variable instead of getter.
-
-##### postSignInRedirect
-
-Where a signed-out user was heading when the auth guard sent them to sign in, such as a deep link
-or a notification. Once they sign in, the guard sends them there and clears it. It is only used
-after sign-in: while signed out, **publicRoutes** and **authTriggerRoutes** load as requested and
-leave it untouched. Like **redirectOverride**, it is set at runtime rather than declared.
-
-This was called **temporaryRedirect** before. The old name still works but is deprecated.
-
-##### debugScreen & debugRoutes
-
-Optional debug screen for bypassing authentication or any other checks during development. Useful
-when you wanna build a new screen without authentication or found it hassle  to navigate through the
-entire application. Override this getter to use it.
-```dart
-class MyRouteService extends GoRouterService {
-
-    // TODO: remove this getter
-    Widget get debugScreen => NewFeatureScreen();
-
+class AppUser {
+  const AppUser(this.id);
+  final String id;
 }
-```
-we recommend to always add the TODO: comment so you will not forgot to remove this getter.declarative
 
-**debugRoutes** are the list of route that will also bypass any other gate so can be use in pair
-with **debugScreen** so even in debug screen's route, yuu will still be able to redirect to other
-route. Failed to do so will make the new screen that are being redirect from the **debugScreen**
-will perform a gate check and if the route are protected, it will be redirected to the sign in
-screen.
+class AppRoutes extends GoRouterAuthRoute<AppUser> {
+  AppRoutes(this.session);
+  final ValueNotifier<AppUser?> session;
 
-<Info>We are planing to remove the **debugRoutes** getter because will can perform a check if the
-**debugScreen** are not null truncate all the gate check.</Info>
+  @override
+  AppUser? get user => session.value;
 
-<Info>Be careful because it will just help you bypass gate redirect check so if your screen
-expected a user model from provider it will not have. Use this feature only for earlier development
-of the screen. You can use a fake user for this screen if needed.</Info>
+  @override
+  Listenable get refreshListenable => session;
 
-##### observers
+  @override
+  List<String> get publicRoutes => ['/about'];
 
-Optional list of [NavigatorObserver] that will receive navigation events from the router. This is
-mostly use for analytics or logging. Example you can use Firebase Crashlytics navigator observer
-to track navigation events so when crash happen, you can track the route that cause the crash.
+  @override
+  List<RouteBase> get routes => [
+    GoRoute(path: '/', builder: (context, state) => const Text('Home')),
+    GoRoute(path: '/login', builder: (context, state) => const Text('Sign in')),
+    GoRoute(path: '/signup', builder: (context, state) => const Text('Sign up')),
+    GoRoute(path: '/about', builder: (context, state) => const Text('About')),
+  ];
+}
 
-##### errorBuilder
-
-Optional builder for creating an error screen when navigation fails like when user click on a
-deeplink that not exist.
-
-#### Auth Route elements
-
-##### user
-
-This is a getter that will be called by **Butterfly** to get the current user. This getter need to
-be implemented by you. This getter are one of the required element for application that using the
-authentication route. Don't worry, you will be force to implement this getter when you use the
-authentication route. Mostly we use the static variable to be pointed by this getter. This getter
-cannot be async. If you are using the AuthService by **Butterfly** library, you can use the static
-variable `currentUser` as the pointer of this getter.
-```dart
- @override
- User? get user => AuthService.currentUser;
-```
-
-##### authTriggerRoutes
-
-This normally hold a list of route that are the stepping stone route to the **defaultAuthRoute**.
-Example are `/sign-in` routes, after the login route, normally we will redirect to home route. Some
-application might also use the `/signup` route as **authTriggerRoutes** so when user register, they
-will be automatically redirect to the home route. by default , we only set the `/sign-in` as one of
-the **authTriggerRoutes** elements.
-
-If you application have other sign in option like magic link something, append those route to this
-getter so **Butterfly** know to perform a gate check on current route and redirect to the
-**defaultAuthRoute**.
-
-##### defaultAuthRoute
-
-This is the default route to redirect user when they are successfully authenticated. Default to
-`/`. Normally this are your homepage route of your application.
-
-##### signInRoute & signUpRoute
-
-This is the route to redirect user when they are not authenticated. Default to `/sign-in` &
-`/sign-up`. You can change to something like `/login` to match with your application sign in route.
-
-##### publicRoutes
-
-In the **Butterfly** library, when extending the AuthRouteServices, we treat all route except the
-**authTriggerRoutes**, **signInRoute** and **signUpRoute** as protected route. So if your
-application have other public route that not require authentication, append those route to this
-getter so **Butterfly** know it is not a protected route.
-
-#### Go ROuter Auth Route elements
-
-This are the element that only available for Go Router engine. We will try to move this element to
-the base class to make other engine in future will also support this feature.
-
-##### roleBasedRedirect
-
-This is the method that will be called by Go Router engine everytime the route pass all the gate
-checks. You can override this method to perform a check maybe on the role but it must not be async.
-```dart
-@override
-String? roleBasedRedirect(User user, GoRouterState state) {
-    if(state.uri.path.contains('/admin-dashboard'){
-        if(user.admin) return null;
-        else return '/';
-    }
-    return null;
+void main() {
+  final session = ValueNotifier<AppUser?>(null);
+  final service = AppRoutes(session);
+  final router = service.routerConfig;
+  runApp(MaterialApp.router(routerConfig: router));
 }
 ```
 
-##### routeLog
+Replace the example screens and connect your auth service's `onUserChanged` to the notifier. Setting a user in some unrelated service does not itself refresh GoRouter. Use `refreshListenable` or explicitly refresh your retained router when auth state changes.
 
-This is the method that will be called by Go Router engine to log the route change so developer
-will have a better understanding while debugging. Normally you will not override this method.
+The `routerConfig` getter constructs a **new** `GoRouter` on every access. Retain one configuration rather than calling it repeatedly from `build`; dispose owned routers/notifiers when their lifecycle ends. Navigation remains GoRouter's API (`go`, `push`, `pop`, and typed routes).
 
-##### goRouterRedirect
+## Defaults
 
-This is where all the redirect logic, gate are reside. Normally you will not override this method
-also but you can, Be sure you know what you are doing.
+| Property | Default |
+| --- | --- |
+| `initialRoute` | `/` |
+| `signInRoute` | `/login` |
+| `signUpRoute` | `/signup` |
+| `authTriggerRoutes` | Both `signInRoute` and `signUpRoute` |
+| `defaultAuthRoute` | `/` |
+| `publicRoutes` | Empty list |
+| `debugRoute` | `/butterfly-debug` |
+| `debugScreen` | null |
+| `debugRoutes` | Empty list |
+| `observers`, `errorBuilder`, `refreshListenable` | null |
 
-<Info>Normally only this are needed to remove this class and go native flutter.</Info>
+There is no `requiresAuth` switch in the implementation. Use the non-auth base class when guards are unwanted. Auth-trigger and public-route membership uses exact `state.matchedLocation` matches, not prefixes or wildcard patterns.
 
+## Redirect order
 
+The auth router performs these checks in order:
 
+1. Log and call `onRouteChanged(context, state)`.
+2. Consume and clear a non-null `redirectOverride`, before auth checks.
+3. If `debugScreen` is non-null, permit the debug route and allowed `debugRoutes`; redirect all other locations to the debug route.
+4. For a signed-out user on a protected location, save the full URI in `postSignInRedirect` and return `signInRoute`.
+5. For a signed-in user on an auth-trigger route, consume the saved URI or return `defaultAuthRoute`.
+6. Permit an auth-trigger route while signed out.
+7. For a signed-in user elsewhere with a saved URI, consume it.
+8. For other signed-in requests, call `roleBasedRedirect(user, state)`; otherwise allow navigation.
 
+A signed-out public or auth-trigger route does not consume the saved destination. The saved URI includes query and fragment. `temporaryRedirect` remains a deprecated getter/setter alias for `postSignInRedirect`; it is not separate state.
 
+The non-auth `GoRouterService` only logs, invokes `onRouteChanged`, and consumes `redirectOverride`. It does not implement the auth guard sequence.
+
+## Debug and security boundaries
+
+`debugScreen` adds a route through `accumulatedRoutes`. In the auth router, its redirect bypass is **not** gated by `kDebugMode`; only logging is. Leave it null in production. `debugRoutes` checks both full route pattern and matched location.
+
+`redirectOverride` is a one-use override on any route, not only the initial route, and takes precedence over guards. These client-side redirects are navigation conveniences, not backend authorization. Enforce permissions in your API or data rules.
+
+## Core integration
+
+`RouteServiceMixin` lives in `package:core_management/mixins/router_service.dart`. `GoRouterServiceMixin` lives in `package:core_management_route_go_router/router_service_mixin.dart`. Both expose a route service through a `BaseCoreService` subclass; neither creates an auth listener for you. The GoRouter mixin's `routerConfig` also delegates to the fresh-router getter, so the same caching guidance applies.
+
+Implementation: `packages/core_management/lib/services/base_route.dart`, `lib/mixins/auth_route.dart`, and `packages/core_management_route_go_router/lib/`.

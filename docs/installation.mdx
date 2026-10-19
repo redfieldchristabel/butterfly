@@ -1,33 +1,77 @@
 ---
 title: Installation
-description: What to do next
+description: Use the current checkout, install selected Flutter libraries, and understand initialization limits.
 ---
 
-To install Butterfly, you can use the following command:
-```sh
-dart pub global activate butterfly_cli
+## Requirements
+
+Use Flutter and Dart versions compatible with every selected package, not just the root SDK constraint. The workspace declares Dart `^3.11.0`; its Riverpod package requires Dart `^3.12.0` and Flutter `>=3.44.0`. Check individual `pubspec.yaml` files for dependency constraints.
+
+Git is required for Git dependencies and Mason templates. Some package manifests reference GitHub over SSH, so fetching dependencies may require configured GitHub SSH access.
+
+## Run the CLI from this checkout
+
+From the Butterfly repository root:
+
+```bash
+flutter pub get
+cd butterfly_cli
+dart run butterfly_cli --help
+dart run butterfly_cli version
 ```
-<Info>Do not need to run this command in the project. Its a global command.</Info>
 
-After that, you can run the following command to initialize your project:
-```sh
-butterfly init
-```
+To make this checkout available as `butterfly` from other projects, run the following from the repository root:
 
-The executable is named `butterfly`:
-
-```sh
+```bash
+dart pub global activate --source path ./butterfly_cli
 butterfly --help
-butterfly init
-butterfly commit
 ```
 
-This command creates the following directories directly at your project root:
+Ensure Dart's pub-cache `bin` directory is on `PATH`. The executable declared in `butterfly_cli/pubspec.yaml` is `butterfly`, not `butterfly2`.
 
-- `models`: Your data models.
-- `services`: Your service classes.
-- `screens`: Your UI screens.
-- `widgets`: Your reusable widgets.
+`dart pub global activate butterfly_cli` selects the package from pub.dev rather than this checkout. Do not assume that published code includes your local changes.
 
-Beyond folders, `butterfly init` also runs an interactive prompt asking whether to add **Core**, **Auth**, and **Router** features — and automatically adds the required butterfly packages as git dependencies.
+## Install libraries explicitly
 
+For a Flutter application using core services, add a Git dependency to the application's `pubspec.yaml`:
+
+```yaml
+dependencies:
+  flutter:
+    sdk: flutter
+  core_management:
+    git:
+      url: https://github.com/redfieldchristabel/butterfly.git
+      ref: master
+      path: packages/core_management
+```
+
+Run `flutter pub get`. For another package, change both the dependency key and `path` to its name in the [package map](/). Add direct dependencies for packages you import. Pin a reviewed Git commit or tag instead of `master` when reproducibility matters; selecting HTTPS for one dependency does not rewrite transitive SSH dependencies.
+
+## Optional interactive initialization
+
+Run from an existing Flutter project containing `pubspec.yaml` and `lib/`:
+
+```bash
+butterfly init
+```
+
+The command searches upward for both of those paths. It asks whether to use core, auth, and routing, plus the user model name and router type when relevant. It creates `lib/models`, `lib/services`, `lib/screens`, and `lib/widgets`.
+
+Treat initialization as scaffolding to review, not a finished application:
+
+- Core selection adds `core_management` and requests core and theme service templates.
+- Auth selection adds `auth_management` and requests an auth service template. It does not generate your user model or select/configure a storage adapter.
+- GoRouter selection offers `go_router`, `build_runner`, and `go_router_builder`, then generates typed example routes. It does not install or configure Butterfly's auth-aware router service.
+- Selecting router type `other` skips route generation.
+- The interactive configuration is held in memory; this command does not save `.butterfly_project.yaml`. The MCP initialization tool does save it.
+
+## Current scaffolding limitations
+
+The local auth template extends `BaseAuthService`, which is not an exported class in current `auth_management`. Replace it with your own implementation of `AuthServiceRepository<T>` or an identity-provider subclass. The theme template forwards `super.context`, but current `BaseThemeService` accepts only the named `colorSeed` argument.
+
+The interactive initializer enters `lib/`, while service template generation uses a relative `lib/services` target. Core/auth dependency addition can restore that `lib/` working directory, so services can be generated under `lib/lib/services`. Router dependency setup returns to the project root before route generation. Check actual output rather than assuming every file lands in the intended place.
+
+Mason templates are fetched from GitHub `master`, even when the CLI is activated from a local checkout. Local unpushed template edits are not automatically used. These docs do not claim generated scaffolds compile unchanged.
+
+For predictable setup today, wire the [core](/libraries/core), [auth](/libraries/auth), and [routing](/libraries/core/features/route_service) examples manually and run your application's analyzer.

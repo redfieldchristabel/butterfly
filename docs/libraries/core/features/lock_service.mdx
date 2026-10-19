@@ -1,76 +1,64 @@
 ---
-title: Lock Service
-description: Prevent duplicate actions with a simple lock mechanism
+title: Lock service
+description: Use synchronous in-memory acquisition and release without assuming distributed-lock guarantees.
 ---
 
-### The Problem
+## Guard an operation
 
-User taps a button. Nothing happens for 300ms. They tap again. Now the API runs twice, you get two users created, or two payments charged, or two of whatever.
-
-Classic race condition. We've all been there.
-
-### The Fix
-
-`CoreLockService` is a lightweight mutex that prevents the same operation from running twice. Think of it as a "only one at a time, please" sign for your methods.
+`CoreLockService.acquire` and `release` return `bool` synchronously. There is no `runLocked`, `unlock`, or `unlockAll` method, and callers do not share a result `Future` automatically.
 
 ```dart
-class CoreLockService {
-  bool isLocked(String key);
-  Future<T> runLocked<T>(String key, Future<T> Function() task);
-  void unlock(String key);
-  void unlockAll();
+import 'package:core_management/services/core_lock.dart';
+
+final locks = CoreLockService();
+
+Future<bool> saveOnce(Future<void> Function() save) async {
+  if (!locks.acquire('save-profile')) return false;
+  try {
+    await save();
+    return true;
+  } finally {
+    locks.release('save-profile');
+  }
 }
 ```
 
-### How it works
+Use this only when the operation fits within the lock duration and all participants share the same isolate. It is not a substitute for server-side idempotency or database transactions.
 
-You give each operation a key. LockService checks if that key is already running:
+## API
 
-```dart
-final lockService = CoreLockService();
+| Member | Behavior |
+| --- | --- |
+| `CoreLockService({persistence, defaultLockDuration, pollingInterval})` | Default duration is 30 seconds; a supplied nonpositive polling interval is rejected |
+| `acquire(key, {timeout, lockDuration})` | Attempts to acquire an in-memory lock until its expiry |
+| `release(key)` | Removes the in-memory lock, returning whether it existed |
+| `isLocked(key)` | Checks memory and removes an expired entry |
+| `getLockExpiry(key)` | Returns a live in-memory expiry or null |
+| `cleanupExpiredLocks()` | Removes expired in-memory entries |
+| `cleanupExpiredLocksAsync()` | Cleans memory, then delegates persistence cleanup |
+| `dispose()` | Clears shared in-memory state and disposes this instance's persistence |
 
-Future<void> saveUser() async {
-  await lockService.runLocked('saving-user', () async {
-    // This won't run twice even if tapped 10 times fast
-    await api.saveUser(user);
-  });
-}
-```
+The lock map and release-controller map are static, so instances in one isolate share them. Disposing one instance affects all those instances. There is no owner token or lease renewal: if an operation outlives its expiry, another caller can acquire the same key, and the first caller's later `release` can remove that newer lock.
 
-Second caller gets the same `Future` as the first one. No duplicate work, no crash, no double-billing your customer.
+## Persistence contract
 
-### LockPersistence
+Import `package:core_management/repositories/lock.dart` to implement `LockPersistence`:
 
-By default, locks are in-memory — they reset when your app restarts. If you need locks to survive app kill (e.g. "don't retry this sync for 5 minutes"), implement `LockPersistence`:
+| Method | Return type |
+| --- | --- |
+| `createOrUpdateLock(String key, DateTime expiryTime)` | `FutureOr<void>` |
+| `getLockExpiry(String key)` | `FutureOr<DateTime?>` |
+| `deleteLock(String key)` | `FutureOr<bool>` |
+| `watchLockRelease(String key)` | `Stream<void>?` |
+| `cleanupExpiredLocks()` | `FutureOr<void>` |
+| `dispose()` | `void` |
 
-```dart
-class MyPersistentLocks implements LockPersistence {
-  @override
-  bool contains(String key) => /* check SharedPrefs or DB */;
+Acquire/release mirror changes to persistence in background microtasks, with errors printed rather than propagated. Acquisition does not atomically consult the persistent store, so adding a backend does not make this a reliable distributed lock or restore prior locks after restart.
 
-  @override
-  void insert(String key) => /* save to disk */;
+## Avoid timed waiting in the current implementation
 
-  @override
-  void remove(String key) => /* delete from disk */;
-}
-```
+A contended `acquire` with a positive `timeout` enters a synchronous waiting path. Without a watch stream, it busy-waits and blocks the isolate. With a watch stream, it sets up asynchronous work but returns `false` without awaiting acquisition. The constructor's positive `pollingInterval` is not retained or used to pace that path.
 
-Then inject it:
+Prefer immediate acquisition and handle `false` in your application. Despite mentions in source comments, `isLockedAsync` and `getLockExpiryAsync` are not implemented methods.
 
-```dart
-final lockService = CoreLockService(persistence: MyPersistentLocks());
-```
-
-### When to use it
-
-| ✅ Do use | ❌ Don't use |
-|---|---|
-| Button taps that trigger API calls | Animations or UI transitions |
-| Duplicate form submissions | Navigation events |
-| Background sync operations | Read-only operations |
-| Payment/checkout flows | Anything idempotent already |
-
-### Removable
-
-`CoreLockService` is a plain Dart class with zero dependencies on anything Butterfly-specific. Copy it out, keep the lock logic, delete the package. The API won't change.
+Implementation: `packages/core_management/lib/services/core_lock.dart` and `lib/repositories/lock.dart`.

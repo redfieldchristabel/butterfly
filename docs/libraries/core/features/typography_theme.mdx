@@ -1,66 +1,55 @@
 ---
-title: Core Typography Theme
-description: Consistent text styles without repeating yourself
+title: Typography theme
+description: Wrap ThemeData with overridable instance getters for current Material text styles.
 ---
 
-### What is it
+## Create a typography instance
 
-`CoreTypographyTheme` is a small helper for keeping your app's text styles in one place. Think of it as `ThemeData`'s text theme, but without the nesting — just grab what you need, wherever you need it.
-
-```dart
-CoreTypographyTheme.bodyText1
-CoreTypographyTheme.headline2
-CoreTypographyTheme.caption
-// etc
-```
-
-### Why it exists
-
-Flutter's `TextTheme` is great, but reaching it requires `Theme.of(context).textTheme.bodyText1` every single time. That's a lot of keystrokes for "give me the normal text style."
-
-`CoreTypographyTheme` exposes the same text styles as static getters so you can use them in widgets, services, or anywhere without a `BuildContext`:
+`CoreTypographyTheme` takes a `ThemeData` instance. Its getters are not static, and it does not provide legacy `bodyText1`, `headline2`, or `caption` names.
 
 ```dart
-// Instead of:
-Text('Hello', style: Theme.of(context).textTheme.headlineMedium)
+import 'package:core_management/core_typography_theme.dart';
+import 'package:flutter/material.dart';
 
-// Just write:
-Text('Hello', style: CoreTypographyTheme.headlineMedium)
+class WelcomeText extends StatelessWidget {
+  const WelcomeText({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final typography = CoreTypographyTheme(Theme.of(context));
+    return Text('Welcome', style: typography.headlineMedium);
+  }
+}
 ```
 
-### Wait, won't this break theming?
+This example creates the wrapper from the current theme in `build`, so it follows inherited theme changes. An instance retained elsewhere continues to reference the `ThemeData` supplied when it was constructed.
 
-Nope. The values are pulled from the Material `ThemeData` at app start. If you change your theme at runtime? Then yeah, use `Theme.of(context)` as usual. This is for the 90% case where your typography is static.
+## Available styles
 
-### Customizing
+The instance exposes `displayLarge/Medium/Small`, `headlineLarge/Medium/Small`, `titleLarge/Medium/Small`, `bodyLarge/Medium/Small`, and `labelLarge/Medium/Small`.
 
-You can override individual styles by reassigning:
+Each has a corresponding primary getter, such as `primaryHeadlineMedium` or `primaryBodyLarge`, backed by `ThemeData.primaryTextTheme`. `textTheme` and `primaryTextTheme` rebuild their respective text themes using these getters; `textSelectionTheme` forwards the supplied theme's value.
+
+## Customize by subclassing
+
+Getters have no setters. Override them in a subclass rather than assigning to a static property.
 
 ```dart
-CoreTypographyTheme.bodyText1 = TextStyle(
-  fontSize: 16,
-  fontWeight: FontWeight.w500,
-);
+import 'package:core_management/core_typography_theme.dart';
+import 'package:flutter/material.dart';
+
+class AppTypography extends CoreTypographyTheme {
+  AppTypography(super.themeData);
+
+  @override
+  TextStyle get bodyLarge => super.bodyLarge.copyWith(fontWeight: FontWeight.w500);
+}
 ```
 
-But honestly? If you're customizing heavily, just use Flutter's `TextTheme` directly. This helper shines when you want the defaults without the ceremony.
+To integrate with `BaseThemeService`, override its `coreTypographyTheme` getter to return your subclass using initialized `iTheme`. Call `theme(context)` before reading theme-dependent getters.
 
-### When to use it
+## Limitations
 
-| ✅ Use CoreTypographyTheme | ❌ Use Theme.of(context) |
-|---|---|
-| Static text styling | Runtime theme switching |
-| StatelessWidgets | Dark/light mode toggles |
-| Quick prototyping | When you need `ThemeData` extensions |
-| Non-widget code (services) | |
+Individual style getters use null assertions on the supplied text themes. Supply fully populated Material text themes; missing styles can throw. The wrapper does not register a global theme, listen for theme changes, or provide runtime theme-mode switching.
 
-Also pairs nicely with `HexColor` for a clean color + typography combo:
-
-```dart
-Text(
-  'Welcome back',
-  style: CoreTypographyTheme.headline2?.copyWith(
-    color: HexColor.fromHex('#333333'),
-  ),
-)
-```
+Implementation: `packages/core_management/lib/core_typography_theme.dart` and `lib/services/base_theme.dart`.

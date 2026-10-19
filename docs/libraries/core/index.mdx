@@ -1,33 +1,73 @@
 ---
-title: Core Library
-description: Explore the core library of Butterfly
+title: Core services
+description: Initialize error handling, provide a theme, and opt into independent Flutter utilities.
 ---
 
-## Introduction
+## Create your service
 
-The Core Library provides foundational tools and helpers designed to maintain a beautiful and
-well-structured Flutter codebase. It operates independently from user-specific logic, making it safe
-to use even without the Auth Library.
+Extend `BaseCoreService`. Construct one instance for the application: its constructor assigns the static `late final BaseCoreService.instance`, so constructing a second instance in the same isolate fails.
 
-One of the central pieces in this library is the `CoreService` class. Originally called
-`FrameworkService`, it was renamed to avoid naming collisions with Flutter's internal APIs.
+```dart
+import 'package:core_management/core_management.dart';
+import 'package:flutter/material.dart';
 
-In Butterfly, services that should be extended in your project are typically prefixed with `Base`.
-In this case, the actual base class is called `BaseCoreService`. When you run `butterfly init`, a
-file named `core.dart` is generated inside the `services` folder. It defines your project-specific
-`CoreService` class that extends `BaseCoreService`.
+class AppCoreService extends BaseCoreService {}
 
-This `CoreService` acts as the bridge to features provided by the Core Library, including:
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  final core = AppCoreService();
+  core.errorHandler();
+  runApp(MaterialApp(home: Builder(
+    builder: (context) => Theme(
+      data: core.getTheme(context),
+      child: const Scaffold(body: Center(child: Text('Butterfly'))),
+    ),
+  )));
+}
+```
 
-- Global error handling
-- Theme switching support
-- Full-screen loading UI
+`errorHandler()` installs handlers on `FlutterError.onError` and `PlatformDispatcher.instance.onError`. The default framework handler presents Flutter errors; the default platform handler returns `false`, so it does not claim to handle platform errors. Constructing the service alone does not install those handlers.
 
-> **Can you skip using `CoreService`?**
-> Technically yes — but you'd miss out on those features. We strongly recommend keeping it in place.
+## Override services
 
-## Features
-- [🔁 `enqueue` Helper](libraries/core/features/enqueue)
-- [Hex color Extension](libraries/core/features/hex_color)
-- [Screen Layout Extension](libraries/core/features/screen_layout)
-- [RouteService Mixin](libraries/core/features/route_service)
+| Getter or method | Contract |
+| --- | --- |
+| `errorHandlerService` | Protected `BaseErrorHandlerService`; override to customize framework/platform error reporting |
+| `themeService` | `BaseThemeService`; defaults to a newly constructed default theme service on each access |
+| `loadingService` | `BaseLoadingService`; defaults to the service's retained loading instance |
+| `getTheme(context)` | Calls `themeService.theme(context)` |
+
+For stateful or customized services, override getters with stable instances. `BaseThemeService` accepts a named `colorSeed`, not a positional context. Its `theme(context)` reads the surrounding theme's brightness, builds a seeded color scheme, then applies its overridable component-theme getters. It does not supply a theme-mode notifier or automatic runtime switching.
+
+```dart
+import 'package:core_management/core_management.dart';
+import 'package:flutter/material.dart';
+
+class AppTheme extends BaseThemeService {
+  AppTheme() : super(colorSeed: Colors.teal);
+}
+
+class AppCore extends BaseCoreService {
+  @override
+  final BaseThemeService themeService = AppTheme();
+}
+```
+
+Call `theme(context)` before accessing getters that depend on initialized `iTheme` or `darkTheme`.
+
+## Import utilities explicitly
+
+The `core_management.dart` barrel exports `BaseCoreService`, `BaseThemeService`, `BaseErrorHandlerService`, `BaseLoadingService`, and `BaseRouteService`. Other APIs require their own library import.
+
+| Guide | Import path inside `package:core_management/` |
+| --- | --- |
+| [Queue](/libraries/core/features/enqueue) | `mixins/task_queue.dart` |
+| [Hex colors](/libraries/core/features/hex_color) | `extensions/hex_color.dart` |
+| [Screen layout](/libraries/core/features/screen_layout) | `extensions/screen_layout.dart` |
+| [Loading](/libraries/core/features/loading_overlay) | `widgets/loading_overlay.dart` |
+| [Locks](/libraries/core/features/lock_service) | `services/core_lock.dart` |
+| [Typography](/libraries/core/features/typography_theme) | `core_typography_theme.dart` |
+
+These helpers are not automatically initialized by `BaseCoreService`. Routing is optional and uses the separate [GoRouter integration](/libraries/core/features/route_service); the core service does not automatically initialize authentication or notify a router.
+
+Implementation: `packages/core_management/lib/services/`, `lib/src/services/`, and `lib/core_management.dart`.

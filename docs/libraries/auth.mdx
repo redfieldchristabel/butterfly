@@ -1,111 +1,90 @@
 ---
-title: Auth Library
-description: Authentication made simple — plug in your database, provider, and go
+title: Authentication
+description: Separate your application user, external identity, local cache, and optional state-management bridge.
 ---
 
-### What is Auth?
+## Choose a base class
 
-Auth is that thing every app needs but nobody wants to write from scratch. Sign-in, sign-up, password reset, session management — it's the same dance every time.
+| Situation | Base class |
+| --- | --- |
+| Your sign-in API returns the complete app user | `AuthServiceRepository<T>` |
+| A provider supplies identity and your app loads additional profile data | `IdentityAuthRepository<I, T>` |
+| Firebase Auth supplies identity | `FirebaseAuthManagementRepository<T extends FirebaseUser>` |
+| OAuth2 supplies an authenticated HTTP session | `BaseOauth2AuthManagement<T>` |
 
-So we wrote it once.
+The base `auth_management` package does not implement email/password sign-in, registration, password reset, or a concrete static `AuthService`. Those belong in your application or provider integration.
 
-Butterfly Auth gives you a plug-and-play authentication layer. Pick your **database** (Hive, Isar, Firebase), pick your **auth provider** (email/password, Google, OAuth2), pick your **state management** (Riverpod or roll your own) — and it just works.
+Authentication is state-management-agnostic. BLoC/Cubit, Provider, a `StreamBuilder`, or another state manager can consume `streamUser()` and call the service methods directly. Riverpod is the supplied adapter, not a requirement. To keep another library in sync automatically, implement `AuthServiceProviderRepository<T>` from `auth_management_provider.dart` and return it from `providerRepo`; see [Riverpod integration](/libraries/auth/features/riverpod#other-state-managers).
 
-No more wiring `onAuthStateChanged` every project. No more forgetting to persist the session.
+## Service for an API that returns the user
 
-### How it's built
-
-Think of it like layers in a sandwich:
-
-```
-┌─────────────────────────────────────┐
-│   AuthService (your best friend)    │  ← the one you call daily
-├─────────────────────────────────────┤
-│   AuthRepository (the brain)        │  ← decides where data goes
-├─────────────────────────────────────┤
-│   AuthDataSource (the hands)        │  ← talks to the actual DB/API
-├─────────────────────────────────────┤
-│   Hive / Isar / Firebase / OAuth2   │  ← pick your fighter
-└─────────────────────────────────────┘
-```
-
-**AuthDataSource** is the lowest layer — it just needs to implement `getUser`, `saveUser`, `deleteUser` and `streamUser`. Pick the implementation that matches your stack.
-
-**AuthRepository** sits on top and orchestrates the data source. Not much to customize here unless you want to add cache logic.
-
-**AuthService** is the star of the show. It's a singleton you call from anywhere:
+This example injects a login function and a cache. The login function is application code, not a Butterfly API.
 
 ```dart
-// Signing in
-await AuthService.signIn(email, password);
+import 'package:auth_management/auth_management.dart';
 
-// Who's the user?
-final user = AuthService.currentUser;
+class AppUser {
+  const AppUser(this.id);
+  final String id;
+}
 
-// Signing out
-await AuthService.signOut();
+class AuthService extends AuthServiceRepository<AppUser> {
+  AuthService({required this.dbRepo, required this.login});
+
+  @override
+  final AuthManagementDatabaseRepository<AppUser> dbRepo;
+  final Future<AppUser> Function(String email, String password) login;
+
+  Future<void> signIn(String email, String password) async {
+    final user = await login(email, password);
+    await dbRepo.addUser(user);
+  }
+}
 ```
 
-It also exposes a `Stream<User?>` so your UI stays in sync without polling.
+Initialize the chosen cache first, then call `authService.initialize()` once before relying on `currentUser`. It registers the service in static `AuthServiceRepository.instance` and subscribes to `streamUser()`. The singleton is `late final`, so initializing another service in the same isolate is not supported.
 
-### The database you choose matters
+`currentUser` is an **instance field**, initially null and updated when the subscription receives an event. Initialization is not a synchronous guarantee that a persisted user has already been emitted. Model startup/loading separately when a route guard must distinguish unresolved state from signed out.
 
-| Package | Best for |
-|---|---|
-| `auth_management_database_hive_ce` | Local-only, lightweight, no native deps |
-| `auth_management_database_isar_community` | Local-only, needs complex queries |
-| `auth_management_database_sembast` | Local-only, pure Dart, no adapters (just `toJson`/`fromJson`) |
-| `auth_management_firebase` | Server-backed, real-time sync |
-| `auth_management_firebase_google` | "Sign in with Google" button |
+## Public service contract
 
-**Don't see yours?** Implement `AuthDataSource` yourself — it's two methods.
+| Member | Behavior |
+| --- | --- |
+| `dbRepo` | Required local-user repository |
+| `providerRepo` | Optional state-management bridge, published to on every user change and cleared on sign-out; defaults null |
+| `getUser()` | Reads the current user; base class delegates to the cache |
+| `streamUser()` | Emits user changes; base class delegates to the cache |
+| `currentUser` | Most recent user received by the initialized service |
+| `signOut()` | Clears cache, then optional provider state |
+| `onUserChanged(T? user)` | Hook after `currentUser` updates |
+| `onUserError(Object error, StackTrace stackTrace)` | Stream-error hook; default logs the error |
 
-### The auth flow you want
+There is no `userStream` getter. Use `streamUser()`. Base sign-out does not revoke a custom backend session; override it if your backend requires that. After `initialize()`, every user change is forwarded to `providerRepo` automatically; see [Riverpod integration](/libraries/auth/features/riverpod).
 
-- **Email/password** — comes with the `auth_management` base. Firebase or local DB handles the rest.
-- **Google Sign-In** — `auth_management_firebase_google` has a one-call service.
-- **OAuth2** — `auth_management_oauth2` handles the redirect dance for you.
+## Identity resolution
 
-<Tabs>
-<TabItem value="google" label="Google Sign-In">
+`IdentityAuthRepository<I, T>` adds `streamIdentity()`, `getIdentity()`, `fetchUser(identity)`, `isCachedUserFor(cachedUser, identity)`, and `refreshUser()`.
 
-```dart
-final googleService = GoogleSignInService();
-await googleService.signIn();
-// That's it. AuthService.currentUser is now populated.
-```
+Resolution follows this order:
 
-</TabItem>
+1. No identity: clear the local cache and resolve null.
+2. A cached user matches the identity: reuse it without calling `fetchUser`.
+3. Otherwise: fetch the app user, save it to `dbRepo`, and resolve it.
 
-<TabItem value="oauth" label="OAuth2">
+The identity stream must emit its initial identity and later changes. The repository shares a pending fetch between concurrent resolutions and replays its latest emitted user to later `streamUser()` listeners. `getUser()` resolves independently and returns its result; it does not itself call the stream's emission method.
 
-```dart
-final oauth = OAuth2Service(
-  clientId: 'your-client-id',
-  redirectUri: 'com.yourapp://callback',
-  authorizationEndpoint: 'https://provider.com/auth',
-  tokenEndpoint: 'https://provider.com/token',
-);
+Implement `fetchUser` to return the full app model. Do not write to `dbRepo` inside it or call `getUser`, `streamUser`, or `refreshUser` recursively. `isCachedUserFor` defaults to true, so custom providers must override it when switching accounts could otherwise reuse another user's cached data. Firebase supplies a UID comparison.
 
-await oauth.authenticate();
-```
+## Refresh, errors, and lifecycle limits
 
-</TabItem>
-</Tabs>
+`refreshUser()` bypasses the cache, fetches again, checks the current identity, saves and emits the result. It returns null if signed out or if the fetched user no longer matches the current identity. It does not clear a cache when called while signed out. Provider profile changes are not automatically database subscriptions.
 
-### State management that doesn't fight you
+An identity-resolution error is emitted on the user stream; a failing `getUser()` or `refreshUser()` throws to its caller. `currentUser` retains its previous value on a stream error. Handle that explicitly rather than assuming it becomes null.
 
-If you use Riverpod, `auth_management_provider_riverpod` gives you free providers:
+The ordinary resolution path does not recheck the current identity after every awaited fetch; do not assume full account-switch race protection. The service and identity repository do not expose a public disposal method for their internal subscriptions. Design one application-owned service, not a new service per screen.
 
-```dart
-final authState = ref.watch(authStateProvider);
-final currentUser = ref.watch(currentUserProvider);
-```
+## Continue
 
-Your UI rebuilds when auth state changes. No manual listeners.
+Choose a [storage adapter](/libraries/auth/features/datasources), configure [Firebase, Google, or OAuth2](/libraries/auth/features/providers), then add [Riverpod](/libraries/auth/features/riverpod) or a router listener explicitly.
 
-If you use something else — `AuthService.currentUser` and `AuthService.userStream` work the same with Provider, BLoC, or a callback in a button.
-
-### Removable
-
-Same philosophy as the rest of Butterfly. AuthService is just a class. AuthDataSource is just an abstract class with two methods. You can copy the files out, delete the package, and keep building. We even recommend reading the source to see how thin the layer actually is — it'll make you confident you can replace it anytime.
+Implementation: `packages/auth_management/lib/src/repository.dart`, `identity_repository.dart`, `database_repository.dart`, and `provider_repository.dart`.

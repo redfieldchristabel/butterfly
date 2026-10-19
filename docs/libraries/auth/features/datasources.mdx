@@ -1,70 +1,85 @@
 ---
-title: Auth Datasources
-description: Swap your database without changing your auth code
+title: User storage repositories
+description: Implement the four-method cache contract and choose Sembast, Hive CE, Isar, or memory.
 ---
 
-### The idea
+## The contract
 
-Authentication needs to store user data somewhere. Maybe locally (Hive, Isar), maybe in the cloud (Firebase). The rest of your app shouldn't care which one you pick.
+The exported interface is `AuthManagementDatabaseRepository<T>`, not `AuthDataSource`. It stores your application user; it does not authenticate passwords.
 
-That's what `AuthDataSource` is for — a two-method contract:
+| Method | Return type |
+| --- | --- |
+| `getUser()` | `FutureOr<T?>` |
+| `addUser(T user)` | `FutureOr<void>` |
+| `clearUser()` | `FutureOr<void>` |
+| `streamUser()` | `Stream<T?>` |
+
+Implement this interface for another backend and return it from your auth service's `dbRepo` getter. For predictable startup, a custom stream should emit the current cached value when subscribed, then later changes. Adapters differ in whether they currently satisfy that behavior.
+
+## Adapter map
+
+| Package | Concrete repository | Model requirement |
+| --- | --- | --- |
+| `auth_management` | `InMemoryDatabaseRepository<T>` | None |
+| `auth_management_database_sembast` | `AuthManagementDatabaseSembast<T>` | `fromJson` and `toJson` callbacks |
+| `auth_management_database_hive_ce` | `AuthManagementDatabaseHiveCe<T>` | Extend that package's `BaseUser`; register a Hive adapter |
+| `auth_management_database_isar_community` | `AuthManagementIsarRepository<T>` | Extend that package's `BaseUser`; provide a collection schema |
+
+Firebase is an identity-provider integration, not an implementation of this cache contract. There is no `FirebaseAuthDataSource`, `HiveAuthDataSource`, or `IsarAuthDataSource` in these packages.
+
+## Sembast
+
+The repository uses your already-open database. It neither opens nor closes that database and needs no generated adapter or base model class.
 
 ```dart
-abstract class AuthDataSource {
-  User? get currentUser;
-  Stream<User?> get userStream;
-  Future<void> saveUser(User user);
-  Future<void> deleteUser();
+import 'package:auth_management_database_sembast/auth_management_database_sembast.dart';
+import 'package:sembast/sembast.dart';
+
+class AppUser {
+  const AppUser(this.id);
+  final String id;
+
+  factory AppUser.fromJson(Map<String, Object?> json) =>
+      AppUser(json['id'] as String);
+
+  Map<String, Object?> toJson() => {'id': id};
+}
+
+AuthManagementDatabaseSembast<AppUser> createUserCache(Database database) {
+  return AuthManagementDatabaseSembast<AppUser>(
+    fromJson: AppUser.fromJson,
+    toJson: (user) => user.toJson(),
+  )..initialize(database);
 }
 ```
 
-That's it. Implement these, and `AuthService` handles the rest.
+The default store is `auth_management_user` and the single record key is `current`. Set constructor `storeName` only when a different store is needed. Calling a storage operation before `initialize(database)` throws `StateError`.
 
-### What ships with Butterfly
+`streamUser()` maps record snapshots, including the initial record or null. `addUser` and `clearUser` await their database operations. Convert nested models to maps and dates to supported Sembast values; for generated JSON, configure nested serialization appropriately.
 
-| Package | Class | Storage |
-|---|---|---|
-| `auth_management_database_hive_ce` | `HiveAuthDataSource` | Local Hive box |
-| `auth_management_database_isar_community` | `IsarAuthDataSource` | Local Isar collection |
-| `auth_management_firebase` | `FirebaseAuthDataSource` | Firebase Auth SDK |
-| `auth_management_firebase` | `FirebaseAuthRepository` | Firebase + local cache |
+## Hive CE
 
-### Picking one
+Import the repository from `auth_management_database_hive_ce.dart`. Its `BaseUser` requires a separate import from `package:auth_management_database_hive_ce/base_user.dart` and extends `HiveObject`.
 
-**Hive** — lightest option. No native dependencies, works on web. Good for simple apps that just need "remember who logged in."
+Register the user type adapter before calling `initialize()`. Initialization uses `getApplicationDocumentsDirectory()` and opens a typed box named `currentUser`. The current user is stored at integer key `0`. `streamUser()` emits the existing value and then watches that key, canceling its box subscription when the consumer cancels.
 
-**Isar** — also local but supports queries if you need to search users. Heavier dependency.
+The adapter's `addUser` and `clearUser` invoke asynchronous Hive operations without returning or awaiting their futures. Awaiting these wrapper methods does not guarantee disk persistence has completed. The implementation relies on a filesystem documents directory; do not infer browser compatibility solely from Hive's capabilities.
 
-**Firebase** — full server-backed auth. Email/password, anonymous, phone, and whatever Firebase supports. Also syncs across devices.
+## Isar Community
 
-### Using a custom datasource
+Call `initialize(userSchema, schemas: additionalSchemas)` before use. Initialization opens an Isar instance in the application documents directory and explicitly throws on web. This package exports its own `BaseUser`, containing a required `Id id`; it is different from Hive's `BaseUser`.
 
-Don't see yours? Implement it:
+Current implementation limitations are important:
 
-```dart
-class MySqlAuthDataSource implements AuthDataSource {
-  @override
-  User? get currentUser => _cachedUser;
+- `addUser` writes the model in a synchronous write transaction. It does not replace all other user records.
+- `getUser` calls asynchronous `findFirst()` and casts that result directly to `T?`, rather than awaiting it. It is not a working typed read as written.
+- `clearUser` calls `collection.clear()` without an explicit write transaction and without awaiting/returning its future.
+- The query stream does not request an initial emission (`fireImmediately`); it selects the first returned user after changes.
 
-  @override
-  Stream<User?> get userStream => _db.userChanges();
+Review or repair these behaviors before selecting this adapter for production. These docs do not claim that a placeholder package test verifies actual native database operations.
 
-  @override
-  Future<void> saveUser(User user) async {
-    await _db.insert('users', user.toJson());
-    _cachedUser = user;
-  }
+## In-memory storage
 
-  @override
-  Future<void> deleteUser() async {
-    await _db.delete('users', where: 'id = ?', args: [_cachedUser!.id]);
-    _cachedUser = null;
-  }
-}
-```
+`InMemoryDatabaseRepository<T>` holds a `ValueNotifier<T?>`. It loses data on restart. Its stream attaches a notifier listener but does not emit the existing value immediately or unregister that listener on cancellation. It is suitable for limited development scenarios, not a persistent-session solution or a leak-free lifecycle abstraction.
 
-Then inject it into `AuthRepository` and you're done. `AuthService` doesn't know or care what's underneath.
-
-### The repository layer
-
-`AuthRepository` wraps the datasource and adds a thin caching layer. You normally don't touch this directly — `AuthService` talks to it. But if you want to add custom logic (migration, encryption, sync strategy), extend `AuthRepository` and override the methods you need.
+Implementation: each adapter's `lib/repository.dart` or `lib/src/repository.dart`, plus `packages/auth_management/lib/src/in_memory_database_repo.dart`.

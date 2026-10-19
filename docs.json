@@ -1,88 +1,39 @@
 {
+  "$schema": "https://docs.page/schema.json",
   "name": "Butterfly",
-  "description": "My documentation site",
+  "description": "Dart CLI generators and optional Flutter libraries for core services, routing, and authentication.",
+  "content": {
+    "headerDepth": 3
+  },
   "sidebar": [
     {
-      "group": "Getting Started",
+      "group": "Getting started",
       "pages": [
-        {
-          "title": "Getting to know Butterfly",
-          "href": "/",
-          "icon": "rocket"
-        },
-        {
-          "title": "Installation",
-          "href": "/installation",
-          "icon": "arrow-right"
-        },
-        {
-          "title": "Features",
-          "href": "/features",
-          "icon": "fa-solid fa-star"
-        }
+        { "title": "Introduction", "href": "/", "icon": "rocket" },
+        { "title": "Installation", "href": "/installation" },
+        { "title": "CLI reference", "href": "/features" }
       ]
     },
     {
-      "group": "Libraries",
+      "group": "Core and routing",
       "pages": [
-        {
-          "group": "Core",
-          "pages": [
-            {
-              "title": "Introduction",
-              "href": "/libraries/core"
-            },
-            {
-              "title": "Route Service",
-              "href": "/libraries/core/features/route_service"
-            },
-            {
-              "title": "Enqueue Utility",
-              "href": "/libraries/core/features/enqueue"
-            },
-            {
-              "title": "Hex Color",
-              "href": "/libraries/core/features/hex_color"
-            },
-            {
-              "title": "Screen Layout",
-              "href": "/libraries/core/features/screen_layout"
-            },
-            {
-              "title": "Lock Service",
-              "href": "/libraries/core/features/lock_service"
-            },
-            {
-              "title": "Loading Overlay",
-              "href": "/libraries/core/features/loading_overlay"
-            },
-            {
-              "title": "Typography Theme",
-              "href": "/libraries/core/features/typography_theme"
-            }
-          ]
-        },
-        {
-          "group": "Auth",
-          "pages": [
-            {
-              "title": "Introduction",
-              "href": "/libraries/auth"
-            },
-            {
-              "title": "Datasources",
-              "href": "/libraries/auth/features/datasources"
-            },
-            {
-              "title": "Auth Providers",
-              "href": "/libraries/auth/features/providers"
-            },
-            {
-              "title": "Riverpod Integration",
-              "href": "/libraries/auth/features/riverpod"
-            }
-          ]
-        }
+        { "title": "Core services", "href": "/libraries/core" },
+        { "title": "Route service", "href": "/libraries/core/features/route_service" },
+        { "title": "Task queue", "href": "/libraries/core/features/enqueue" },
+        { "title": "Hex colors", "href": "/libraries/core/features/hex_color" },
+        { "title": "Screen layout", "href": "/libraries/core/features/screen_layout" },
+        { "title": "Lock service", "href": "/libraries/core/features/lock_service" },
+        { "title": "Loading overlay", "href": "/libraries/core/features/loading_overlay" },
+        { "title": "Typography theme", "href": "/libraries/core/features/typography_theme" }
+      ]
+    },
+    {
+      "group": "Authentication",
+      "pages": [
+        { "title": "Architecture and lifecycle", "href": "/libraries/auth" },
+        { "title": "User storage", "href": "/libraries/auth/features/datasources" },
+        { "title": "Identity providers", "href": "/libraries/auth/features/providers" },
+        { "title": "Riverpod integration", "href": "/libraries/auth/features/riverpod" }
       ]
     }
   ]

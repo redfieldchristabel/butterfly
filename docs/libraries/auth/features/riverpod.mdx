@@ -1,61 +1,88 @@
 ---
-title: Riverpod Auth State
-description: Reactive auth state management with zero boilerplate
+title: Riverpod integration
+description: Publish the signed-in user to Riverpod automatically with one initialize call.
 ---
 
-### The idea
+## Setup
 
-You need auth state to flow through your widget tree. User logs in → UI rebuilds. User logs out → UI rebuilds. No manual listeners, no `setState` in random places.
+Three steps, and no publish or clear code in your app:
 
-If you use Riverpod, `auth_management_provider_riverpod` gives you ready-made providers so you don't wire it yourself.
-
-### What you get
+1. Mix `RiverpodUser` into your user model.
+2. Create one top-level `AuthManagementRiverpodRepository` and return it from your auth service's `providerRepo`.
+3. Call `initialize(ref)` on it once from your root widget.
 
 ```dart
+import 'package:auth_management/auth_management.dart';
+import 'package:auth_management/auth_management_provider.dart';
 import 'package:auth_management_provider_riverpod/auth_management_provider_riverpod.dart';
-```
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-| Provider | Type | What it gives you |
-|---|---|---|
-| `authStateProvider` | `AsyncValue<AuthState>` | idle / loading / authenticated / unauthenticated |
-| `currentUserProvider` | `AsyncValue<User?>` | The logged-in user, or null |
-| `authServiceProvider` | `AuthService` | The underlying auth service instance |
+class AppUser with RiverpodUser {
+  AppUser(this.name);
+  final String name;
+}
 
-### In practice
+final riverpodProvider = AuthManagementRiverpodRepository<AppUser>();
 
-```dart
-@override
-Widget build(BuildContext context, WidgetRef ref) {
-  final authState = ref.watch(authStateProvider);
+class AuthService extends AuthServiceRepository<AppUser> {
+  @override
+  final dbRepo = InMemoryDatabaseRepository<AppUser>();
 
-  return authState.when(
-    loading: () => SplashScreen(),
-    authenticated: () => HomeScreen(),
-    unauthenticated: () => LoginScreen(),
-    error: (e, _) => ErrorScreen(e),
-  );
+  @override
+  AuthServiceProviderRepository<AppUser> get providerRepo => riverpodProvider;
+}
+
+final authService = AuthService();
+
+void main() {
+  authService.initialize();
+  runApp(const ProviderScope(child: App()));
+}
+
+class App extends ConsumerWidget {
+  const App({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    riverpodProvider.initialize(ref);
+    return const MaterialApp(home: UserLabel());
+  }
+}
+
+class UserLabel extends ConsumerWidget {
+  const UserLabel({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(riverpodUserStateProvider) as AppUser?;
+    return Text(user?.name ?? 'Signed out');
+  }
 }
 ```
 
-No manual stream subscriptions. No `dispose` cleanup. Riverpod handles the lifecycle.
+Replace the in-memory cache with a persistent [storage repository](/libraries/auth/features/datasources) in a real app.
 
-### How it works under the hood
+From then on, every user change from your auth service is published to `riverpodUserStateProvider`, and `signOut()` clears it. Watch the provider anywhere below `ProviderScope`.
 
-The providers wrap `AuthService.userStream` into Riverpod's `StreamProvider`. When the user signs in or out, the stream fires, the provider invalidates, and every widget watching it rebuilds. That's it.
+Keep the bridge as one top-level instance, as above, so the auth service and the root widget share it. The getter must return that same instance every time; constructing a new one in the getter would leave the initialized bridge disconnected.
 
-### Without Butterfly
+## How the sync works
 
-```dart
-final authStateProvider = StreamProvider<AuthState>((ref) {
-  return AuthService.userStream.map((user) {
-    return user != null ? AuthState.authenticated : AuthState.unauthenticated;
-  });
-});
-```
+The base `auth_management` library owns the wiring. `AuthServiceRepository.initialize()` forwards every user change to `providerRepo.sync(user)`, before calling `onUserChanged`. `sync` calls `bindUserToProvider` for a user and `clearUser` for sign-out. Both are internal: app code never calls them.
 
-You'd write this yourself — the package just saves you the 5 lines and the import path guesswork.
+Order doesn't matter. If auth resolves before the bridge is initialized (for example, a persisted session restored in `main()`), the latest user is held and published as soon as `initialize(ref)` runs. That delivery is scheduled just after the current build, so calling `initialize` from `build` or `initState` doesn't modify a provider mid-build. Repeat calls are ignored, so calling it in `build` is fine.
 
-### When you don't need this
+Use your root widget: the bridge keeps that `WidgetRef` for the app's lifetime, and has no dispose method. A `ConsumerStatefulWidget` calling it in `initState` works the same way.
 
-- Not using Riverpod? Ignore this package. `AuthService.userStream` works with BLoC, Provider, or raw `StreamBuilder`.
-- Simple app with one or two auth-dependent screens? A `StreamBuilder` in your root widget might be enough.
+## What the provider holds
+
+`riverpodUserStateProvider` is a keep-alive notifier holding `RiverpodUser?`, initially null. It is not an `AsyncValue` or an auth-state enum, and the package doesn't define `authStateProvider` or `currentUserProvider`. Cast to your model when reading; the provider isn't generic per app.
+
+A nullable user can't distinguish "still restoring the session" from "signed out". If your UI needs a splash or error state, keep that in your own state alongside it.
+
+## Other state managers
+
+The same mechanism works for any library. Extend `AuthServiceProviderRepository<T>` from `package:auth_management/auth_management_provider.dart`, implement `bindUserToProvider`, `clearUser`, and `getUser`, and call the protected `markInitialized()` once your bridge has whatever handle it needs. Return it from `providerRepo`, and the auth service keeps it in sync.
+
+Implementation: `packages/auth_management/lib/src/provider_repository.dart`, `repository.dart`, and `packages/auth_management_provider_riverpod/lib/src/`.

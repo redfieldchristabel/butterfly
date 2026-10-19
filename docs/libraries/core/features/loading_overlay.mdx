@@ -1,81 +1,72 @@
 ---
-title: Loading Overlay
-description: Full-screen loading states without the boilerplate
+title: Loading overlay
+description: Drive a loading overlay through the core service controller, with explicit current implementation limits.
 ---
 
-### The Problem
+## Connect the overlay
 
-Every async operation needs a loading state. Show a spinner, block interaction, hide when done. Every screen needs it. You end up copy-pasting the same `Stack` with a `CircularProgressIndicator` across 15 widgets.
-
-### The Fix
-
-Butterfly gives you `LoadingOverlay` — a widget that wraps your screen and handles the showing/hiding with zero extra code:
+`LoadingOverlay` accepts `child` and `key`. There are no `isLoading`, `opacity`, `indicator`, or `color` constructor parameters. It obtains its controller from `BaseCoreService.instance.loadingService`, so construct your core service before building it.
 
 ```dart
-LoadingOverlay(
-  isLoading: isSaving,
-  child: YourScreen(),
-)
+import 'package:core_management/core_management.dart';
+import 'package:core_management/widgets/loading_overlay.dart';
+import 'package:flutter/material.dart';
+
+class AppLoadingService extends BaseLoadingService {
+  @override
+  Widget loadingWidget<T>(T data) => const Stack(
+    fit: StackFit.expand,
+    children: [
+      ModalBarrier(dismissible: false, color: Color(0x66000000)),
+      Center(child: CircularProgressIndicator()),
+    ],
+  );
+}
+
+class AppCore extends BaseCoreService {
+  @override
+  final BaseLoadingService loadingService = AppLoadingService();
+}
+
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  final core = AppCore();
+  runApp(MaterialApp(
+    builder: (context, child) => LoadingOverlay(child: child!),
+    home: Scaffold(body: Center(child: ElevatedButton(
+      onPressed: () async {
+        final controller = core.loadingService.controller;
+        controller.state = ButterflyLoadingState.loading;
+        try {
+          await Future<void>.delayed(const Duration(milliseconds: 300));
+        } finally {
+          controller.state = ButterflyLoadingState.idle;
+        }
+      },
+      child: const Text('Load'),
+    ))),
+  ));
+}
 ```
 
-When `isLoading` toggles, it fades in a full-screen semi-transparent overlay with a centered spinner. No extra widgets, no manual positioning.
+The custom service provides the centered spinner and input-blocking barrier. The default service returns only a `CupertinoActivityIndicator`; it does not itself provide a modal barrier, centered layout, or dimmed background.
 
-### Behind the scenes — ButterflyLoadingController
+## Controller API
 
-For more control, there's `ButterflyLoadingController` and its state enum `ButterflyLoadingState`:
+`ButterflyLoadingController<T>` extends `ChangeNotifier`. Use its `state` and `data` properties; there are no `startLoading()` or `stopLoading()` methods.
 
-```dart
-enum ButterflyLoadingState { idle, loading, success, error }
-```
+The enum has exactly `idle`, `loading`, and `completed`. It has no `success` or `error` values. `idle` removes an existing overlay entry; entering `loading` notifies listeners so an entry can be inserted.
 
-You can drive the overlay from a controller manually:
+## Current limitations
 
-```dart
-final controller = ButterflyLoadingController();
+These describe the implementation, not intended behavior:
 
-// Later
-controller.startLoading();
-// ... do work ...
-controller.stopLoading();
-```
+- Assigning `completed` schedules a transition to `idle` after `kThemeAnimationDuration`. The setter does not actually assign or notify a `completed` state first. Do not use it as an observable success state.
+- The `data` setter calls `notifyListeners()` but does not assign its argument to `_data`. Consequently, `data` remains null; passing messages through it does not work.
+- A completion timer is not canceled when assigning another ordinary state. A pending completion can therefore hide a later loading operation.
+- The overlay subscribes during `initState` but does not immediately reconcile the controller's existing state. Set loading after the overlay mounts, not before.
+- There is no request counter or per-operation ownership. Concurrent operations can hide one another's loading state.
 
-This is useful when you have complex async flows that need to signal loading from multiple places.
+The example uses `loading` and `idle` with `try/finally`, does not depend on `data`, and supplies its own modal visuals. It does not fix the underlying implementation.
 
-### Customizing the overlay
-
-The overlay is a widget, so you wrap it how you want:
-
-```dart
-LoadingOverlay(
-  isLoading: viewModel.isLoading,
-  opacity: 0.7,               // default
-  indicator: CustomSpinner(), // replace the spinner
-  color: Colors.black,        // overlay color
-  child: Scaffold(
-    body: MyContent(),
-  ),
-)
-```
-
-### When to use what
-
-- `LoadingOverlay` widget — **most of the time**. Clean declarative API.
-- `ButterflyLoadingController` — when you need to control loading state from outside the widget tree (services, view models, etc).
-- `ButterflyLoadingState` — combine with a `Switch` if you want idle/loading/success/error in one variable instead of four booleans.
-
-### Without Butterfly
-
-```dart
-Stack(
-  children: [
-    YourScreen(),
-    if (isLoading)
-      Container(
-        color: Colors.black.withOpacity(0.5),
-        child: Center(child: CircularProgressIndicator()),
-      ),
-  ],
-)
-```
-
-Works, but you write it every time. `LoadingOverlay` is that, but you import instead of type.
+Implementation: `packages/core_management/lib/widgets/loading_overlay.dart`, `lib/services/base_loading.dart`, and `lib/src/services/default_loading.dart`.

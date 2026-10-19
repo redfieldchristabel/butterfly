@@ -1,159 +1,44 @@
 ---
-title: ScreenLayout Extension
-description: Responsive layout utilities for Flutter applications
+title: Screen layout
+description: Read MediaQuery size, a shortest-side breakpoint, and the current theme from BuildContext.
 ---
 
-## ScreenLayout Extension
-
-The `ScreenLayoutExtension` provides convenient methods for creating responsive layouts in Flutter applications. It extends the `BuildContext` class with properties and methods to easily adapt your UI to different screen sizes and orientations.
-
-## Features
-
-- Get screen dimensions and orientation
-- Check device type (mobile, tablet, desktop)
-- Responsive layout utilities
-- Theme data access
-
-## Installation
-
-This extension is part of the `core_management` package. Make sure it's imported in your Dart file:
+## Use the extension
 
 ```dart
-import 'package:core_management/core_management.dart';
-```
+import 'package:core_management/extensions/screen_layout.dart';
+import 'package:flutter/material.dart';
 
-## Usage
+class LayoutSummary extends StatelessWidget {
+  const LayoutSummary({super.key});
 
-### Screen Size and Dimensions
-
-Get the screen size and dimensions:
-
-```dart
-// Get the screen size
-final size = context.screenSize;
-final width = size.width;
-final height = size.height;
-
-// Get the shortest side (useful for responsive design)
-final shortest = context.shortestSide;
-```
-
-### Responsive Layout
-
-Check the device type and adjust your layout accordingly:
-
-```dart
-@override
-Widget build(BuildContext context) {
-  // Check if the device is a mobile
-  if (context.mobileLayout) {
-    return _buildMobileLayout();
-  }
-  return _buildDesktopLayout();
-}
-```
-
-### Theme Access
-
-Quickly access the current theme:
-
-```dart
-// Get the current theme
-themeData = context.themeData;
-
-// Use theme colors
-final primaryColor = context.themeData.primaryColor;
-final textTheme = context.themeData.textTheme;
-```
-
-## API Reference
-
-### Properties
-
-#### `screenSize: Size`
-
-Returns the size of the current screen.
-
-#### `shortestSide: double`
-
-Returns the length of the shortest side of the screen.
-
-#### `mobileLayout: bool`
-
-Returns `true` if the shortest side is less than 600 logical pixels (typically mobile devices).
-
-#### `themeData: ThemeData`
-
-Returns the current theme data.
-
-## Examples
-
-### Responsive Layout Example
-
-```dart
-class ResponsiveLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: context.mobileLayout 
-          ? _buildMobileLayout() 
-          : _buildDesktopLayout(),
-    );
-  }
-
-  Widget _buildMobileLayout() {
-    return Column(
-      children: [
-        _buildHeader(),
-        Expanded(child: _buildContent()),
-        _buildFooter(),
-      ],
-    );
-  }
-
-  Widget _buildDesktopLayout() {
-    return Row(
-      children: [
-        _buildSidebar(),
-        Expanded(
-          child: Column(
-            children: [
-              _buildHeader(),
-              Expanded(child: _buildContent()),
-              _buildFooter(),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-```
-
-### Responsive Padding
-
-```dart
-class ResponsivePadding extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final padding = context.mobileLayout ? 8.0 : 16.0;
-    
+    final size = context.screenSize;
     return Padding(
-      padding: EdgeInsets.all(padding),
-      child: Text('Responsive padding'),
+      padding: EdgeInsets.all(context.mobileLayout ? 8 : 16),
+      child: Text(
+        '${size.width} x ${size.height}; shortest: ${context.shortestSide}',
+        style: context.themeData.textTheme.bodyMedium,
+      ),
     );
   }
 }
 ```
 
-## Best Practices
+Place the widget under the appropriate `MediaQuery` and theme, normally supplied by `MaterialApp`.
 
-1. **Mobile-First Approach**: Design for mobile first, then enhance for larger screens.
-2. **Use Breakpoints**: Use `shortestSide` for responsive breakpoints.
-3. **Test on Multiple Devices**: Always test your responsive layouts on different screen sizes.
-4. **Use Theme**: Leverage the `themeData` getter to maintain consistent styling.
+## Available getters
 
-## Related Topics
+| Getter | Exact source |
+| --- | --- |
+| `screenSize` | `MediaQuery.of(context).size` |
+| `shortestSide` | `MediaQuery.of(context).size.shortestSide` |
+| `mobileLayout` | `shortestSide < 600` |
+| `themeData` | `Theme.of(context)` |
 
-- [Flutter Layouts](https://flutter.dev/docs/development/ui/layout)
-- [Responsive Design in Flutter](https://flutter.dev/docs/development/ui/layout/responsive)
+The breakpoint uses logical pixels and the shortest side, not available layout width or the operating system. Exactly 600 returns `false`. A wide window with a short height can still return `true`.
+
+There are no separate tablet/desktop getters, orientation API, or responsive widget builder in this extension. Use `LayoutBuilder` for parent constraints or Flutter's `MediaQuery` APIs when you need more than these four shortcuts.
+
+Implementation: `packages/core_management/lib/extensions/screen_layout.dart`.
