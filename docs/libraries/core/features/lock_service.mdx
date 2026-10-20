@@ -5,28 +5,62 @@ description: Guard duplicate in-isolate actions with synchronous acquire/release
 
 `CoreLockService` (`package:core_management/services/core_lock.dart`) provides synchronous, key-based in-memory locks with automatic expiration—ideal for preventing double-taps or concurrent triggers of the same client-side action within a single Dart isolate.
 
-## Guard a client operation
+## Usage: Butterfly vs. Raw Dart
 
-Call `acquire(key)` synchronously before starting your async work, and always pair it with `release(key)` in a `finally` block:
+<Tabs>
+  <TabItem label="With Butterfly" value="with-butterfly">
+    Call `acquire(key)` synchronously before starting your async work, and always pair it with `release(key)` in a `finally` block:
 
-```dart title="lib/services/save_guard.dart (suggested)"
-import 'package:core_management/services/core_lock.dart';
+    ```dart title="lib/services/save_guard.dart (suggested)"
+    import 'package:core_management/services/core_lock.dart';
 
-final locks = CoreLockService();
+    final locks = CoreLockService();
 
-Future<bool> saveOnce(Future<void> Function() save) async {
-  if (!locks.acquire('save-profile')) return false;
-  try {
-    await save();
-    return true;
-  } finally {
-    locks.release('save-profile');
-  }
-}
-```
+    Future<bool> saveOnce(Future<void> Function() save) async {
+      if (!locks.acquire('save-profile')) return false;
+      try {
+        await save();
+        return true;
+      } finally {
+        locks.release('save-profile');
+      }
+    }
+    ```
+  </TabItem>
+  <TabItem label="Without Butterfly (Raw Dart)" value="without-butterfly">
+    Without `core_management`, you maintain a static expiry `Map<String, DateTime>`, check and evict expired keys on each acquire attempt, and remove the key in `finally`:
+
+    ```dart title="lib/services/save_guard.dart (suggested)"
+    final Map<String, DateTime> _activeLocks = {};
+
+    bool acquireLock(
+      String key, {
+      Duration duration = const Duration(seconds: 30),
+    }) {
+      final now = DateTime.now();
+      final expiry = _activeLocks[key];
+      if (expiry != null && now.isBefore(expiry)) return false;
+      _activeLocks[key] = now.add(duration);
+      return true;
+    }
+
+    bool releaseLock(String key) => _activeLocks.remove(key) != null;
+
+    Future<bool> saveOnce(Future<void> Function() save) async {
+      if (!acquireLock('save-profile')) return false;
+      try {
+        await save();
+        return true;
+      } finally {
+        releaseLock('save-profile');
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 <Info>
-  There are no `runLocked`, `unlock`, or `unlockAll` methods on `CoreLockService`, and concurrent callers do not automatically share a single result `Future`.
+  <Icon name="circle-info" /> There are no `runLocked`, `unlock`, or `unlockAll` methods on `CoreLockService`, and concurrent callers do not automatically share a single result `Future`.
 </Info>
 
 ---

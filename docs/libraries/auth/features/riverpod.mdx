@@ -5,22 +5,19 @@ description: Publish the signed-in user to Riverpod automatically with one initi
 
 `auth_management_provider_riverpod` connects your `AuthService` to Riverpod with **zero manual publish/clear boilerplate**. Once wired, signing in, restoring a cached session, or calling `signOut()` updates your widgets automatically.
 
-## 4-step setup
+## Setup: Butterfly vs. Raw Riverpod
 
-<Steps>
-  <Step title="Install Riverpod & generator packages">
-    The typed `userProvider` proxy uses `riverpod_annotation`. Add the dependencies and run `build_runner`:
+<Info>Only `lib/main.dart` is a fixed name. Files marked **(suggested)** follow the `butterfly init` layout; rename or move them freely. Replace `my_app` in imports with the `name` from your `pubspec.yaml`.</Info>
+
+<Tabs>
+  <TabItem label="With Butterfly" value="with-butterfly">
+    Install Riverpod codegen, mix `RiverpodUser` into `AppUser` with a 1-line `@riverpod` `user` proxy, return a top-level `riverpodProvider` from `providerRepo`, and call `riverpodProvider.initialize(ref)` once in your root `ConsumerWidget`:
 
     ```bash
     flutter pub add flutter_riverpod riverpod_annotation
     flutter pub add dev:riverpod_generator dev:build_runner
     dart run build_runner build
     ```
-  </Step>
-  <Step title="Mix RiverpodUser into your model & define userProvider">
-    Add `with RiverpodUser` to `AppUser`, then declare a `@riverpod` `user` function right below it so the cast from `RiverpodUser?` to `AppUser?` happens in one place:
-
-    <Info>Only `lib/main.dart` is a fixed name. Files marked **(suggested)** follow the `butterfly init` layout; rename or move them freely. Replace `my_app` in imports with the `name` from your `pubspec.yaml`.</Info>
 
     ```dart title="lib/models/app_user.dart (suggested)"
     import 'package:auth_management_provider_riverpod/auth_management_provider_riverpod.dart';
@@ -40,9 +37,6 @@ description: Publish the signed-in user to Riverpod automatically with one initi
     @riverpod
     AppUser? user(Ref ref) => ref.watch(riverpodUserStateProvider) as AppUser?;
     ```
-  </Step>
-  <Step title="Expose a top-level riverpodProvider from your AuthService">
-    Create a single top-level `AuthManagementRiverpodRepository<AppUser>()` and return it from your service's `providerRepo` getter:
 
     ```dart title="lib/services/auth.dart (suggested)"
     import 'package:auth_management/auth_management.dart';
@@ -65,9 +59,6 @@ description: Publish the signed-in user to Riverpod automatically with one initi
 
     final authService = AuthService();
     ```
-  </Step>
-  <Step title="Call riverpodProvider.initialize(ref) in your root widget & watch userProvider">
-    Initialize the bridge inside your root `ConsumerWidget` and watch `userProvider` anywhere in your UI:
 
     ```dart title="lib/main.dart"
     import 'package:flutter/material.dart';
@@ -106,8 +97,57 @@ description: Publish the signed-in user to Riverpod automatically with one initi
       }
     }
     ```
-  </Step>
-</Steps>
+  </TabItem>
+  <TabItem label="Without Butterfly (Raw Riverpod)" value="without-butterfly">
+    If you drop `auth_management_provider_riverpod`, you write your own `Notifier<AppUser?>` and `NotifierProvider`, and manually call `ref.read(userProvider.notifier).setUser(...)` or listen to your auth stream in a stateful root widget:
+
+    ```dart title="lib/models/app_user.dart (suggested)"
+    import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+    class AppUser {
+      AppUser(this.name);
+      final String name;
+    }
+
+    class UserNotifier extends Notifier<AppUser?> {
+      @override
+      AppUser? build() => null;
+
+      void setUser(AppUser? user) => state = user;
+    }
+
+    final userProvider = NotifierProvider<UserNotifier, AppUser?>(
+      UserNotifier.new,
+    );
+    ```
+
+    ```dart title="lib/main.dart"
+    import 'package:flutter/material.dart';
+    import 'package:flutter_riverpod/flutter_riverpod.dart';
+    import 'package:my_app/widgets/user_label.dart';
+
+    void main() {
+      runApp(const ProviderScope(child: MaterialApp(home: UserLabel())));
+    }
+    ```
+
+    ```dart title="lib/widgets/user_label.dart (suggested)"
+    import 'package:flutter/material.dart';
+    import 'package:flutter_riverpod/flutter_riverpod.dart';
+    import 'package:my_app/models/app_user.dart';
+
+    class UserLabel extends ConsumerWidget {
+      const UserLabel({super.key});
+
+      @override
+      Widget build(BuildContext context, WidgetRef ref) {
+        final user = ref.watch(userProvider);
+        return Text(user?.name ?? 'Signed out');
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 <Warning>
   **Keep `riverpodProvider` as a single top-level instance:** Your `providerRepo` getter must return the exact same `riverpodProvider` instance on every access. Writing `get providerRepo => AuthManagementRiverpodRepository<AppUser>()` would construct a fresh, uninitialized instance every time the auth stream emits.

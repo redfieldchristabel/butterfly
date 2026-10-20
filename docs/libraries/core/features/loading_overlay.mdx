@@ -1,18 +1,18 @@
 ---
 title: Loading Overlay
-description: Display an app-wide loading barrier driven by your CoreService controller, with workarounds for current controller quirks.
+description: Display an app-wide loading barrier driven by your CoreService controller, with a side-by-side raw Flutter escape hatch.
 ---
 
 `LoadingOverlay` (`package:core_management/widgets/loading_overlay.dart`) wraps your app and inserts a Flutter `OverlayEntry` whenever `coreService.loadingService.controller.state` transitions to `ButterflyLoadingState.loading`.
 
-## Complete setup with modal barrier
-
-The default `DefaultLoadingService` renders a bare `CupertinoActivityIndicator()` without centering, background dimming, or touch blocking. For a production-ready modal blocker, override `loadingService` on your `CoreService`:
+## Usage: Butterfly vs. Raw Flutter
 
 <Info>Only `lib/main.dart` is a fixed name. Files marked **(suggested)** follow the `butterfly init` layout; rename or move them freely. Replace `my_app` in imports with the `name` from your `pubspec.yaml`.</Info>
 
-<Steps>
-  <Step title="Define a custom LoadingService with ModalBarrier">
+<Tabs>
+  <TabItem label="With Butterfly" value="with-butterfly">
+    Override `loadingService` on your `CoreService` (the default `DefaultLoadingService` only renders an uncentered `CupertinoActivityIndicator` without a modal barrier), wrap `MaterialApp.builder` in `LoadingOverlay`, and toggle `controller.state`:
+
     ```dart title="lib/services/loading.dart (suggested)"
     import 'package:core_management/core_management.dart';
     import 'package:flutter/material.dart';
@@ -28,8 +28,7 @@ The default `DefaultLoadingService` renders a bare `CupertinoActivityIndicator()
       );
     }
     ```
-  </Step>
-  <Step title="Register LoadingService on your CoreService">
+
     ```dart title="lib/services/core.dart (suggested)"
     import 'package:core_management/core_management.dart';
     import 'package:my_app/services/loading.dart';
@@ -41,8 +40,7 @@ The default `DefaultLoadingService` renders a bare `CupertinoActivityIndicator()
 
     final coreService = CoreService();
     ```
-  </Step>
-  <Step title="Trigger loading and idle around async work">
+
     ```dart title="lib/screens/home.dart (suggested)"
     import 'package:core_management/widgets/loading_overlay.dart';
     import 'package:flutter/material.dart';
@@ -69,8 +67,7 @@ The default `DefaultLoadingService` renders a bare `CupertinoActivityIndicator()
       );
     }
     ```
-  </Step>
-  <Step title="Mount LoadingOverlay inside MaterialApp.builder">
+
     ```dart title="lib/main.dart"
     import 'package:core_management/widgets/loading_overlay.dart';
     import 'package:flutter/material.dart';
@@ -86,8 +83,67 @@ The default `DefaultLoadingService` renders a bare `CupertinoActivityIndicator()
       ));
     }
     ```
-  </Step>
-</Steps>
+  </TabItem>
+  <TabItem label="Without Butterfly (Raw Flutter)" value="without-butterfly">
+    Without `core_management`, you expose a `ValueNotifier<bool>` (or `OverlayEntry` manager) and listen to it with a `ValueListenableBuilder` inside `MaterialApp.builder`:
+
+    ```dart title="lib/services/loading.dart (suggested)"
+    import 'package:flutter/foundation.dart';
+
+    final ValueNotifier<bool> isLoadingNotifier = ValueNotifier<bool>(false);
+    ```
+
+    ```dart title="lib/screens/home.dart (suggested)"
+    import 'package:flutter/material.dart';
+    import 'package:my_app/services/loading.dart';
+
+    class HomeScreen extends StatelessWidget {
+      const HomeScreen({super.key});
+
+      Future<void> _load() async {
+        isLoadingNotifier.value = true;
+        try {
+          await Future<void>.delayed(const Duration(milliseconds: 300));
+        } finally {
+          isLoadingNotifier.value = false;
+        }
+      }
+
+      @override
+      Widget build(BuildContext context) => Scaffold(
+        body: Center(
+          child: ElevatedButton(onPressed: _load, child: const Text('Load')),
+        ),
+      );
+    }
+    ```
+
+    ```dart title="lib/main.dart"
+    import 'package:flutter/material.dart';
+    import 'package:my_app/screens/home.dart';
+    import 'package:my_app/services/loading.dart';
+
+    void main() {
+      runApp(MaterialApp(
+        builder: (context, child) => ValueListenableBuilder<bool>(
+          valueListenable: isLoadingNotifier,
+          builder: (context, isLoading, _) => Stack(
+            fit: StackFit.expand,
+            children: [
+              child!,
+              if (isLoading) ...const [
+                ModalBarrier(dismissible: false, color: Color(0x66000000)),
+                Center(child: CircularProgressIndicator()),
+              ],
+            ],
+          ),
+        ),
+        home: const HomeScreen(),
+      ));
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 ---
 

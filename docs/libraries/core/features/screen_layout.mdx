@@ -5,28 +5,61 @@ description: Ergonomic BuildContext getters for MediaQuery size, shortestSide mo
 
 `ScreenLayout` is a `BuildContext` extension in `package:core_management/extensions/screen_layout.dart` that gives widgets concise getters for screen dimensions, a `< 600` shortest-side mobile check, and the ambient `ThemeData`.
 
-## Usage example
+## Usage: Butterfly vs. Raw Flutter
 
-```dart title="lib/widgets/layout_summary.dart (suggested)"
-import 'package:core_management/extensions/screen_layout.dart';
-import 'package:flutter/material.dart';
+<Tabs>
+  <TabItem label="With Butterfly" value="with-butterfly">
+    Read `context.screenSize`, `context.shortestSide`, `context.mobileLayout`, and `context.themeData` directly on `BuildContext`:
 
-class LayoutSummary extends StatelessWidget {
-  const LayoutSummary({super.key});
+    ```dart title="lib/widgets/layout_summary.dart (suggested)"
+    import 'package:core_management/extensions/screen_layout.dart';
+    import 'package:flutter/material.dart';
 
-  @override
-  Widget build(BuildContext context) {
-    final size = context.screenSize;
-    return Padding(
-      padding: EdgeInsets.all(context.mobileLayout ? 8 : 16),
-      child: Text(
-        '${size.width} x ${size.height}; shortest: ${context.shortestSide}',
-        style: context.themeData.textTheme.bodyMedium,
-      ),
-    );
-  }
-}
-```
+    class LayoutSummary extends StatelessWidget {
+      const LayoutSummary({super.key});
+
+      @override
+      Widget build(BuildContext context) {
+        final size = context.screenSize;
+        return Padding(
+          padding: EdgeInsets.all(context.mobileLayout ? 8 : 16),
+          child: Text(
+            '${size.width} x ${size.height}; shortest: ${context.shortestSide}',
+            style: context.themeData.textTheme.bodyMedium,
+          ),
+        );
+      }
+    }
+    ```
+  </TabItem>
+  <TabItem label="Without Butterfly (Raw Flutter)" value="without-butterfly">
+    Without `core_management`, query `MediaQuery.of(context).size`, compare `.shortestSide < 600` manually, and look up `Theme.of(context)`:
+
+    ```dart title="lib/widgets/layout_summary.dart (suggested)"
+    import 'package:flutter/material.dart';
+
+    class LayoutSummary extends StatelessWidget {
+      const LayoutSummary({super.key});
+
+      @override
+      Widget build(BuildContext context) {
+        final size = MediaQuery.of(context).size;
+        final shortestSide = size.shortestSide;
+        final isMobileLayout = shortestSide < 600;
+        final themeData = Theme.of(context);
+
+        return Padding(
+          padding: EdgeInsets.all(isMobileLayout ? 8 : 16),
+          child: Text(
+            '${size.width} x ${size.height}; shortest: $shortestSide',
+            style: themeData.textTheme.bodyMedium,
+          ),
+        );
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 ---
 
@@ -55,5 +88,5 @@ class LayoutSummary extends StatelessWidget {
 </Property>
 
 <Info>
-  **How `mobileLayout` behaves on desktop/web:** Because `mobileLayout` checks `shortestSide < 600` (not `width < 600`), a wide desktop browser window resized to a short height (`1200 × 500`) will report `mobileLayout == true`. When you need width-driven or parent-constraint layouts, use Flutter's `LayoutBuilder` or check `context.screenSize.width` directly.
+  <Icon name="laptop-code" /> **How `mobileLayout` behaves on desktop/web:** Because `mobileLayout` checks `shortestSide < 600` (not `width < 600`), a wide desktop browser window resized to a short height (`1200 × 500`) will report `mobileLayout == true`. When you need width-driven or parent-constraint layouts, use Flutter's `LayoutBuilder` or check `context.screenSize.width` directly.
 </Info>

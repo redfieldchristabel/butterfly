@@ -1,6 +1,6 @@
 ---
 title: User Storage Repositories
-description: Persist your signed-in AppUser locally with Sembast, Hive CE, Isar Community, or a custom AuthManagementDatabaseRepository.
+description: Persist your signed-in AppUser locally with Sembast, Hive CE, Isar Community, or raw database code.
 ---
 
 Every `AuthServiceRepository<T>` requires a `dbRepo` implementing `AuthManagementDatabaseRepository<T>` (`package:auth_management/auth_management.dart`). This repository caches your resolved `AppUser` locally—it does **not** perform password verification or network sign-in.
@@ -16,13 +16,13 @@ Every `AuthServiceRepository<T>` requires a `dbRepo` implementing `AuthManagemen
 
 ---
 
-## Adapter setup guides
+## Sembast cache: Butterfly vs. Raw Sembast
+
+<Info>Only `lib/main.dart` is a fixed name. Files marked **(suggested)** follow the `butterfly init` layout; rename or move them freely. Replace `my_app` in imports with the `name` from your `pubspec.yaml`.</Info>
 
 <Tabs>
-  <TabItem label="Sembast (Recommended)" value="sembast">
-    `AuthManagementDatabaseSembast<T>` attaches to an already-open Sembast `Database` instance that your app owns. It needs no base model inheritance or Hive/Isar binary adapter generation.
-
-    <Info>Only `lib/main.dart` is a fixed name. Files marked **(suggested)** follow the `butterfly init` layout; rename or move them freely. Replace `my_app` in imports with the `name` from your `pubspec.yaml`.</Info>
+  <TabItem label="With Butterfly (Sembast Adapter)" value="with-butterfly">
+    `AuthManagementDatabaseSembast<T>` attaches to an already-open Sembast `Database` instance that your app owns and wires `getUser()`, `addUser()`, `clearUser()`, and `streamUser()` around store `'auth_management_user'` and key `'current'`:
 
     ```dart title="lib/models/app_user.dart (suggested)"
     class AppUser {
@@ -48,11 +48,56 @@ Every `AuthServiceRepository<T>` requires a `dbRepo` implementing `AuthManagemen
       )..initialize(database);
     }
     ```
-
-    - **Store & key:** Stores the single active user at key `'current'` inside store `'auth_management_user'` (customizable via constructor `storeName`).
-    - **Lifecycle:** Call `initialize(database)` before any read/write (otherwise a `StateError` is thrown). `streamUser()` emits the initial cached user (or `null`) immediately upon subscription, and `addUser` / `clearUser` properly `await` their Sembast transactions.
   </TabItem>
-  <TabItem label="Hive CE" value="hive-ce">
+  <TabItem label="Without Butterfly (Raw Sembast)" value="without-butterfly">
+    Without `auth_management_database_sembast`, you declare a `stringMapStoreFactory.store(...)`, create a `.record('current')` reference, and map snapshots yourself:
+
+    ```dart title="lib/models/app_user.dart (suggested)"
+    class AppUser {
+      const AppUser(this.id);
+      final String id;
+
+      factory AppUser.fromJson(Map<String, Object?> json) =>
+          AppUser(json['id'] as String);
+
+      Map<String, Object?> toJson() => {'id': id};
+    }
+    ```
+
+    ```dart title="lib/services/user_cache.dart (suggested)"
+    import 'package:my_app/models/app_user.dart';
+    import 'package:sembast/sembast.dart';
+
+    class RawSembastUserCache {
+      RawSembastUserCache(this.database);
+
+      final Database database;
+      final RecordRef<String, Map<String, Object?>> _record =
+          stringMapStoreFactory.store('auth_management_user').record('current');
+
+      Future<AppUser?> getUser() async {
+        final raw = await _record.get(database);
+        return raw == null ? null : AppUser.fromJson(raw);
+      }
+
+      Future<void> addUser(AppUser user) => _record.put(database, user.toJson());
+
+      Future<void> clearUser() => _record.delete(database);
+
+      Stream<AppUser?> streamUser() => _record.onSnapshot(database).map(
+        (snap) => snap == null ? null : AppUser.fromJson(snap.value),
+      );
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+---
+
+## Other storage adapters & caveats
+
+<AccordionGroup>
+  <Accordion title="Hive CE (auth_management_database_hive_ce)">
     1. Import `AuthManagementDatabaseHiveCe<T>` from `package:auth_management_database_hive_ce/auth_management_database_hive_ce.dart` and `BaseUser` from `package:auth_management_database_hive_ce/base_user.dart`.
     2. Subclass `BaseUser` (which extends `HiveObject`) and register your generated Hive `TypeAdapter` **before** calling `await hiveRepo.initialize()`.
     3. `initialize()` resolves `getApplicationDocumentsDirectory()`, initializes Hive there, and opens box `'currentUser'`, storing the active record at integer key `0`.
@@ -60,8 +105,8 @@ Every `AuthServiceRepository<T>` requires a `dbRepo` implementing `AuthManagemen
     <Warning>
       **Unawaited writes & native-only path:** `AuthManagementDatabaseHiveCe.addUser` calls `_userBox.put(0, user)` and `clearUser` calls `_userBox.clear()` without returning or awaiting the `Future`. In addition, `initialize()` calls `getApplicationDocumentsDirectory()` unconditionally, which is not supported on Flutter Web.
     </Warning>
-  </TabItem>
-  <TabItem label="Isar Community" value="isar">
+  </Accordion>
+  <Accordion title="Isar Community (auth_management_database_isar_community)">
     `AuthManagementIsarRepository<T>` requires your model to extend `BaseUser` from `package:auth_management_database_isar_community/auth_management_database_isar_community.dart` (which provides `Id id = Isar.autoIncrement`) and requires calling `await isarRepo.initialize(AppUserSchema)` before use. It throws `UnsupportedError` on Web.
 
     <Error>
@@ -72,13 +117,13 @@ Every `AuthServiceRepository<T>` requires a `dbRepo` implementing `AuthManagemen
 
       Fix these three methods in `packages/auth_management_database_isar_community/lib/src/repository.dart` before using Isar in production.
     </Error>
-  </TabItem>
-  <TabItem label="In-Memory" value="in-memory">
+  </Accordion>
+  <Accordion title="In-Memory (InMemoryDatabaseRepository)">
     `InMemoryDatabaseRepository<T>` (`package:auth_management/auth_management.dart`) wraps a `ValueNotifier<T?>(null)`.
     - **Best for:** Unit tests, widget previews, and quick Riverpod prototypes.
     - **Limitations:** Loses state on app restart, does not emit the current value when `streamUser()` is first subscribed to, and does not remove its listener on stream cancellation.
-  </TabItem>
-</Tabs>
+  </Accordion>
+</AccordionGroup>
 
 ---
 

@@ -5,11 +5,23 @@ description: Wrap ThemeData with overridable Material 3 text style getters and i
 
 `CoreTypographyTheme` (`package:core_management/core_typography_theme.dart`) wraps a Flutter `ThemeData` instance and exposes overridable getters for every Material 3 text role—both standard (`textTheme`) and primary (`primaryTextTheme`).
 
-## Usage & customization
+## Usage & customization: Butterfly vs. Raw Flutter
 
 <Tabs>
-  <TabItem label="Read styles in a widget" value="read-typography">
-    Construct `CoreTypographyTheme(Theme.of(context))` inside `build()` so your widget automatically reacts to inherited theme changes:
+  <TabItem label="With Butterfly" value="with-butterfly">
+    Construct `CoreTypographyTheme(Theme.of(context))` in a widget, or subclass `CoreTypographyTheme` to override specific text roles and wire it into `BaseThemeService.coreTypographyTheme`:
+
+    ```dart title="lib/services/typography.dart (suggested)"
+    import 'package:core_management/core_typography_theme.dart';
+    import 'package:flutter/material.dart';
+
+    class AppTypography extends CoreTypographyTheme {
+      AppTypography(super.themeData);
+
+      @override
+      TextStyle get bodyLarge => super.bodyLarge.copyWith(fontWeight: FontWeight.w500);
+    }
+    ```
 
     ```dart title="lib/widgets/welcome_text.dart (suggested)"
     import 'package:core_management/core_typography_theme.dart';
@@ -26,22 +38,30 @@ description: Wrap ThemeData with overridable Material 3 text style getters and i
     }
     ```
   </TabItem>
-  <TabItem label="Subclass & wire into BaseThemeService" value="subclass-typography">
-    Style properties on `CoreTypographyTheme` are getters (not mutable fields). To customize typography across your app, subclass `CoreTypographyTheme`, override the getters you want to tweak, and return your subclass from `BaseThemeService.coreTypographyTheme`:
+  <TabItem label="Without Butterfly (Raw Flutter)" value="without-butterfly">
+    Without `core_management`, you customize `TextTheme` via `ThemeData.textTheme.copyWith(...)` and read nullable `Theme.of(context).textTheme.headlineMedium` directly in widgets:
 
     ```dart title="lib/services/typography.dart (suggested)"
-    import 'package:core_management/core_typography_theme.dart';
     import 'package:flutter/material.dart';
 
-    class AppTypography extends CoreTypographyTheme {
-      AppTypography(super.themeData);
-
-      @override
-      TextStyle get bodyLarge => super.bodyLarge.copyWith(fontWeight: FontWeight.w500);
-    }
+    TextTheme buildAppTextTheme(TextTheme base) => base.copyWith(
+      bodyLarge: base.bodyLarge?.copyWith(fontWeight: FontWeight.w500),
+    );
     ```
 
-    When overriding `coreTypographyTheme` inside your `ThemeService`, pass `iTheme` (`AppTypography(iTheme)`) and ensure `theme(context)` has been called first.
+    ```dart title="lib/widgets/welcome_text.dart (suggested)"
+    import 'package:flutter/material.dart';
+
+    class WelcomeText extends StatelessWidget {
+      const WelcomeText({super.key});
+
+      @override
+      Widget build(BuildContext context) {
+        final textTheme = Theme.of(context).textTheme;
+        return Text('Welcome', style: textTheme.headlineMedium);
+      }
+    }
+    ```
   </TabItem>
 </Tabs>
 

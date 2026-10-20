@@ -3,28 +3,68 @@ title: Hex Colors
 description: Parse 6-digit RGB or 8-digit ARGB hex strings and format Flutter Color instances.
 ---
 
-The `HexColor` extension on `Color` converts between hexadecimal color strings and Flutter's `Color` class, using **alpha-first (`#aarrggbb`)** ordering for 8-digit values.
+The `HexColor` extension on `Color` (`package:core_management/extensions/hex_color.dart`) converts between hexadecimal color strings and Flutter's `Color` class, using **alpha-first (`#aarrggbb`)** ordering for 8-digit values.
 
-## Quickstart & runnable test
+## Usage: Butterfly vs. Raw Flutter
 
-Import `package:core_management/extensions/hex_color.dart` directly:
+<Tabs>
+  <TabItem label="With Butterfly" value="with-butterfly">
+    Import `package:core_management/extensions/hex_color.dart` and call `HexColor.fromHex(...)` or `color.toHex(...)`:
 
-```dart title="test/hex_color_test.dart (suggested)"
-import 'package:core_management/extensions/hex_color.dart';
-import 'package:flutter_test/flutter_test.dart';
+    ```dart title="test/hex_color_test.dart (suggested)"
+    import 'package:core_management/extensions/hex_color.dart';
+    import 'package:flutter_test/flutter_test.dart';
 
-void main() {
-  test('converts between hex strings and colors', () {
-    final color = HexColor.fromHex('#42A5F5');
-    expect(color.toHex(), '#ff42a5f5');
-    expect(color.toHex(leadingHashSign: false), 'ff42a5f5');
-    expect(color.toHex(withOpacityFormat: false), '#42a5f5');
+    void main() {
+      test('converts between hex strings and colors', () {
+        final color = HexColor.fromHex('#42A5F5');
+        expect(color.toHex(), '#ff42a5f5');
+        expect(color.toHex(leadingHashSign: false), 'ff42a5f5');
+        expect(color.toHex(withOpacityFormat: false), '#42a5f5');
 
-    final translucent = HexColor.fromHex('8042A5F5');
-    expect(translucent.toHex(), '#8042a5f5');
-  });
-}
-```
+        final translucent = HexColor.fromHex('8042A5F5');
+        expect(translucent.toHex(), '#8042a5f5');
+      });
+    }
+    ```
+  </TabItem>
+  <TabItem label="Without Butterfly (Raw Flutter)" value="without-butterfly">
+    Without `core_management`, you parse base-16 integers manually and bit-shift the floating-point `a`, `r`, `g`, `b` channels to format hex strings:
+
+    ```dart title="test/hex_color_test.dart (suggested)"
+    import 'dart:ui';
+    import 'package:flutter_test/flutter_test.dart';
+
+    Color parseHexColor(String hexString) {
+      final buffer = StringBuffer();
+      if (hexString.length == 6 || hexString.length == 7) buffer.write('ff');
+      buffer.write(hexString.replaceFirst('#', ''));
+      return Color(int.parse(buffer.toString(), radix: 16));
+    }
+
+    String formatHexColor(
+      Color color, {
+      bool leadingHashSign = true,
+      bool withOpacityFormat = true,
+    }) {
+      String ch(double c) =>
+          (c * 255.0).round().clamp(0, 255).toRadixString(16).padLeft(2, '0');
+      return '${leadingHashSign ? '#' : ''}'
+          '${withOpacityFormat ? ch(color.a) : ''}'
+          '${ch(color.r)}${ch(color.g)}${ch(color.b)}';
+    }
+
+    void main() {
+      test('converts between hex strings and colors', () {
+        final color = parseHexColor('#42A5F5');
+        expect(formatHexColor(color), '#ff42a5f5');
+        expect(formatHexColor(color, leadingHashSign: false), 'ff42a5f5');
+        expect(formatHexColor(color, withOpacityFormat: false), '#42a5f5');
+      });
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 ---
 

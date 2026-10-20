@@ -1,57 +1,127 @@
 ---
 title: Task Queue Mixin
-description: Queue mounted-safe synchronous callbacks on StatefulWidget State with scheduler-aware execution.
+description: Prevent setState-during-build and unmounted State crashes with scheduler-aware FIFO callback queueing.
 ---
 
-`TaskQueueMixin<T>` is a lightweight mixin for `State<T>` that queues `VoidCallback` closures in FIFO order and runs them safely when the widget is mounted and Flutter's scheduler is ready.
+`TaskQueueMixin<T>` (`package:core_management/mixins/task_queue.dart`) makes Flutter `StatefulWidget` states resilient against the two most common widget lifecycle crashes:
+1. **`setState() or markNeedsBuild() called during build`** (triggered when a callback fires synchronously while Flutter is building or laying out frames).
+2. **`setState() called after dispose()`** (triggered when an event or post-frame callback fires after the widget left the tree).
 
-## Quickstart example
+Mix `TaskQueueMixin` onto your `State<T>` and wrap state updates or navigation triggers in `enqueue(() { ... })`.
 
-Import `package:core_management/mixins/task_queue.dart` directly (it is not re-exported by the main `core_management.dart` barrel):
+## Usage: Butterfly vs. Raw Flutter
 
-```dart title="lib/widgets/queued_counter.dart (suggested)"
-import 'package:core_management/mixins/task_queue.dart';
-import 'package:flutter/material.dart';
+<Tabs>
+  <TabItem label="With Butterfly" value="with-butterfly">
+    Mix in `TaskQueueMixin<QueuedCounter>` and call `enqueue(...)`—mounted checks, FIFO ordering, scheduler-phase detection, and `dispose()` cleanup happen automatically:
 
-class QueuedCounter extends StatefulWidget {
-  const QueuedCounter({super.key});
+    ```dart title="lib/widgets/queued_counter.dart (suggested)"
+    import 'package:core_management/mixins/task_queue.dart';
+    import 'package:flutter/material.dart';
 
-  @override
-  State<QueuedCounter> createState() => _QueuedCounterState();
-}
+    class QueuedCounter extends StatefulWidget {
+      const QueuedCounter({super.key});
 
-class _QueuedCounterState extends State<QueuedCounter>
-    with TaskQueueMixin<QueuedCounter> {
-  int count = 0;
+      @override
+      State<QueuedCounter> createState() => _QueuedCounterState();
+    }
 
-  @override
-  Widget build(BuildContext context) => TextButton(
-    onPressed: () => enqueue(() => setState(() => count++)),
-    child: Text('$count'),
-  );
-}
-```
+    class _QueuedCounterState extends State<QueuedCounter>
+        with TaskQueueMixin<QueuedCounter> {
+      int count = 0;
+
+      @override
+      Widget build(BuildContext context) => TextButton(
+        onPressed: () => enqueue(() => setState(() => count++)),
+        child: Text('$count'),
+      );
+    }
+    ```
+  </TabItem>
+  <TabItem label="Without Butterfly (Raw Flutter)" value="without-butterfly">
+    If you remove `core_management`, you have to maintain a `Queue<VoidCallback>`, inspect `SchedulerBinding.instance.schedulerPhase`, schedule post-frame callbacks during build/layout phases, check `mounted` before every execution, and clear the queue in `dispose()`:
+
+    ```dart title="lib/widgets/queued_counter.dart (suggested)"
+    import 'dart:collection';
+    import 'package:flutter/material.dart';
+    import 'package:flutter/scheduler.dart';
+
+    class QueuedCounter extends StatefulWidget {
+      const QueuedCounter({super.key});
+
+      @override
+      State<QueuedCounter> createState() => _QueuedCounterState();
+    }
+
+    class _QueuedCounterState extends State<QueuedCounter> {
+      final Queue<VoidCallback> _taskQueue = Queue<VoidCallback>();
+      bool _isProcessing = false;
+      int count = 0;
+
+      void enqueue(VoidCallback callback) {
+        _taskQueue.add(() {
+          if (!mounted) return;
+          callback();
+        });
+        if (!_isProcessing) _processQueue();
+      }
+
+      void _processQueue() {
+        if (_taskQueue.isEmpty) {
+          _isProcessing = false;
+          return;
+        }
+        _isProcessing = true;
+        final phase = SchedulerBinding.instance.schedulerPhase;
+        if (phase == SchedulerPhase.idle ||
+            phase == SchedulerPhase.postFrameCallbacks) {
+          _taskQueue.removeFirst()();
+          _processQueue();
+        } else {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _taskQueue.removeFirst()();
+            _processQueue();
+          });
+        }
+      }
+
+      @override
+      void dispose() {
+        _taskQueue.clear();
+        super.dispose();
+      }
+
+      @override
+      Widget build(BuildContext context) => TextButton(
+        onPressed: () => enqueue(() => setState(() => count++)),
+        child: Text('$count'),
+      );
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 ---
 
 ## How `enqueue()` schedules work
 
-When you call `enqueue(VoidCallback callback)`, the mixin wraps your callback in a `if (mounted)` check, pushes it onto an internal `Queue<VoidCallback>`, and inspects `SchedulerBinding.instance.schedulerPhase`:
+When you call `enqueue(VoidCallback callback)`, the mixin wraps your callback in an `if (!mounted) return;` guard, pushes it onto an internal `Queue<VoidCallback>`, and inspects `SchedulerBinding.instance.schedulerPhase`:
 
 <Steps>
-  <Step title="Idle or postFrameCallbacks phase → runs immediately">
-    If the scheduler is currently in `SchedulerPhase.idle` or `SchedulerPhase.postFrameCallbacks`, the queue drains synchronously right away. It does **not** wait for the next frame.
+  <Step title="Idle or postFrameCallbacks phase → runs immediately" icon="bolt">
+    If the scheduler is currently in `SchedulerPhase.idle` (like a button tap or network response) or `SchedulerPhase.postFrameCallbacks`, the queue drains synchronously right away. It does **not** add unnecessary next-frame latency.
   </Step>
-  <Step title="Mid-frame build/layout phase → defers to post-frame">
-    During `transientCallbacks`, `midFrameMicrotasks`, or `persistentCallbacks` (such as inside `build()`), the mixin registers `SchedulerBinding.instance.addPostFrameCallback` and drains the queue once the frame finishes.
+  <Step title="Mid-frame build/layout phase → defers to post-frame" icon="clock">
+    During `transientCallbacks`, `midFrameMicrotasks`, or `persistentCallbacks` (such as when a listener or `initState`/build helper triggers during a frame build), the mixin registers `WidgetsBinding.instance.addPostFrameCallback` and drains the queue safely once the frame finishes.
   </Step>
-  <Step title="Automatic cleanup on dispose()">
-    When the widget is disposed, `dispose()` clears any remaining callbacks in `_taskQueue`, and pending post-frame callbacks verify `if (mounted)` before touching state.
+  <Step title="Automatic cleanup on dispose()" icon="trash-can">
+    When the widget is disposed, `dispose()` clears any remaining callbacks in `_taskQueue`, and pending post-frame callbacks verify `if (!mounted) return;` before touching state.
   </Step>
 </Steps>
 
 <Info>
-  Need a callback to **always** wait until after the current or next frame—even when called from an idle event handler? Call `WidgetsBinding.instance.addPostFrameCallback` directly instead of `enqueue()`.
+  <Icon name="circle-info" /> Need a callback to **always** wait until after the current or next frame—even when called from an idle event handler? Call `WidgetsBinding.instance.addPostFrameCallback` directly instead of `enqueue()`.
 </Info>
 
 ---
@@ -63,10 +133,10 @@ When you call `enqueue(VoidCallback callback)`, the mixin wraps your callback in
 </Warning>
 
 <AccordionGroup>
-  <Accordion defaultOpen title="Synchronous VoidCallback only (not an async task queue)">
+  <Accordion defaultOpen title="Synchronous VoidCallback only (not an async Future queue)">
     `enqueue` takes a synchronous `VoidCallback` (`void Function()`). Passing an `async` closure (`() async { await fetchData(); }`) invokes the closure in FIFO order, but the queue **does not `await` the returned `Future`** before starting the next queued callback.
   </Accordion>
   <Accordion title="Check mounted after awaiting inside an async callback">
-    The mixin's `if (mounted)` guard runs immediately before invoking your callback. If your callback kicks off async work, check `if (!mounted) return;` again after every `await` before calling `setState`.
+    The mixin's `if (!mounted) return;` guard runs immediately before invoking your callback. If your callback kicks off async work, either check `if (!mounted) return;` after `await` or wrap the post-await `setState` in another `enqueue(() => setState(...))`.
   </Accordion>
 </AccordionGroup>

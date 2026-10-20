@@ -1,6 +1,6 @@
 ---
 title: CLI & MCP Reference
-description: Generate serializable or immutable models, stamp app versions, commit changes, and run the Butterfly MCP server.
+description: Generate serializable or immutable models, stamp app versions, commit changes, and compare against manual Dart boilerplate.
 ---
 
 The `butterfly` CLI (`butterfly_cli`) automates repetitive project tasks: generating model boilerplate, stamping `lib/version.dart` from `pubspec.yaml`, creating conventional commits, and exposing an MCP server for AI coding agents.
@@ -17,28 +17,60 @@ The `butterfly` CLI (`butterfly_cli`) automates repetitive project tasks: genera
 | `butterfly mcp-server` | `mcp`, `mcp-srv` | Launches the stdio Model Context Protocol (MCP) server |
 
 <Info>
-  **Global flags:** Pass `--verbose` (`-v`) on any command for detailed logging, or `--dev` (`-D`) to rethrow caught exceptions with full stack traces instead of taking the standard exit path. There is no `butterfly generate service` subcommand.
+  <Icon name="terminal" /> **Global flags:** Pass `--verbose` (`-v`) on any command for detailed logging, or `--dev` (`-D`) to rethrow caught exceptions with full stack traces instead of taking the standard exit path. There is no `butterfly generate service` subcommand.
 </Info>
 
 ---
 
-## Model generator (`generate model`)
+## Model generator (`generate model`): CLI vs. Manual Dart
 
-Run from any project directory containing `pubspec.yaml` and `lib/`:
+<Tabs>
+  <TabItem label="With Butterfly CLI" value="cli-with-butterfly">
+    Run inside any project containing `pubspec.yaml` and `lib/` to scaffold `json_serializable` or `built_value` models in one command:
 
-```bash
-# Default: mutable model with json_serializable hooks
-butterfly generate model Booking
+    ```bash
+    # Default: mutable model with json_serializable hooks
+    butterfly generate model Booking
 
-# Nested path -> writes lib/models/auth/user.dart with class AuthUser
-butterfly g m AuthUser --path auth
+    # Nested path -> writes lib/models/auth/user.dart with class AuthUser
+    butterfly g m AuthUser --path auth
 
-# Plain Dart class without JSON serialization
-butterfly generate model Settings --no-serializable
+    # Plain Dart class without JSON serialization
+    butterfly generate model Settings --no-serializable
 
-# Immutable built_value model
-butterfly generate model Invoice --immutable
-```
+    # Immutable built_value model
+    butterfly generate model Invoice --immutable
+    ```
+
+    Then add your fields and run `dart run build_runner build`.
+  </TabItem>
+  <TabItem label="Without Butterfly CLI (Manual Model)" value="cli-without-butterfly">
+    The CLI only writes standard Dart source files—it adds **zero runtime dependency** on Butterfly. If you prefer not to use the CLI, create `lib/models/booking.dart` by hand with `@JsonSerializable()`:
+
+    ```dart title="lib/models/booking.dart (suggested)"
+    import 'dart:convert';
+    import 'package:json_annotation/json_annotation.dart';
+
+    part 'booking.g.dart';
+
+    @JsonSerializable()
+    class Booking {
+      const Booking({required this.id});
+      final String id;
+
+      factory Booking.fromJson(Map<String, dynamic> json) =>
+          _$BookingFromJson(json);
+
+      Map<String, dynamic> toJson() => _$BookingToJson(this);
+
+      factory Booking.fromJsonRaw(String rawJson) =>
+          Booking.fromJson(jsonDecode(rawJson) as Map<String, dynamic>);
+
+      String toJsonRaw() => jsonEncode(toJson());
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 ### Generator flags
 

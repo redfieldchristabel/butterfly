@@ -1,17 +1,17 @@
 ---
 title: Core & Theme Services
-description: Bootstrap global error handling, configure a seeded Material 3 theme, and explore standalone core utilities.
+description: Bootstrap global error handling, configure a seeded Material 3 theme, and compare against raw Flutter setup.
 ---
 
 `core_management` provides the foundation of a Butterfly app: a singleton `BaseCoreService` that wires error handling, theming (`BaseThemeService`), and app-wide loading overlays (`BaseLoadingService`), alongside standalone mixins and extensions.
 
-## Quickstart setup
+## Setup: Butterfly vs. Raw Flutter
 
 <Info>Only `lib/main.dart` is a fixed name. Files marked **(suggested)** follow the `butterfly init` layout; rename or move them freely. Replace `my_app` in imports with the `name` from your `pubspec.yaml`.</Info>
 
-<Steps>
-  <Step title="Define your CoreService (and optional ThemeService)">
-    Subclass `BaseCoreService` once for your application. Its constructor registers `BaseCoreService.instance` (`late final`), so only one instance may be created per isolate.
+<Tabs>
+  <TabItem label="With Butterfly" value="with-butterfly">
+    Subclass `BaseThemeService` and `BaseCoreService`, call `coreService.errorHandler()` at startup, and resolve the seeded Material 3 theme with `coreService.getTheme(context)`:
 
     ```dart title="lib/services/theme.dart (suggested)"
     import 'package:core_management/core_management.dart';
@@ -33,9 +33,6 @@ description: Bootstrap global error handling, configure a seeded Material 3 them
 
     final coreService = CoreService();
     ```
-  </Step>
-  <Step title="Install error handlers and apply the theme in main.dart">
-    Call `coreService.errorHandler()` during startup to attach `FlutterError.onError` and `PlatformDispatcher.instance.onError` hooks, then build your `ThemeData` with `coreService.getTheme(context)`:
 
     ```dart title="lib/main.dart"
     import 'package:flutter/material.dart';
@@ -54,8 +51,45 @@ description: Bootstrap global error handling, configure a seeded Material 3 them
       ));
     }
     ```
-  </Step>
-</Steps>
+  </TabItem>
+  <TabItem label="Without Butterfly (Raw Flutter)" value="without-butterfly">
+    Without `core_management`, you wire `FlutterError.onError` and `PlatformDispatcher.instance.onError` manually in `main()` and construct a `ColorScheme.fromSeed` theme builder yourself:
+
+    ```dart title="lib/services/theme.dart (suggested)"
+    import 'package:flutter/material.dart';
+
+    ThemeData buildAppTheme(BuildContext context) {
+      final brightness = Theme.of(context).brightness;
+      final colorScheme = ColorScheme.fromSeed(
+        seedColor: Colors.teal,
+        brightness: brightness,
+      );
+      return ThemeData(useMaterial3: true, colorScheme: colorScheme);
+    }
+    ```
+
+    ```dart title="lib/main.dart"
+    import 'dart:ui';
+    import 'package:flutter/material.dart';
+    import 'package:my_app/services/theme.dart';
+
+    void main() {
+      WidgetsFlutterBinding.ensureInitialized();
+      FlutterError.onError = FlutterError.presentError;
+      PlatformDispatcher.instance.onError = (error, stack) => false;
+
+      runApp(MaterialApp(
+        home: Builder(
+          builder: (context) => Theme(
+            data: buildAppTheme(context),
+            child: const Scaffold(body: Center(child: Text('Raw Flutter'))),
+          ),
+        ),
+      ));
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 <Warning>
   Simply constructing `CoreService()` does **not** install global error hooks—you must call `coreService.errorHandler()`. Also make sure to retain a `final` field when overriding `themeService` (the base getter constructs a fresh `DefaultThemeService` on every access).
@@ -102,6 +136,9 @@ description: Bootstrap global error handling, configure a seeded Material 3 them
 The main `package:core_management/core_management.dart` barrel exports the service base classes (`BaseCoreService`, `BaseThemeService`, `BaseErrorHandlerService`, `BaseLoadingService`, and `BaseRouteService`). All other utilities use explicit sub-path imports:
 
 <CardGroup cols={2}>
+  <Card title="Task Queue Mixin" icon="list-check" href="/libraries/core/features/enqueue">
+    `package:core_management/mixins/task_queue.dart` — Scheduler-aware FIFO `enqueue()` for `State<T>` that prevents `setState` build/dispose errors.
+  </Card>
   <Card title="GoRouter & Auth Guards" icon="signs-post" href="/libraries/core/features/route_service">
     `package:core_management_route_go_router/...` — Protected routes, public paths, and post-sign-in deep-link restoration.
   </Card>
@@ -111,9 +148,6 @@ The main `package:core_management/core_management.dart` barrel exports the servi
   <Card title="Loading Overlay" icon="spinner" href="/libraries/core/features/loading_overlay">
     `package:core_management/widgets/loading_overlay.dart` — App-wide overlay driven by `coreService.loadingService.controller`.
   </Card>
-  <Card title="Task Queue Mixin" icon="list-check" href="/libraries/core/features/enqueue">
-    `package:core_management/mixins/task_queue.dart` — Scheduler-aware FIFO `enqueue()` for `State<T>` with automatic `mounted` checks.
-  </Card>
   <Card title="Lock Service" icon="lock" href="/libraries/core/features/lock_service">
     `package:core_management/services/core_lock.dart` — Synchronous in-isolate operation guards (`acquire` / `release`) with expiring keys.
   </Card>
@@ -121,7 +155,3 @@ The main `package:core_management/core_management.dart` barrel exports the servi
     `extensions/screen_layout.dart` & `extensions/hex_color.dart` — `BuildContext` breakpoint shortcuts and `#aarrggbb` color parsing.
   </Card>
 </CardGroup>
-
-<Info>
-  **Implementation source:** `packages/core_management/lib/core_management.dart`, `lib/services/`, and `lib/src/services/`.
-</Info>

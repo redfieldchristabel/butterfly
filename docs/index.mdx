@@ -1,12 +1,12 @@
 ---
 title: Butterfly
-description: Modular Flutter architecture packages and Dart CLI generators for core services, GoRouter auth guards, and zero-boilerplate identity management.
+description: Ejectable Flutter architecture packages and Dart CLI generators for core services, GoRouter auth guards, and zero-boilerplate identity management.
 ---
 
-Butterfly is a **modular toolkit of Flutter packages and a Dart CLI**, not a rigid monolithic framework. Pull in a single package for GoRouter authentication redirects, wire up zero-boilerplate Riverpod user state, or use the CLI to scaffold `built_value` and `json_serializable` models.
+Butterfly is a **modular, ejectable toolkit of Flutter packages and a Dart CLI**, not a rigid lock-in framework. Every package removes repetitive plumbing while keeping your domain models and widgets clean—and every page in these docs shows both the **With Butterfly** setup and the **Without Butterfly (Raw Flutter)** equivalent so you can adopt or eject any piece at any time.
 
 <Info>
-  **Ground-truth documentation:** Every guide and code block on this site is verified directly against the current repository source code and compiler—including honest callouts where packages have sharp edges or unfinished wiring.
+  <Icon name="shield-halved" /> **Zero Lock-In Guarantee:** If you ever outgrow a Butterfly package or want to drop the dependency, every feature maps directly to standard Flutter, `go_router`, `flutter_riverpod`, or database primitives. You just trade Butterfly's concise glue for the raw boilerplate shown in the second tab of each guide.
 </Info>
 
 ## Explore the ecosystem
@@ -21,14 +21,14 @@ Butterfly is a **modular toolkit of Flutter packages and a Dart CLI**, not a rig
   <Card title="Core & Theme Services" icon="layer-group" href="/libraries/core">
     Centralize Flutter/platform error handling, Material 3 seeded themes, typography, and app-wide loading overlays.
   </Card>
+  <Card title="Task Queue Mixin (Error-Proof State)" icon="list-check" href="/libraries/core/features/enqueue">
+    Prevent *"setState() called during build"* and *"called after dispose()"* crashes with `TaskQueueMixin` and `enqueue()`.
+  </Card>
   <Card title="GoRouter & Auth Guards" icon="signs-post" href="/libraries/core/features/route_service">
     Protect routes, allow public paths, and preserve deep-linked destinations across sign-in and sign-up flows.
   </Card>
-  <Card title="Authentication & Storage" icon="shield-halved" href="/libraries/auth">
+  <Card title="Authentication & Storage" icon="key" href="/libraries/auth">
     Decouple external identity (Firebase, Google, OAuth2) from your app user model and local cache (Sembast, Hive, Isar).
-  </Card>
-  <Card title="CLI & MCP Server" icon="terminal" href="/features">
-    Generate serializable or immutable models, stamp `lib/version.dart`, create conventional commits, or run the stdio MCP server.
   </Card>
 </CardGroup>
 
@@ -38,24 +38,21 @@ Butterfly separates your app into clean, replaceable layers so your UI never tal
 
 <Tabs>
   <TabItem label="Authentication flow" value="auth-flow">
-    1. **External Identity (`IdentityAuthRepository`):** Watches Firebase Auth or an OAuth2 session.
-    2. **Profile Resolution (`fetchUser`):** Maps that raw identity to your own `AppUser` domain model.
-    3. **Local Cache (`dbRepo`):** Persists `AppUser` in Sembast, Hive CE, Isar, or memory so repeat startups resolve without unnecessary network calls.
-    4. **State Bridge (`providerRepo`):** Automatically pushes every user emission and sign-out event into Riverpod (`userProvider`) or your custom state adapter.
+    1. <Icon name="id-card" /> **External Identity (`IdentityAuthRepository`):** Watches Firebase Auth or an OAuth2 session.
+    2. <Icon name="user-check" /> **Profile Resolution (`fetchUser`):** Maps that raw identity to your own `AppUser` domain model.
+    3. <Icon name="database" /> **Local Cache (`dbRepo`):** Persists `AppUser` in Sembast, Hive CE, Isar, or memory so repeat startups resolve without unnecessary network calls.
+    4. <Icon name="bolt" /> **State Bridge (`providerRepo`):** Automatically pushes every user emission and sign-out event into Riverpod (`userProvider`) or your custom state adapter.
   </TabItem>
   <TabItem label="Core & routing flow" value="core-flow">
-    1. **App Bootstrap (`BaseCoreService`):** Installs `FlutterError.onError` and `PlatformDispatcher.instance.onError` hooks before `runApp`.
-    2. **Theme & Typography (`BaseThemeService`):** Builds a seeded Material 3 `ColorScheme` and exposes typed `CoreTypographyTheme` styles.
-    3. **Auth-Aware Routing (`GoRouterAuthRoute`):** Evaluates route guards in a strict 8-step sequence, saving blocked deep links in `postSignInRedirect` and replaying them once signed in.
+    1. <Icon name="bug-slash" /> **App Bootstrap (`BaseCoreService`):** Installs `FlutterError.onError` and `PlatformDispatcher.instance.onError` hooks before `runApp`.
+    2. <Icon name="palette" /> **Theme & Typography (`BaseThemeService`):** Builds a seeded Material 3 `ColorScheme` and exposes typed `CoreTypographyTheme` styles.
+    3. <Icon name="signs-post" /> **Auth-Aware Routing (`GoRouterAuthRoute`):** Evaluates route guards in a strict 8-step sequence, saving blocked deep links in `postSignInRedirect` and replaying them once signed in.
   </TabItem>
-  <TabItem label="Project conventions" value="conventions">
-    When you scaffold with `butterfly init`, files are organized under `lib/`:
-    - `lib/models/` — Domain models (`AppUser`, generated `.g.dart` parts)
-    - `lib/services/` — App singletons (`CoreService`, `ThemeService`, `AuthService`, `RouteService`)
-    - `lib/screens/` — Top-level route destinations
-    - `lib/widgets/` — Reusable UI components
-
-    These folders are a helpful convention, not a requirement enforced by the runtime packages.
+  <TabItem label="Zero lock-in (Ejectability)" value="ejectability">
+    Why teams hesitate to adopt utility libraries is fear of abandonment. Butterfly solves this in three ways:
+    - **You own the classes:** You subclass `BaseCoreService` or `AuthServiceRepository<AppUser>` in your own `lib/services/` folder.
+    - **Pure domain models:** `AppUser` is your own class; `RiverpodUser` and `FirebaseUser` are tiny mixins you can remove in seconds.
+    - **Side-by-side escape hatches:** Every guide on this site includes a **Without Butterfly** tab with working, analyzable Dart code showing the exact raw implementation.
   </TabItem>
 </Tabs>
 

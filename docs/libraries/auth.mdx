@@ -31,42 +31,84 @@ description: Decouple your application user model, external identity provider, l
 | Firebase Auth supplies `firebase.User` identity | `FirebaseAuthManagementRepository<T extends FirebaseUser>` | `auth_management_firebase` |
 | An OAuth2 server supplies an `oauth2.Client` session | `BaseOauth2AuthManagement<T>` | `auth_management_oauth2` |
 
-<Info>
-  **State-management agnostic by design:** You can consume `authService.streamUser()` directly from BLoC/Cubit, Provider, `ValueNotifier`, or `StreamBuilder`. If you use Riverpod, the [Riverpod Auto-Sync bridge](/libraries/auth/features/riverpod) wires `providerRepo` for you automatically.
-</Info>
-
 ---
 
-## Quickstart: Custom API authentication service
-
-When your backend returns the complete `AppUser` upon login, extend `AuthServiceRepository<AppUser>` and store the authenticated user in `dbRepo`:
+## Custom API auth service: Butterfly vs. Raw Dart
 
 <Info>Only `lib/main.dart` is a fixed name. Files marked **(suggested)** follow the `butterfly init` layout; rename or move them freely. Replace `my_app` in imports with the `name` from your `pubspec.yaml`.</Info>
 
-```dart title="lib/models/app_user.dart (suggested)"
-class AppUser {
-  const AppUser(this.id);
-  final String id;
-}
-```
+<Tabs>
+  <TabItem label="With Butterfly" value="with-butterfly">
+    Extend `AuthServiceRepository<AppUser>`, provide `dbRepo`, and write your `signIn` method—`currentUser` tracking, `streamUser()`, `signOut()`, and `providerRepo` synchronization come built in:
 
-```dart title="lib/services/auth.dart (suggested)"
-import 'package:auth_management/auth_management.dart';
-import 'package:my_app/models/app_user.dart';
+    ```dart title="lib/models/app_user.dart (suggested)"
+    class AppUser {
+      const AppUser(this.id);
+      final String id;
+    }
+    ```
 
-class AuthService extends AuthServiceRepository<AppUser> {
-  AuthService({required this.dbRepo, required this.login});
+    ```dart title="lib/services/auth.dart (suggested)"
+    import 'package:auth_management/auth_management.dart';
+    import 'package:my_app/models/app_user.dart';
 
-  @override
-  final AuthManagementDatabaseRepository<AppUser> dbRepo;
-  final Future<AppUser> Function(String email, String password) login;
+    class AuthService extends AuthServiceRepository<AppUser> {
+      AuthService({required this.dbRepo, required this.login});
 
-  Future<void> signIn(String email, String password) async {
-    final user = await login(email, password);
-    await dbRepo.addUser(user);
-  }
-}
-```
+      @override
+      final AuthManagementDatabaseRepository<AppUser> dbRepo;
+      final Future<AppUser> Function(String email, String password) login;
+
+      Future<void> signIn(String email, String password) async {
+        final user = await login(email, password);
+        await dbRepo.addUser(user);
+      }
+    }
+    ```
+  </TabItem>
+  <TabItem label="Without Butterfly (Raw Dart)" value="without-butterfly">
+    Without `auth_management`, you maintain a broadcast `StreamController<AppUser?>`, track `currentUser` manually, wire subscription error handling, and coordinate cache writes and clears on `signIn` / `signOut`:
+
+    ```dart title="lib/models/app_user.dart (suggested)"
+    class AppUser {
+      const AppUser(this.id);
+      final String id;
+    }
+    ```
+
+    ```dart title="lib/services/auth.dart (suggested)"
+    import 'dart:async';
+    import 'package:my_app/models/app_user.dart';
+
+    class AuthService {
+      AuthService({required this.login});
+
+      final Future<AppUser> Function(String email, String password) login;
+      final StreamController<AppUser?> _controller =
+          StreamController<AppUser?>.broadcast();
+
+      AppUser? currentUser;
+
+      Stream<AppUser?> streamUser() => _controller.stream;
+
+      Future<void> signIn(String email, String password) async {
+        final user = await login(email, password);
+        currentUser = user;
+        _controller.add(user);
+      }
+
+      Future<void> signOut() async {
+        currentUser = null;
+        _controller.add(null);
+      }
+
+      void dispose() {
+        _controller.close();
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 ### Startup & initialization rules
 
@@ -119,16 +161,16 @@ class AuthService extends AuthServiceRepository<AppUser> {
 When using Firebase, OAuth2, or your own external identity provider, `IdentityAuthRepository<I, T>` bridges raw identity `I` to your domain model `T`:
 
 <Steps>
-  <Step title="Identity stream emits">
+  <Step title="Identity stream emits" icon="satellite-dish">
     `streamIdentity()` emits the initial identity `I?` and any subsequent auth state changes.
   </Step>
-  <Step title="Null identity → clear cache">
+  <Step title="Null identity → clear cache" icon="eraser">
     If `identity == null`, the repository calls `dbRepo.clearUser()` and emits `null`.
   </Step>
-  <Step title="Cache hit → reuse without network fetch">
+  <Step title="Cache hit → reuse without network fetch" icon="bolt">
     If `dbRepo.getUser()` returns a cached `T` **and** `isCachedUserFor(cachedUser, identity)` returns `true`, the cached user is returned immediately without calling `fetchUser`.
   </Step>
-  <Step title="Cache miss → fetchUser(identity) & persist">
+  <Step title="Cache miss → fetchUser(identity) & persist" icon="cloud-arrow-down">
     Calls your `fetchUser(identity)` implementation, writes the returned `T` to `dbRepo.addUser(user)`, and emits it. Concurrent callers share the in-flight fetch future, and late subscribers to `streamUser()` immediately receive the last resolved user.
   </Step>
 </Steps>

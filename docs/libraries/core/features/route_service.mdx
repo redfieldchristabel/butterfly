@@ -16,21 +16,20 @@ description: Configure GoRouter with automatic authentication redirects, public 
 
 ---
 
-## Set up an auth-guarded router
+## Setup: Butterfly vs. Raw GoRouter
 
 <Info>Only `lib/main.dart` is a fixed name. Files marked **(suggested)** follow the `butterfly init` layout; rename or move them freely. Replace `my_app` in imports with the `name` from your `pubspec.yaml`.</Info>
 
-<Steps>
-  <Step title="Define your user model">
+<Tabs>
+  <TabItem label="With Butterfly" value="with-butterfly">
+    Extend `GoRouterAuthRoute<AppUser>` and declare `user`, `refreshListenable`, `publicRoutes`, and `routes`—the 8-step deep-link and login/signup redirect logic is handled for you:
+
     ```dart title="lib/models/app_user.dart (suggested)"
     class AppUser {
       const AppUser(this.id);
       final String id;
     }
     ```
-  </Step>
-  <Step title="Subclass GoRouterAuthRoute<AppUser>">
-    Implement `routes`, the synchronous `user` getter, and `refreshListenable` so GoRouter re-evaluates redirects whenever authentication state changes:
 
     ```dart title="lib/services/route.dart (suggested)"
     import 'package:core_management_route_go_router/go_router_auth_route.dart';
@@ -60,8 +59,7 @@ description: Configure GoRouter with automatic authentication redirects, public 
       ];
     }
     ```
-  </Step>
-  <Step title="Build and retain routerConfig once">
+
     ```dart title="lib/main.dart"
     import 'package:flutter/material.dart';
     import 'package:my_app/models/app_user.dart';
@@ -73,8 +71,75 @@ description: Configure GoRouter with automatic authentication redirects, public 
       runApp(MaterialApp.router(routerConfig: router));
     }
     ```
-  </Step>
-</Steps>
+  </TabItem>
+  <TabItem label="Without Butterfly (Raw GoRouter)" value="without-butterfly">
+    Without `core_management_route_go_router`, you write the entire `redirect` state machine inside `GoRouter(...)` yourself, manually tracking `postSignInRedirect` so visiting `/signup` or `/about` while signed out doesn't wipe out the original deep link:
+
+    ```dart title="lib/models/app_user.dart (suggested)"
+    class AppUser {
+      const AppUser(this.id);
+      final String id;
+    }
+    ```
+
+    ```dart title="lib/services/route.dart (suggested)"
+    import 'package:flutter/material.dart';
+    import 'package:go_router/go_router.dart';
+    import 'package:my_app/models/app_user.dart';
+
+    GoRouter createRawRouter(ValueNotifier<AppUser?> session) {
+      String? postSignInRedirect;
+      const publicRoutes = {'/about'};
+      const authTriggerRoutes = {'/login', '/signup'};
+
+      return GoRouter(
+        initialLocation: '/',
+        refreshListenable: session,
+        redirect: (context, state) {
+          final isLoggedIn = session.value != null;
+          final loc = state.matchedLocation;
+
+          if (!isLoggedIn &&
+              !publicRoutes.contains(loc) &&
+              !authTriggerRoutes.contains(loc)) {
+            postSignInRedirect = state.uri.toString();
+            return '/login';
+          }
+          if (isLoggedIn && authTriggerRoutes.contains(loc)) {
+            final target = postSignInRedirect ?? '/';
+            postSignInRedirect = null;
+            return target;
+          }
+          if (isLoggedIn && postSignInRedirect != null) {
+            final target = postSignInRedirect!;
+            postSignInRedirect = null;
+            return target;
+          }
+          return null;
+        },
+        routes: [
+          GoRoute(path: '/', builder: (context, state) => const Text('Home')),
+          GoRoute(path: '/login', builder: (context, state) => const Text('Sign in')),
+          GoRoute(path: '/signup', builder: (context, state) => const Text('Sign up')),
+          GoRoute(path: '/about', builder: (context, state) => const Text('About')),
+        ],
+      );
+    }
+    ```
+
+    ```dart title="lib/main.dart"
+    import 'package:flutter/material.dart';
+    import 'package:my_app/models/app_user.dart';
+    import 'package:my_app/services/route.dart';
+
+    void main() {
+      final session = ValueNotifier<AppUser?>(null);
+      final router = createRawRouter(session);
+      runApp(MaterialApp.router(routerConfig: router));
+    }
+    ```
+  </TabItem>
+</Tabs>
 
 <Warning>
   `routerConfig` constructs a **brand-new `GoRouter` instance on every getter call**. Always store the returned `GoRouter` once (for example, in `main()` or a retained field) rather than reading `routeService.routerConfig` directly inside a widget's `build()` method.
