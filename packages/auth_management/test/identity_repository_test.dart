@@ -1,7 +1,23 @@
 import 'dart:async';
 
 import 'package:auth_management/auth_management.dart';
+import 'package:auth_management/auth_management_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+class _RecordingProvider extends AuthServiceProviderRepository<_User> {
+  _User? held;
+
+  Future<void> initialize() => markInitialized();
+
+  @override
+  void bindUserToProvider(_User user) => held = user;
+
+  @override
+  void clearUser() => held = null;
+
+  @override
+  _User? getUser() => held;
+}
 
 class _User {
   final String uid;
@@ -13,6 +29,8 @@ class _User {
 class _FakeAuth extends IdentityAuthRepository<String, _User> {
   final _db = InMemoryDatabaseRepository<_User>();
   final _identities = StreamController<String?>.broadcast();
+  @override
+  final _RecordingProvider providerRepo = _RecordingProvider();
 
   String? identity;
   int fetchCount = 0;
@@ -145,7 +163,10 @@ void main() {
   });
 
   group('refreshUser', () {
-    test('bypasses the cache and pushes the new user to streamUser', () async {
+    test(
+        'bypasses the cache and pushes the new user to streamUser and providerRepo',
+        () async {
+      await auth.providerRepo.initialize();
       final coins = <int?>[];
       auth.streamUser().listen((u) => coins.add(u?.coins));
       auth.signInAs('a');
@@ -156,6 +177,8 @@ void main() {
       await _settle();
 
       expect(refreshed?.coins, 99);
+      expect(auth.currentUser?.coins, 99);
+      expect(auth.providerRepo.held?.coins, 99);
       expect(coins.last, 99);
       expect((await auth.dbRepo.getUser())?.coins, 99);
       expect(auth.fetchCount, 2);

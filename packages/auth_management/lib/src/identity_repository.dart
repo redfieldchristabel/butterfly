@@ -117,6 +117,7 @@ abstract class IdentityAuthRepository<I, T> extends AuthServiceRepository<T> {
     if (current == null || !await isCachedUserFor(user, current)) return null;
 
     await dbRepo.addUser(user);
+    publishUser(user);
     _emit(user);
     return user;
   }

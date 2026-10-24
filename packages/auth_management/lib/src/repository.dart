@@ -3,7 +3,7 @@ import 'dart:developer';
 
 import 'package:auth_management/auth_management.dart';
 import 'package:auth_management/auth_management_provider.dart';
-import 'package:flutter/foundation.dart' show mustCallSuper;
+import 'package:flutter/foundation.dart' show mustCallSuper, protected;
 
 /// The app-facing auth service: the one place your app asks
 /// "who is signed in?".
@@ -51,10 +51,8 @@ abstract class AuthServiceRepository<T> {
     _provider = providerRepo;
     streamUser().listen(
       (event) {
-        currentUser = event;
         log('Auth User Stream $event', name: '🦋 Auth Management', level: 800);
-        _syncProvider(event);
-        onUserChanged(event);
+        publishUser(event);
       },
       onError: onUserError,
     );
@@ -76,8 +74,20 @@ abstract class AuthServiceRepository<T> {
     await (_provider ?? providerRepo)?.sync(null);
   }
 
+  /// Publishes [user] to [currentUser], [providerRepo] and [onUserChanged].
+  ///
+  /// Called automatically by the [streamUser] listener started in
+  /// [initialize], and by [IdentityAuthRepository.refreshUser] so a refresh
+  /// updates synchronous readers and state-management bridges immediately.
+  @protected
+  void publishUser(T? user) {
+    currentUser = user;
+    _syncProvider(user);
+    onUserChanged(user);
+  }
+
   void _syncProvider(T? user) {
-    final provider = _provider;
+    final provider = _provider ?? providerRepo;
     if (provider == null) return;
 
     unawaited(
