@@ -1,5 +1,21 @@
 ## Unreleased
 
+- `Map<String, V>` and `Map<int, V>` fields, for every supported non-Map
+  value type (primitives, `DateTime`, `Uint8List`, enums, `List<...>`,
+  `@Embedded` classes; the map itself nullable or not). Stored like
+  protobuf's map type — one nested message per entry, key at field 1, value
+  at field 2 — with entries written sorted by key, so equal maps always
+  encode to equal bytes. Missing on decode: constructor default, else `null`
+  when nullable, else an empty map. Maps cannot be indexed; naming one in
+  `Index([...])` is a build error.
+- `packages/cocoon_bench`, an honest benchmark of Cocoon against sembast on
+  finance-shaped data (20 accounts sharing 10k/100k/300k txns over five
+  years, with indexes, embedded splits and string maps): bulk import, cold
+  open, RSS and
+  peak memory, latest-50 reads, monthly totals, gets by id and single-write
+  latency, each in a fresh process. Numbers and the plain-words verdict —
+  including where Cocoon loses — live in `packages/cocoon_bench/RESULTS.md`.
+
 - A Cocoon tab in Dart DevTools for running debug apps: browse collections
   and documents with a path breadcrumb, drill into subcollections, and read
   decoded documents (dates as UTC ISO-8601 strings, enums by name, binary

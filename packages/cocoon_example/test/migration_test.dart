@@ -206,7 +206,7 @@ void main() {
 
     // 2. Reopen with the generated adapters and the generated migration
     //    list: the pending step rewrites both documents inside the open.
-    expect(cocoonSchemaVersion, 2);
+    expect(cocoonSchemaVersion, 3);
     expect(cocoonMigrations, hasLength(1));
     final progress = <(int, int)>[];
     final db = await Cocoon.open(

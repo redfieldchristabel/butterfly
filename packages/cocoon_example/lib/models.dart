@@ -77,6 +77,7 @@ class Txn {
     required this.rate,
     this.memo,
     this.labels = const [],
+    this.meta = const {},
     this.receipt,
   });
 
@@ -88,6 +89,7 @@ class Txn {
   final double rate;
   final String? memo;
   final List<String> labels;
+  final Map<String, String> meta;
   final Uint8List? receipt;
 }
 

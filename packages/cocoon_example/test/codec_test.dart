@@ -58,8 +58,68 @@ void main() {
     // bookedOn was a String at number 1 in schema v1; the type change moved
     // it to number 10, and the old number stays reserved.
     writer.writeSint64(10, txn.bookedOn);
+    // The map is written sorted by key, one entry message per entry with
+    // the key at field 1 and the value at field 2.
+    for (final key in txn.meta.keys.toList()..sort()) {
+      writer.writeMessage(11, (entry) {
+        entry.writeString(1, key);
+        entry.writeString(2, txn.meta[key]!);
+      });
+    }
 
     expect(txns.encode(txn), writer.toBytes());
+  });
+
+  test('map entries are written sorted by key, whatever the insertion '
+      'order', () {
+    final shuffled = Txn(
+      bookedOn: 1,
+      amountMinor: 0,
+      currency: 'MYR',
+      status: TxnStatus.pending,
+      createdAt: DateTime.utc(2026),
+      rate: 1,
+      meta: {
+        'zebra': 'z',
+        'card': 'c',
+        'apple': 'a',
+        'mango': 'm',
+      },
+    );
+    final ordered = Txn(
+      bookedOn: 1,
+      amountMinor: 0,
+      currency: 'MYR',
+      status: TxnStatus.pending,
+      createdAt: DateTime.utc(2026),
+      rate: 1,
+      meta: const {
+        'apple': 'a',
+        'card': 'c',
+        'mango': 'm',
+        'zebra': 'z',
+      },
+    );
+    // Equal maps give equal bytes whatever order their entries were added.
+    final bytes = txns.encode(shuffled);
+    expect(bytes, txns.encode(ordered));
+
+    // And the entry order in those bytes is sorted by key.
+    final reader = WireReader(bytes);
+    final keys = <String>[];
+    while (!reader.isAtEnd) {
+      final tag = reader.readTag();
+      if (tag.field != 11) {
+        reader.skip(tag.type);
+        continue;
+      }
+      final entry = reader.readMessage();
+      entry.readTag();
+      keys.add(entry.readString());
+      entry.readTag();
+      entry.readString(); // the value; the key order is what we assert on
+    }
+    expect(keys, ['apple', 'card', 'mango', 'zebra']);
   });
 
   test('empty lists encode as present-but-empty messages', () {
@@ -121,6 +181,11 @@ void main() {
       expect(txnBack.createdAt, DateTime.utc(2026, 1, 15, 12, 0, 30, 250, 999));
       expect(txnBack.rate, 4.123456);
       expect(txnBack.labels, ['food', 'weekly']);
+      expect(txnBack.meta, {
+        'card': 'visa-4242',
+        'channel': 'web',
+        'batch': 'b-17',
+      });
 
       final split = splitFixture(label: 'rent', shareMinor: 700);
       final splitBack = splits.decode(splits.encode(split));
@@ -151,6 +216,7 @@ void main() {
     // Missing nullable fields decode to null.
     expect(txn.memo, isNull);
     expect(txn.receipt, isNull);
+    expect(txn.meta, isEmpty); // a missing map decodes to an empty map
     // A missing field with a constructor default uses that default.
     expect(txn.labels, isEmpty);
     // And it re-encodes to exactly the old bytes' known fields.
@@ -192,6 +258,7 @@ void main() {
     expect(txn.rate, 0.0);
     expect(txn.memo, isNull);
     expect(txn.labels, isEmpty); // constructor default
+    expect(txn.meta, isEmpty); // constructor default
     expect(txn.receipt, isNull);
 
     final split = splits.decode(Uint8List(0));

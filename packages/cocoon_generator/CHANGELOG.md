@@ -1,5 +1,17 @@
 ## Unreleased
 
+- `Map<String, V>` and `Map<int, V>` fields. The generated codec stores each
+  entry as a nested message (key at field 1, value at field 2), written
+  sorted by key so equal maps always encode to equal bytes; map keys must be
+  `String` or `int`, values any supported non-Map type (nullable values and
+  Maps inside Maps are build errors naming the field), and an `Index([...])`
+  naming a map field is a build error.
+- `migrate` handles map type changes like any other: the field moves to a
+  fresh number and the migration stub declares the map's wire shape with
+  `fromMap`/`toMap: MapWireType(key: ..., value: ...)`; the conversion
+  receives the old entries as a `Map<Object?, Object?>` and its result is
+  written back sorted by key.
+
 - The interactive `dart run cocoon_generator:migrate` command. It diffs the
   models against the committed `cocoon.lock.json`, asks only what a human
   must answer (renames via a numbered best-first menu, plain `y/N` confirms

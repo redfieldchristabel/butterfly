@@ -216,6 +216,7 @@ void main() {
           MigrationWireType.float64 => w.writeDouble(from, value! as double),
           MigrationWireType.text => w.writeString(from, value! as String),
           MigrationWireType.bytes => w.writeBytes(from, value! as List<int>),
+          MigrationWireType.map => throw StateError('not used here'),
         },
       ),
       from: from,
@@ -282,5 +283,319 @@ void main() {
       ),
       throwsStateError,
     );
+  });
+
+  group('map fields', () {
+    /// Builds a document with a map at field [number]: each (key, value)
+    /// pair is written as one entry message, in the order given.
+    Uint8List mapDoc(
+      int number,
+      List<(String, int)> entries,
+    ) => doc(
+      (w) {
+        for (final (key, value) in entries) {
+          w.writeMessage(number, (entry) {
+            entry.writeString(1, key);
+            entry.writeSint64(2, value);
+          });
+        }
+      },
+    );
+
+    /// Reads the entries of the map at field [number] out of [bytes];
+    /// [intKeys] picks how entry keys are decoded.
+    Map<Object?, Object?> readMap(
+      Uint8List bytes,
+      int number, {
+      bool intKeys = false,
+    }) {
+      final reader = WireReader(bytes);
+      final map = <Object?, Object?>{};
+      while (!reader.isAtEnd) {
+        final tag = reader.readTag();
+        if (tag.field != number) {
+          reader.skip(tag.type);
+          continue;
+        }
+        final entry = reader.readMessage();
+        Object? key;
+        Object? value;
+        while (!entry.isAtEnd) {
+          final entryTag = entry.readTag();
+          switch (entryTag.field) {
+            case 1:
+              key = intKeys ? entry.readSint64() : entry.readString();
+            case 2:
+              value = entryTag.type == WireType.len
+                  ? entry.readString()
+                  : entry.readSint64();
+            default:
+              entry.skip(entryTag.type);
+          }
+        }
+        map[key!] = value;
+      }
+      return map;
+    }
+
+    test('rewrites every entry, converting keys and values', () {
+      const textToInt = MapWireType(
+        key: MigrationWireType.text,
+        value: MigrationWireType.sint64,
+      );
+      const intToText = MapWireType(
+        key: MigrationWireType.sint64,
+        value: MigrationWireType.text,
+      );
+      final out = rewriteField(
+        mapDoc(3, [('rent', 700), ('groceries', 300)]),
+        from: 3,
+        fromWire: MigrationWireType.map,
+        fromMap: textToInt,
+        to: 8,
+        toWire: MigrationWireType.map,
+        toMap: intToText,
+        convert: (value) => {
+          for (final MapEntry(key: key, value: amount)
+              in (value! as Map<Object?, Object?>).entries)
+            (key! as String).length: (amount! as int).toString(),
+        },
+      );
+      expect(readMap(out, 8, intKeys: true), {4: '700', 9: '300'});
+    });
+
+    test('writes entries sorted by key, whatever the input order', () {
+      const mapWire = MapWireType(
+        key: MigrationWireType.text,
+        value: MigrationWireType.sint64,
+      );
+      final out = rewriteField(
+        mapDoc(3, [('zebra', 1), ('apple', 2), ('mango', 3)]),
+        from: 3,
+        fromWire: MigrationWireType.map,
+        fromMap: mapWire,
+        to: 4,
+        toWire: MigrationWireType.map,
+        toMap: mapWire,
+        convert: (value) => value,
+      );
+      // Entry order in the bytes: apple, mango, zebra.
+      final reader = WireReader(out);
+      final keys = <String>[];
+      while (!reader.isAtEnd) {
+        reader.readTag();
+        final entry = reader.readMessage();
+        entry.readTag();
+        keys.add(entry.readString());
+        entry.skip(WireType.varint); // the value at field 2
+      }
+      expect(keys, ['apple', 'mango', 'zebra']);
+    });
+
+    test('sorts int keys numerically, including negatives', () {
+      const intKeys = MapWireType(
+        key: MigrationWireType.sint64,
+        value: MigrationWireType.sint64,
+      );
+      Uint8List intMapDoc(List<(int, int)> entries) => doc(
+        (w) {
+          for (final (key, value) in entries) {
+            w.writeMessage(2, (entry) {
+              entry.writeSint64(1, key);
+              entry.writeSint64(2, value);
+            });
+          }
+        },
+      );
+      final out = rewriteField(
+        intMapDoc([(5, 1), (-7, 2), (0, 3)]),
+        from: 2,
+        fromWire: MigrationWireType.map,
+        fromMap: intKeys,
+        to: 3,
+        toWire: MigrationWireType.map,
+        toMap: intKeys,
+        convert: (value) => value,
+      );
+      final reader = WireReader(out);
+      final keys = <int>[];
+      while (!reader.isAtEnd) {
+        reader.readTag();
+        final entry = reader.readMessage();
+        entry.readTag();
+        keys.add(entry.readSint64());
+        entry.readTag();
+        entry.readSint64();
+      }
+      expect(keys, [-7, 0, 5]);
+    });
+
+    test('the last occurrence of a duplicate key wins', () {
+      const mapWire = MapWireType(
+        key: MigrationWireType.text,
+        value: MigrationWireType.sint64,
+      );
+      final seen = <Object?>[];
+      final out = rewriteField(
+        mapDoc(3, [('k', 1), ('k', 2)]),
+        from: 3,
+        fromWire: MigrationWireType.map,
+        fromMap: mapWire,
+        to: 4,
+        toWire: MigrationWireType.map,
+        toMap: mapWire,
+        convert: (value) {
+          seen.add(value);
+          return value;
+        },
+      );
+      expect(seen.single, {'k': 2});
+      expect(readMap(out, 4), {'k': 2});
+    });
+
+    test('an empty converted map writes nothing', () {
+      const mapWire = MapWireType(
+        key: MigrationWireType.text,
+        value: MigrationWireType.sint64,
+      );
+      final out = rewriteField(
+        mapDoc(3, [('k', 1)]),
+        from: 3,
+        fromWire: MigrationWireType.map,
+        fromMap: mapWire,
+        to: 4,
+        toWire: MigrationWireType.map,
+        toMap: mapWire,
+        convert: (value) => <String, int>{},
+      );
+      expect(fieldNumbers(out), isEmpty);
+    });
+
+    test('a null conversion result drops the whole map', () {
+      const mapWire = MapWireType(
+        key: MigrationWireType.text,
+        value: MigrationWireType.sint64,
+      );
+      final out = rewriteField(
+        doc(
+          (w) => w
+            ..writeString(1, 'keep')
+            ..writeMessage(3, (entry) {
+              entry.writeString(1, 'k');
+              entry.writeSint64(2, 1);
+            }),
+        ),
+        from: 3,
+        fromWire: MigrationWireType.map,
+        fromMap: mapWire,
+        to: 4,
+        toWire: MigrationWireType.map,
+        toMap: mapWire,
+        convert: (value) => null,
+      );
+      expect(fieldNumbers(out), [1]);
+    });
+
+    test('rewrites a scalar field into a map and back', () {
+      const mapWire = MapWireType(
+        key: MigrationWireType.text,
+        value: MigrationWireType.text,
+      );
+      // String #2 -> Map<String,String> #5.
+      final toMap = rewriteField(
+        doc((w) => w..writeString(2, 'MYR=458')),
+        from: 2,
+        fromWire: MigrationWireType.text,
+        to: 5,
+        toWire: MigrationWireType.map,
+        toMap: mapWire,
+        convert: (value) => {'rate': value! as String},
+      );
+      final mapBack = rewriteField(
+        toMap,
+        from: 5,
+        fromWire: MigrationWireType.map,
+        fromMap: mapWire,
+        to: 2,
+        toWire: MigrationWireType.text,
+        convert: (value) =>
+            (value! as Map<Object?, Object?>).entries.single.value,
+      );
+      final reader = WireReader(mapBack)..readTag();
+      expect(reader.readString(), 'MYR=458');
+    });
+
+    test('absent map field: convert is not called', () {
+      const mapWire = MapWireType(
+        key: MigrationWireType.text,
+        value: MigrationWireType.sint64,
+      );
+      final old = doc((w) => w..writeString(1, 'Acme'));
+      var called = false;
+      final out = rewriteField(
+        old,
+        from: 3,
+        fromWire: MigrationWireType.map,
+        fromMap: mapWire,
+        to: 4,
+        toWire: MigrationWireType.map,
+        toMap: mapWire,
+        convert: (value) {
+          called = true;
+          return value;
+        },
+      );
+      expect(called, isFalse);
+      expect(identical(out, old), isTrue);
+    });
+
+    test('requires a MapWireType beside every map wire kind', () {
+      expect(
+        () => rewriteField(
+          mapDoc(3, [('k', 1)]),
+          from: 3,
+          fromWire: MigrationWireType.map,
+          to: 4,
+          toWire: MigrationWireType.map,
+          convert: (value) => value,
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => rewriteField(
+          mapDoc(3, [('k', 1)]),
+          from: 3,
+          fromWire: MigrationWireType.text,
+          fromMap: const MapWireType(
+            key: MigrationWireType.text,
+            value: MigrationWireType.sint64,
+          ),
+          to: 4,
+          toWire: MigrationWireType.text,
+          convert: (value) => value,
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('mixed key types from a broken conversion are rejected', () {
+      const mapWire = MapWireType(
+        key: MigrationWireType.text,
+        value: MigrationWireType.sint64,
+      );
+      expect(
+        () => rewriteField(
+          mapDoc(3, [('k', 1)]),
+          from: 3,
+          fromWire: MigrationWireType.map,
+          fromMap: mapWire,
+          to: 4,
+          toWire: MigrationWireType.map,
+          toMap: mapWire,
+          convert: (value) => {'a': 1, 2: 3},
+        ),
+        throwsArgumentError,
+      );
+    });
   });
 }

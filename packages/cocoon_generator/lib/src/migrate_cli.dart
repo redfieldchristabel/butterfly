@@ -204,6 +204,19 @@ Future<int> _run(String? packageRoot, List<String> args, MigrateIo io) async {
     renames: renames.collections,
     embeddedRenames: renames.embedded,
   );
+  // Refuse before anything is written: a type the command cannot generate a
+  // conversion for (lists, embedded classes, maps whose values are lists or
+  // embedded classes) must not leave a half-migrated lock behind — the build
+  // would pass against it while stored documents keep the old numbers.
+  for (final model in upgrades.keys) {
+    for (final upgrade in upgrades[model]!) {
+      final context = '$model.${upgrade.from.name}';
+      _stubType(upgrade.from.type, context);
+      _stubType(upgrade.to.type, context);
+      _wireTypeOf(upgrade.from.type, context);
+      _wireTypeOf(upgrade.to.type, context);
+    }
+  }
   lockFile.writeAsStringSync(newLock.toSource());
   io.write(
     '${_color('Wrote cocoon.lock.json (version ${newLock.version}).', _ansiGreen, io.stdoutIsTerminal)}\n',
@@ -670,30 +683,80 @@ bool _writeMigrationFile(
   var index = 0;
   for (final model in sortedModels) {
     for (final upgrade in upgrades[model]!) {
-      final fromType = _stubType(
-        upgrade.from.type,
-        '$model.${upgrade.from.name}',
-      );
-      final toType = _stubType(upgrade.to.type, '$model.${upgrade.to.name}');
+      final context = '$model.${upgrade.from.name}';
+      final fromBase = _baseType(upgrade.from.type);
+      final toBase = _baseType(upgrade.to.type);
+      final fromIsMap = fromBase.startsWith('Map<');
+      final toIsMap = toBase.startsWith('Map<');
+      if (fromIsMap) {
+        // FieldMigration.typed<...> needs a Dart type argument per side; map
+        // types carry commas, so map rewrites use the untyped constructor
+        // and describe their shape with fromMap/toMap below.
+        buffer.writeln('  FieldMigration(');
+      } else {
+        final fromType = _stubType(upgrade.from.type, context);
+        final toType = _stubType(upgrade.to.type, context);
+        buffer.writeln('  FieldMigration.typed<$fromType, $toType>(');
+      }
       buffer
-        ..writeln('  FieldMigration.typed<$fromType, $toType>(')
         ..writeln("    model: '$model',")
         ..writeln("    fromName: '${upgrade.from.name}',")
         ..writeln('    fromNumber: ${upgrade.from.number},')
         ..writeln("    fromType: '${_literalType(upgrade.from.type)}',")
         ..writeln(
-          '    fromWire: '
-          'MigrationWireType.${_wireTypeOf(upgrade.from.type, '$model.${upgrade.from.name}')},',
-        )
+          '    fromWire: MigrationWireType.'
+          '${_wireTypeOf(upgrade.from.type, context)},',
+        );
+      if (fromIsMap) {
+        final (key: key, value: value) = _splitMapType(fromBase, context);
+        buffer
+          ..writeln('    fromMap: MapWireType(')
+          ..writeln(
+            '      key: MigrationWireType.${_mapKeyWire(key, context)},',
+          )
+          ..writeln(
+            '      value: MigrationWireType.'
+            '${_wireTypeOf(value, context)},',
+          )
+          ..writeln('    ),');
+      }
+      buffer
         ..writeln("    toName: '${upgrade.to.name}',")
         ..writeln('    toNumber: ${upgrade.to.number},')
         ..writeln("    toType: '${_literalType(upgrade.to.type)}',")
         ..writeln(
-          '    toWire: '
-          'MigrationWireType.${_wireTypeOf(upgrade.to.type, '$model.${upgrade.to.name}')},',
-        )
-        ..writeln('    convert: ${functions[index]},')
-        ..writeln('  ),');
+          '    toWire: MigrationWireType.'
+          '${_wireTypeOf(upgrade.to.type, context)},',
+        );
+      if (toIsMap) {
+        final (key: key, value: value) = _splitMapType(toBase, context);
+        buffer
+          ..writeln('    toMap: MapWireType(')
+          ..writeln(
+            '      key: MigrationWireType.${_mapKeyWire(key, context)},',
+          )
+          ..writeln(
+            '      value: MigrationWireType.'
+            '${_wireTypeOf(value, context)},',
+          )
+          ..writeln('    ),');
+      }
+      if (fromIsMap) {
+        // The decoded old value is a Map<Object?, Object?>; the stub takes
+        // the field's real map type, so cast first. A cast view keeps the
+        // conversion type-checked without copying the entries.
+        final (key: key, value: value) = _splitMapType(fromBase, context);
+        buffer
+          ..writeln('    convert: (value) => ${functions[index]}(')
+          ..writeln(
+            '      (value! as Map<Object?, Object?>).cast<'
+            '${_stubType(key, context)}, ${_stubType(value, context)}>(),',
+          )
+          ..writeln('    ),');
+      } else {
+        buffer.writeln('    convert: ${functions[index]},');
+      }
+      buffer.writeln('  ),');
       index++;
     }
   }
@@ -792,9 +855,23 @@ String _pad4(int version) => version.toString().padLeft(4, '0');
 
 /// The Dart type of a migration stub's parameter/return: the field's stored
 /// representation. `DateTime` values are microseconds, enums their name, and
-/// only present values are converted (never null).
+/// only present values are converted (never null). Map fields convert as
+/// `Map<K, V>` of their parts' stored representations.
 String _stubType(String canonicalType, String context) {
   final base = _baseType(canonicalType);
+  if (base.startsWith('Map<')) {
+    final (key: key, value: value) = _splitMapType(base, context);
+    final keyStub = switch (key) {
+      'String' => 'String',
+      'int' => 'int',
+      _ => throw MigrateException(
+        'Cannot generate a conversion for $context: map keys must be String '
+        'or int, not "$key".',
+      ),
+    };
+    final valueStub = _stubType(value, context);
+    return 'Map<$keyStub, $valueStub>';
+  }
   return switch (base) {
     'int' || 'DateTime' => 'int',
     'double' => 'double',
@@ -812,9 +889,13 @@ String _stubType(String canonicalType, String context) {
 
 /// The exact wire encoding of a field's values, mirroring the code
 /// generator: ints and DateTimes are zigzag sint64, doubles i64, bools
-/// varint, strings and enums UTF-8 text, bytes length-delimited.
+/// varint, strings and enums UTF-8 text, bytes length-delimited, maps a
+/// sequence of entry messages.
 String _wireTypeOf(String canonicalType, String context) {
   final base = _baseType(canonicalType);
+  if (base.startsWith('Map<')) {
+    return 'map';
+  }
   return switch (base) {
     'int' || 'DateTime' => 'sint64',
     'double' => 'float64',
@@ -827,6 +908,30 @@ String _wireTypeOf(String canonicalType, String context) {
     ),
   };
 }
+
+/// Splits a canonical map type `Map<K,V>` into its key and value canonical
+/// types: the key is a simple type, so the first comma is the separator.
+({String key, String value}) _splitMapType(String base, String context) {
+  final comma = base.indexOf(',');
+  if (comma < 0) {
+    throw MigrateException(
+      'Cannot migrate $context: "$base" is not a valid map type.',
+    );
+  }
+  return (
+    key: base.substring(4, comma),
+    value: base.substring(comma + 1, base.length - 1),
+  );
+}
+
+/// The wire encoding of a map key canonical type.
+String _mapKeyWire(String key, String context) => switch (key) {
+  'String' => 'text',
+  'int' => 'sint64',
+  _ => throw MigrateException(
+    'Cannot migrate $context: map keys must be String or int, not "$key".',
+  ),
+};
 
 String _baseType(String canonicalType) => canonicalType.endsWith('?')
     ? canonicalType.substring(0, canonicalType.length - 1)

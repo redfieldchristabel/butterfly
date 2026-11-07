@@ -141,6 +141,7 @@ List<_FieldEmit> _fieldsOf(
 
 /// Writes every field of a value named [valueExpr] into the writer named
 /// [writerName], in ascending field-number order. Null values are skipped.
+/// Map fields write one entry message per entry, sorted by key.
 void _encodeFields(
   StringBuffer out,
   String indent,
@@ -148,6 +149,10 @@ void _encodeFields(
   String valueExpr,
 ) {
   for (final field in fields) {
+    if (field.type.base == _TypeBase.mapT) {
+      _writeMapField(out, indent, field, '$valueExpr.${field.name}');
+      continue;
+    }
     if (!field.type.nullable) {
       _writeValue(
         out,
@@ -171,6 +176,52 @@ void _encodeFields(
       field.local,
     );
     out.writeln('$indent}');
+  }
+}
+
+/// Writes one map field: the entries sorted by key (`String.compareTo` /
+/// int order), each as a nested message with the key at field 1 and the
+/// value at field 2 — the canonical form, so equal maps always encode to
+/// equal bytes whatever order their entries were inserted in.
+void _writeMapField(
+  StringBuffer out,
+  String indent,
+  _FieldEmit field,
+  String readExpr,
+) {
+  final entries = '\$${field.name}Entries';
+  final entry = '\$${field.name}Entry';
+  final valueType = field.type.element!;
+  String sortedLoop(String mapExpr) {
+    final buffer = StringBuffer()
+      ..writeln(
+        '${indent}final $entries = $mapExpr.entries.toList()',
+      )
+      ..writeln("$indent  ..sort((\$a, \$b) => \$a.key.compareTo(\$b.key));")
+      ..writeln('${indent}for (final $entry in $entries) {')
+      ..writeln(
+        '$indent  $writerName.writeMessage(${field.number}, (entry) {',
+      );
+    if (field.type.keyType == 'int') {
+      buffer.writeln('$indent    entry.writeSint64(1, $entry.key);');
+    } else {
+      buffer.writeln("$indent    entry.writeString(1, $entry.key);");
+    }
+    _writeValue(buffer, '$indent    ', 'entry', '2', valueType, '$entry.value');
+    buffer
+      ..writeln('$indent  });')
+      ..writeln('$indent}');
+    return buffer.toString();
+  }
+
+  if (field.type.nullable) {
+    out
+      ..writeln('${indent}final ${field.local} = $readExpr;')
+      ..writeln('${indent}if (${field.local} != null) {')
+      ..write(sortedLoop(field.local))
+      ..writeln('$indent}');
+  } else {
+    out.write(sortedLoop(readExpr));
   }
 }
 
@@ -227,14 +278,29 @@ void _writeValue(
         ..writeln('$indent    \$i++;')
         ..writeln('$indent  }')
         ..writeln('$indent});');
+    case _TypeBase.mapT:
+      // Map fields are written by _writeMapField: their sorted entry loop
+      // needs field-level names, and a map is never a list element or a
+      // nested value.
+      throw StateError('${type.original} cannot be written as a nested value');
   }
 }
 
 /// The decode locals for [fields]: one typed variable per field, initialized
 /// with the constructor default when there is one, else the proto3 zero
-/// value, else nothing (nullable fields without a default).
+/// value, else nothing (nullable fields without a default). Map fields
+/// declare an entries accumulator instead; the field local itself is
+/// resolved after the decode loop by [_decodeMapResolutions].
 void _decodeLocals(StringBuffer out, String indent, List<_FieldEmit> fields) {
   for (final field in fields) {
+    if (field.type.base == _TypeBase.mapT) {
+      out.writeln(
+        '${indent}final Map<${field.type.keyType}, '
+        '${field.type.element!.dartType}> ${field.local}Entries = '
+        '<${field.type.keyType}, ${field.type.element!.dartType}>{};',
+      );
+      continue;
+    }
     final initializer =
         field.defaultCode ?? (field.type.nullable ? null : field.type.zero);
     if (initializer == null) {
@@ -244,6 +310,35 @@ void _decodeLocals(StringBuffer out, String indent, List<_FieldEmit> fields) {
         '$indent${field.type.dartType} ${field.local} = $initializer;',
       );
     }
+  }
+}
+
+/// The field locals of map fields, resolved from their entry accumulators
+/// once the whole document is decoded: the constructor default when the map
+/// is missing or empty, else `null` when nullable, else the accumulated map
+/// (an empty map for a non-nullable field without a default).
+void _decodeMapResolutions(
+  StringBuffer out,
+  String indent,
+  List<_FieldEmit> fields,
+) {
+  for (final field in fields) {
+    if (field.type.base != _TypeBase.mapT) {
+      continue;
+    }
+    final entries = '${field.local}Entries';
+    final String? fallback;
+    if (field.defaultCode != null) {
+      fallback = field.defaultCode;
+    } else if (field.type.nullable) {
+      fallback = 'null';
+    } else {
+      fallback = null;
+    }
+    final expr = fallback == null
+        ? entries
+        : '$entries.isEmpty ? $fallback : $entries';
+    out.writeln('$indent${field.type.dartType} ${field.local} = $expr;');
   }
 }
 
@@ -306,6 +401,82 @@ void _decodeFieldCase(
         )
         ..writeln('$indent}')
         ..writeln('$indent$local = $items;');
+    case _TypeBase.mapT:
+      _decodeMapFieldCase(out, indent, field, reader);
+  }
+}
+
+/// The decode case body of one map field: each occurrence of the field
+/// number is one entry message, key at field 1 and value at field 2; the
+/// entries accumulate into the `<K, V>` map [_decodeLocals] declared, and
+/// [_decodeMapResolutions] turns the accumulator into the field local.
+void _decodeMapFieldCase(
+  StringBuffer out,
+  String indent,
+  _FieldEmit field,
+  String reader,
+) {
+  final entries = '${field.local}Entries';
+  final entryReader = '\$${field.name}Reader';
+  final key = '\$${field.name}Key';
+  final value = '\$${field.name}Value';
+  final valueType = field.type.element!;
+  final keyZero = field.type.keyType == 'int' ? '0' : "''";
+  out
+    ..writeln('${indent}final $entryReader = $reader.readMessage();')
+    ..writeln('${indent}var $key = $keyZero;')
+    ..writeln('${indent}var $value = ${valueType.zero};')
+    ..writeln('${indent}while (!$entryReader.isAtEnd) {')
+    ..writeln('$indent  final \$tag = $entryReader.readTag();')
+    ..writeln('$indent  switch (\$tag.field) {')
+    ..writeln('$indent    case 1:')
+    ..writeln(
+      '$indent      $key = $entryReader.'
+      '${field.type.keyType == 'int' ? 'readSint64()' : 'readString()'};',
+    )
+    ..writeln('$indent    case 2:');
+  _decodeMapValueInto(out, '$indent      ', valueType, entryReader, value);
+  out
+    ..writeln('$indent    default:')
+    ..writeln('$indent      $entryReader.skip(\$tag.type);')
+    ..writeln('$indent  }')
+    ..writeln('$indent}')
+    ..writeln('$indent$entries[$key] = $value;');
+}
+
+/// Emits the statements decoding one map entry's value of [type] from
+/// [reader] (its tag already consumed) into [target].
+void _decodeMapValueInto(
+  StringBuffer out,
+  String indent,
+  _Type type,
+  String reader,
+  String target,
+) {
+  switch (type.base) {
+    case _TypeBase.intT:
+    case _TypeBase.doubleT:
+    case _TypeBase.boolT:
+    case _TypeBase.stringT:
+    case _TypeBase.dateTimeT:
+    case _TypeBase.bytesT:
+    case _TypeBase.enumT:
+    case _TypeBase.embeddedT:
+      out.writeln('$indent$target = ${_readElement(type, reader)};');
+    case _TypeBase.listT:
+      final listReader = '${target}Reader';
+      final elementType = type.element!;
+      out
+        ..writeln('${indent}final $listReader = $reader.readMessage();')
+        ..writeln('$indent$target = <${elementType.dartType}>[];')
+        ..writeln('${indent}while (!$listReader.isAtEnd) {')
+        ..writeln('$indent  $listReader.readTag();')
+        ..writeln(
+          '$indent  $target.add(${_readElement(elementType, listReader)});',
+        )
+        ..writeln('$indent}');
+    case _TypeBase.mapT:
+      throw StateError('A map value may not be a map: ${type.original}');
   }
 }
 
@@ -332,6 +503,8 @@ String _readElement(_Type type, String reader) {
       return '${type.name}\$.readFrom($reader)';
     case _TypeBase.listT:
       throw StateError('Nested lists are not supported');
+    case _TypeBase.mapT:
+      throw StateError('A map is never a list element or map value');
   }
 }
 
@@ -387,6 +560,12 @@ String _jsonValueExpr(_Type type, String readExpr) => switch (type.base) {
   _TypeBase.listT =>
     "[for (final \$element in $readExpr) "
         "${_jsonValueExpr(type.element!, '\$element')}]",
+  _TypeBase.mapT =>
+    "{for (final \$entry in $readExpr.entries) "
+        // String keys are JSON keys as they are; int keys become their
+        // decimal string form.
+        "${type.keyType == 'int' ? "'\${\$entry.key}'" : '\$entry.key'}: "
+        "${_jsonValueExpr(type.element!, '\$entry.value')}}",
 };
 
 String _memberName(String name) =>
@@ -425,7 +604,8 @@ String _emitModel(
           throw CocoonBuildError(
             'Field "$name" of ${model.clazz.name} cannot be indexed: '
             '${field.type.original} has no column. Only int, double, bool, '
-            'String, DateTime, Uint8List and enums can be indexed',
+            'String, DateTime, Uint8List and enums can be indexed; lists, '
+            'maps and embedded classes live inside the document blob',
           );
         }
         columns.add(field);
@@ -519,7 +699,9 @@ String _emitModel(
     ..writeln('        default:')
     ..writeln('          reader.skip(tag.type);')
     ..writeln('      }')
-    ..writeln('    }')
+    ..writeln('    }');
+  _decodeMapResolutions(out, '    ', fields);
+  out
     ..writeln(
       '    return ${model.clazz.constructorPrefix}(${_ctorArgs(model.clazz)});',
     )
@@ -591,6 +773,7 @@ String _columnCtor(String model, _FieldEmit field) {
       return "FieldColumn.enumerated<$model, $vType>('${field.name}', $read, "
           "values: ${type.name}.values$nullableArg)";
     case _TypeBase.listT:
+    case _TypeBase.mapT:
     case _TypeBase.embeddedT:
       throw StateError('${type.original} cannot be a column');
   }
@@ -659,7 +842,9 @@ String _emitEmbedded(
     ..writeln('        default:')
     ..writeln('          nested.skip(tag.type);')
     ..writeln('      }')
-    ..writeln('    }')
+    ..writeln('    }');
+  _decodeMapResolutions(out, '    ', fields);
+  out
     ..writeln(
       "    return ${extracted.clazz.constructorPrefix}(${_ctorArgs(extracted.clazz)});",
     )
@@ -701,6 +886,7 @@ enum _TypeBase {
   bytesT,
   enumT,
   listT,
+  mapT,
   embeddedT,
 }
 
@@ -711,6 +897,7 @@ final class _Type {
     required this.original,
     this.nullable = false,
     this.element,
+    this.keyType,
     this.name,
   });
 
@@ -723,8 +910,11 @@ final class _Type {
   /// Whether the whole type is nullable.
   final bool nullable;
 
-  /// The element type, for lists.
+  /// The element type, for lists and map values.
   final _Type? element;
+
+  /// The map key type as written in Dart (`'String'` or `'int'`), for maps.
+  final String? keyType;
 
   /// The class name, for enums and embedded classes.
   final String? name;
@@ -740,17 +930,20 @@ final class _Type {
       _TypeBase.bytesT => 'Uint8List',
       _TypeBase.enumT => name!,
       _TypeBase.embeddedT => name!,
-      // List elements are never nullable (the extraction rejects them), so
-      // the element type needs no stripping.
+      // List elements and map values are never nullable (the extraction
+      // rejects them), so their types need no stripping.
       _TypeBase.listT => 'List<${element!.dartType}>',
+      _TypeBase.mapT => 'Map<$keyType, ${element!.dartType}>',
     };
     return nullable ? '$inner?' : inner;
   }
 
-  /// Whether the type maps to a [FieldColumn] (everything but lists and
-  /// embedded classes).
+  /// Whether the type maps to a [FieldColumn] (everything but lists, maps
+  /// and embedded classes).
   bool get isColumnable =>
-      base != _TypeBase.listT && base != _TypeBase.embeddedT;
+      base != _TypeBase.listT &&
+      base != _TypeBase.mapT &&
+      base != _TypeBase.embeddedT;
 
   /// The proto3 zero value for a missing non-nullable field.
   String get zero => switch (base) {
@@ -762,6 +955,7 @@ final class _Type {
     _TypeBase.bytesT => 'Uint8List(0)',
     _TypeBase.enumT => '$name.values.first',
     _TypeBase.listT => '<${element!.dartType}>[]',
+    _TypeBase.mapT => '<$keyType, ${element!.dartType}>{}',
     _TypeBase.embeddedT => '$name\$.zero()',
   };
 }
@@ -805,6 +999,34 @@ _Type _parseType(String canonical) {
       original: canonical,
       nullable: nullable,
       element: _parseType(element),
+    );
+  }
+  if (base.startsWith('Map<') && base.endsWith('>')) {
+    // The key is a simple type without generics, so the first comma splits
+    // key from value; the value may itself contain commas, as in
+    // `Map<String,List<int>>`.
+    final comma = base.indexOf(',');
+    if (comma < 0) {
+      throw StateError('Unknown lock type "$canonical"');
+    }
+    final key = base.substring(4, comma);
+    final value = base.substring(comma + 1, base.length - 1);
+    if (key != 'String' && key != 'int') {
+      throw StateError('Unknown map key type "$key" in "$canonical"');
+    }
+    if (value.endsWith('?')) {
+      throw StateError('Nullable map values are not supported: $canonical');
+    }
+    final valueType = _parseType(value);
+    if (valueType.base == _TypeBase.mapT) {
+      throw StateError('A map value may not be a map: $canonical');
+    }
+    return _Type._(
+      _TypeBase.mapT,
+      original: canonical,
+      nullable: nullable,
+      element: valueType,
+      keyType: key,
     );
   }
   throw StateError('Unknown lock type "$canonical"');

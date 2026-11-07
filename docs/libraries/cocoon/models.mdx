@@ -99,6 +99,7 @@ class Txn {
     required this.status,
     required this.createdAt,
     this.memo,
+    this.meta = const {},
   });
   final int bookedOn;
   final int amountMinor;
@@ -106,6 +107,9 @@ class Txn {
   final TxnStatus status;
   final DateTime createdAt;
   final String? memo;
+
+  /// Free-form tags from the importing bank, e.g. category ids.
+  final Map<String, String> meta;
 
   // Methods are never stored; helpers like copyWith are yours to write.
   Txn copyWith({TxnStatus? status}) => Txn(
@@ -175,11 +179,18 @@ Build errors say exactly what to fix:
   models, no super parameters.
 - Supported field types: `int`, `double`, `bool`, `String`, `DateTime` (UTC
   microseconds), `Uint8List`, enums (stored by name), `List<T>` of those
-  (elements may not be nullable), and `@Embedded()` classes — any of them
-  nullable except list elements.
+  (elements may not be nullable), `@Embedded()` classes — any of them
+  nullable except list elements — and `Map<K, V>` where `K` is `String` or
+  `int` and `V` is any supported non-Map type. Map values may not be
+  nullable or Maps; encode the absence of a value by omitting its entry.
+  Maps are stored like protobuf's map type: one nested message per entry,
+  key at field 1, value at field 2, entries written sorted by key, so equal
+  maps always encode to equal bytes.
 - A field missing from an older document decodes to the constructor default,
   else `null` when nullable, else the zero value (`0`, `''`, `false`, empty
-  list, epoch UTC, first enum value).
+  list, empty map, epoch UTC, first enum value).
+- Maps cannot be indexed: an `Index([...])` naming a map field is a build
+  error.
 - **Subcollection indexes start with the path params** (`accountId` above):
   a scoped query always filters them, so an index without them can't serve
   it. An index without params serves collection-group queries.

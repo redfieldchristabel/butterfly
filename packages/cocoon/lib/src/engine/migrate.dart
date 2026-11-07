@@ -168,8 +168,10 @@ Future<int> _migrateTable(
           bytes,
           from: step.fromNumber,
           fromWire: step.fromWire,
+          fromMap: step.fromMap,
           to: step.toNumber,
           toWire: step.toWire,
+          toMap: step.toMap,
           convert: step.convert,
         );
         // rewriteField returns the same instance when the old field is

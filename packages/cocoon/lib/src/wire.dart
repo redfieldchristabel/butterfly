@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:meta/meta.dart';
+
 /// Highest field number the protobuf wire format allows.
 const maxFieldNumber = 536870911;
 
@@ -53,6 +55,42 @@ enum MigrationWireType {
   /// Length-delimited bytes, as [WireWriter.writeBytes] writes it. Nested
   /// messages (lists and `@Embedded` values) are [bytes] as well.
   bytes,
+
+  /// A map field: one nested message per entry, key at field 1 and value at
+  /// field 2. Decoding and encoding an entry needs the key/value encodings
+  /// themselves, so a [MapWireType] rides alongside every [map] value in
+  /// [rewriteField] and [FieldMigration].
+  map,
+}
+
+/// The wire encodings of a map field's keys and values.
+///
+/// Required by [MigrationWireType.map]: the map field itself is a sequence of
+/// entry messages, and only this class says how each entry's key (field 1)
+/// and value (field 2) are encoded. Keys are text ([MigrationWireType.text],
+/// `String` keys) or zigzag varints ([MigrationWireType.sint64], `int` keys);
+/// values use the encoding of the value type, so nested lists and embedded
+/// classes are [MigrationWireType.bytes].
+@immutable
+final class MapWireType {
+  /// Builds the key/value encoding pair of one map field.
+  const MapWireType({required this.key, required this.value});
+
+  /// The encoding of every entry's key (field 1).
+  final MigrationWireType key;
+
+  /// The encoding of every entry's value (field 2).
+  final MigrationWireType value;
+
+  @override
+  bool operator ==(Object other) =>
+      other is MapWireType && other.key == key && other.value == value;
+
+  @override
+  int get hashCode => Object.hash(key, value);
+
+  @override
+  String toString() => 'MapWireType(key: $key, value: $value)';
 }
 
 /// Writes the protobuf binary wire format in canonical form.
@@ -330,12 +368,24 @@ class WireReader {
 /// the same canonical ascending order, and the result is a new list — [doc]
 /// itself is never modified.
 ///
+/// Map fields ([fromWire] or [toWire] is [MigrationWireType.map]) are
+/// repeated: every occurrence of field [from] is one entry, decoded with the
+/// key/value encodings of [fromMap] into a `Map<Object?, Object?>` that
+/// [convert] receives (duplicate keys: the last occurrence wins). The map
+/// [convert] returns is written back sorted by key, one entry message per
+/// entry with the key at field 1 and the value at field 2, encoded per
+/// [toMap]. An empty returned map writes nothing, exactly like encoding an
+/// empty map. A `Map<Object?, Object?>` from [convert] is fine to hand back
+/// as any `Map<K, V>`; Dart's covariant generics accept it.
+///
 /// When field [from] is absent the document is returned unchanged — the
 /// same instance, with [convert] not called and field [to] not written. A
 /// `null` result of [convert] drops the value instead of writing it.
 ///
-/// Throws a [TypeError] when a converted value does not fit [toWire] (for
-/// example a [String] for [MigrationWireType.int64]).
+/// [fromMap] is required exactly when [fromWire] is [MigrationWireType.map],
+/// and [toMap] exactly when [toWire] is. Throws an [ArgumentError] when that
+/// is violated and a [TypeError] when a converted value does not fit
+/// [toWire] (for example a [String] for [MigrationWireType.int64]).
 Uint8List rewriteField(
   Uint8List doc, {
   required int from,
@@ -343,44 +393,156 @@ Uint8List rewriteField(
   required int to,
   required MigrationWireType toWire,
   required Object? Function(Object? value) convert,
+  MapWireType? fromMap,
+  MapWireType? toMap,
 }) {
+  _requireMapArgs(fromWire, fromMap, 'fromWire', 'fromMap');
+  _requireMapArgs(toWire, toMap, 'toWire', 'toMap');
   final reader = WireReader(doc);
   final kept = <(int, WireType, Uint8List)>[];
-  Uint8List? oldRaw;
+  // A singular field occurs once; a map field occurs once per entry.
+  final oldRaws = <Uint8List>[];
   while (!reader.isAtEnd) {
     final tag = reader.readTag();
     final raw = reader._readRawValue(tag.type);
     if (tag.field == from) {
-      oldRaw = raw;
+      oldRaws.add(raw);
     } else {
       kept.add((tag.field, tag.type, raw));
     }
   }
-  if (oldRaw == null) {
+  if (oldRaws.isEmpty) {
     return doc;
   }
-  final converted = convert(_decodeWireValue(oldRaw, fromWire));
+  final converted = convert(
+    fromWire == MigrationWireType.map
+        ? _decodeMapValue(oldRaws, fromMap!)
+        : _decodeWireValue(oldRaws.last, fromWire),
+  );
 
   final writer = WireWriter();
   var inserted = converted == null;
   for (final (field, type, raw) in kept) {
     if (!inserted && field >= to) {
-      _writeWireValue(writer, to, toWire, converted!);
+      _writeWireValue(writer, to, toWire, converted!, toMap);
       inserted = true;
     }
     writer._writeRaw(field, type, raw);
   }
   if (!inserted) {
-    _writeWireValue(writer, to, toWire, converted!);
+    _writeWireValue(writer, to, toWire, converted!, toMap);
   }
   return writer.toBytes();
+}
+
+/// Validates the [MigrationWireType.map] / [MapWireType] pairing of a
+/// [rewriteField] side.
+void _requireMapArgs(
+  MigrationWireType wire,
+  MapWireType? map,
+  String wireName,
+  String mapName,
+) {
+  if (wire == MigrationWireType.map && map == null) {
+    throw ArgumentError(
+      '$mapName is required when $wireName is MigrationWireType.map',
+    );
+  }
+  if (wire != MigrationWireType.map && map != null) {
+    throw ArgumentError(
+      '$mapName is only allowed when $wireName is MigrationWireType.map',
+    );
+  }
+}
+
+/// Decodes a map field's entry messages into a `Map<Object?, Object?>`:
+/// each raw value is one entry message, key at field 1 and value at field 2.
+/// The last occurrence of a key wins, and an entry missing its key or value
+/// decodes that part to the wire's zero value, matching protobuf map
+/// semantics.
+Map<Object?, Object?> _decodeMapValue(
+  List<Uint8List> entries,
+  MapWireType wire,
+) {
+  final map = <Object?, Object?>{};
+  for (final raw in entries) {
+    final reader = WireReader(raw);
+    Object? key;
+    Object? value;
+    var hasKey = false;
+    var hasValue = false;
+    while (!reader.isAtEnd) {
+      final tag = reader.readTag();
+      switch (tag.field) {
+        case 1:
+          key = _decodeWireValue(reader._readRawValue(tag.type), wire.key);
+          hasKey = true;
+        case 2:
+          value = _decodeWireValue(reader._readRawValue(tag.type), wire.value);
+          hasValue = true;
+        default:
+          reader.skip(tag.type);
+      }
+    }
+    map[hasKey ? key : _wireZero(wire.key)] =
+        hasValue ? value : _wireZero(wire.value);
+  }
+  return map;
+}
+
+/// The zero value of one [MigrationWireType], for map entries that lack
+/// their key or value part.
+Object _wireZero(MigrationWireType kind) => switch (kind) {
+  MigrationWireType.int64 ||
+  MigrationWireType.sint64 => 0,
+  MigrationWireType.boolean => false,
+  MigrationWireType.float64 => 0.0,
+  MigrationWireType.text => '',
+  MigrationWireType.bytes => Uint8List(0),
+  MigrationWireType.map =>
+    throw ArgumentError('Nested map values are not supported'),
+};
+
+/// Writes [map] at [field] as one entry message per entry, sorted by key
+/// (`String.compareTo` / int order), key at field 1 and value at field 2,
+/// encoded per [wire] — the canonical form every equal map encodes to.
+void _writeMapValue(
+  WireWriter writer,
+  int field,
+  MapWireType wire,
+  Map<Object?, Object?> map,
+) {
+  final keys = map.keys.toList()..sort(_compareMapKeys);
+  for (final key in keys) {
+    writer.writeMessage(field, (entry) {
+      _writeWireValue(entry, 1, wire.key, key, null);
+      _writeWireValue(entry, 2, wire.value, map[key], null);
+    });
+  }
+}
+
+/// Sorts map keys: all `String`s by [String.compareTo], all `int`s
+/// numerically. Anything else is a broken conversion result.
+int _compareMapKeys(Object? a, Object? b) {
+  if (a is String && b is String) {
+    return a.compareTo(b);
+  }
+  if (a is int && b is int) {
+    return a.compareTo(b);
+  }
+  throw ArgumentError(
+    'Map keys must all be Strings or all be ints, '
+    'got ${a.runtimeType} and ${b.runtimeType}',
+  );
 }
 
 /// Decodes one raw wire value as [kind].
 ///
 /// The raw bytes of a `len` value are its payload (the length prefix was
 /// consumed when the document was parsed), so text and bytes decode
-/// directly; varint and fixed values decode from their exact bytes.
+/// directly; varint and fixed values decode from their exact bytes. Map
+/// fields never decode through here — [rewriteField] handles them with the
+/// key/value encodings of their [MapWireType].
 Object? _decodeWireValue(Uint8List raw, MigrationWireType kind) {
   return switch (kind) {
     MigrationWireType.int64 => WireReader(raw).readInt64(),
@@ -391,6 +553,9 @@ Object? _decodeWireValue(Uint8List raw, MigrationWireType kind) {
     // Copy: the view points into the source document, and the conversion
     // may outlive it.
     MigrationWireType.bytes => Uint8List.fromList(raw),
+    MigrationWireType.map => throw StateError(
+      'A map value decodes through its MapWireType, not as one raw value',
+    ),
   };
 }
 
@@ -400,6 +565,7 @@ void _writeWireValue(
   int field,
   MigrationWireType kind,
   Object? value,
+  MapWireType? map,
 ) {
   switch (kind) {
     case MigrationWireType.int64:
@@ -414,5 +580,7 @@ void _writeWireValue(
       writer.writeString(field, value! as String);
     case MigrationWireType.bytes:
       writer.writeBytes(field, value! as List<int>);
+    case MigrationWireType.map:
+      _writeMapValue(writer, field, map!, value! as Map<Object?, Object?>);
   }
 }

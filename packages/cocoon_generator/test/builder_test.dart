@@ -423,6 +423,189 @@ class Thing {
       );
       expect(run.code, contains('const cocoonSchemaVersion = 12;'));
     });
+
+    test(
+      'map fields encode as sorted entry messages and decode into '
+      'accumulators',
+      () async {
+        const model = '''
+@Collection('txns')
+class Txn {
+  const Txn({required this.meta, this.extra, this.byDay = const {}});
+  final Map<String, String> meta;
+  final Map<String, List<int>>? extra;
+  final Map<int, bool> byDay;
+}
+''';
+        final lock = lockText(
+          collections: {
+            'Txn': TestCollection('txns', const {
+              'meta': 'Map<String,String>',
+              'extra': 'Map<String,List<int>>?',
+              'byDay': 'Map<int,bool>',
+            }),
+          },
+        );
+        final run = await runCocoonBuilder(_head + model, lock);
+        expect(run.succeeded, isTrue, reason: run.errors.join('\n'));
+        // Encode: entries sorted by key, key at field 1, value at field 2,
+        // so equal maps always give equal bytes.
+        expect(
+          run.code,
+          contains('final \$metaEntries = value.meta.entries.toList()'),
+        );
+        expect(
+          run.code,
+          contains("..sort((\$a, \$b) => \$a.key.compareTo(\$b.key));"),
+        );
+        expect(
+          run.code,
+          contains('writer.writeMessage(1, (entry) {'),
+        );
+        expect(run.code, contains("entry.writeString(1, \$metaEntry.key);"));
+        expect(run.code, contains("entry.writeString(2, \$metaEntry.value);"));
+        // Nullable maps go through the null check first.
+        expect(run.code, contains('final \$extra = value.extra;'));
+        expect(run.code, contains('if (\$extra != null) {'));
+        // List values nest one level deeper inside the entry message.
+        expect(
+          run.code,
+          contains('entry.writeMessage(2, (nested) {'),
+        );
+        expect(
+          run.code,
+          contains('nested.writeSint64(\$i, \$element);'),
+        );
+        // int keys are zigzag varints, bools varints.
+        expect(run.code, contains("entry.writeSint64(1, \$byDayEntry.key);"));
+        expect(run.code, contains('entry.writeBool(2, \$byDayEntry.value);'));
+        // Decode: one accumulator per map field, entries parsed key/value.
+        expect(
+          run.code,
+          contains(
+            'final Map<String, String> \$metaEntries = <String, String>{};',
+          ),
+        );
+        expect(
+          run.code,
+          contains(
+            'final Map<String, List<int>> \$extraEntries = <String, List<int>>{};',
+          ),
+        );
+        expect(run.code, contains('\$metaKey = \$metaReader.readString();'));
+        expect(run.code, contains('\$byDayKey = \$byDayReader.readSint64();'));
+        expect(
+          run.code,
+          contains('\$metaEntries[\$metaKey] = \$metaValue;'),
+        );
+        // The field locals resolve after the decode loop: constructor
+        // default, else null when nullable, else the accumulated map. The
+        // fragments are matched wrap-tolerantly: dart format may split a
+        // long conditional across lines.
+        expect(
+          run.code,
+          contains('Map<String, String> \$meta = \$metaEntries;'),
+        );
+        expect(
+          run.code,
+          matches(
+            RegExp(
+              r'\$extraEntries\.isEmpty\s*\?\s*null\s*:\s*\$extraEntries',
+            ),
+          ),
+        );
+        expect(
+          run.code,
+          matches(
+            RegExp(
+              r'\$byDayEntries\.isEmpty\s*\?\s*const \{\}\s*:\s*\$byDayEntries',
+            ),
+          ),
+        );
+        // toInspectorJson: a JSON object; String keys are JSON keys as they
+        // are, int keys become their decimal string form.
+        expect(
+          run.code,
+          contains(
+            "for (final \$entry in value.meta.entries) \$entry.key: \$entry.value",
+          ),
+        );
+        expect(
+          run.code,
+          contains("for (final \$entry in value.byDay.entries) '\${\$entry.key}'"),
+        );
+      },
+    );
+
+    test('map values of every supported kind encode through the entry', () async {
+      const model = '''
+@Embedded()
+class Line {
+  const Line({required this.text});
+  final String text;
+}
+
+enum Kind { a, b }
+
+@Collection('records')
+class Record {
+  const Record({
+    required this.counts,
+    required this.rates,
+    required this.flags,
+    required this.days,
+    required this.blobs,
+    required this.kinds,
+    required this.lines,
+  });
+  final Map<String, int> counts;
+  final Map<String, double> rates;
+  final Map<String, bool> flags;
+  final Map<String, DateTime> days;
+  final Map<String, Uint8List> blobs;
+  final Map<String, Kind> kinds;
+  final Map<int, Line> lines;
+}
+''';
+        final lock = lockText(
+          version: 1,
+          collections: {
+            'Record': TestCollection('records', const {
+              'counts': 'Map<String,int>',
+              'rates': 'Map<String,double>',
+              'flags': 'Map<String,bool>',
+              'days': 'Map<String,DateTime>',
+              'blobs': 'Map<String,Uint8List>',
+              'kinds': 'Map<String,enum:Kind>',
+              'lines': 'Map<int,embedded:Line>',
+            }),
+          },
+          embedded: {
+            'Line': const {'text': 'String'},
+          },
+        );
+        final run = await runCocoonBuilder(_head + model, lock);
+        expect(run.succeeded, isTrue, reason: run.errors.join('\n'));
+        expect(run.code, contains('entry.writeSint64(2, \$countsEntry.value);'));
+        expect(run.code, contains('entry.writeDouble(2, \$ratesEntry.value);'));
+        expect(run.code, contains('entry.writeBool(2, \$flagsEntry.value);'));
+        expect(
+          run.code,
+          contains('entry.writeSint64(2, \$daysEntry.value.toUtc()'),
+        );
+        expect(run.code, contains('entry.writeBytes(2, \$blobsEntry.value);'));
+        expect(
+          run.code,
+          contains('entry.writeString(2, \$kindsEntry.value.name);'),
+        );
+        expect(
+          run.code,
+          contains('Line\$.writeTo(entry, 2, \$linesEntry.value);'),
+        );
+        // The embedded zero value fills in when an entry lacks its value.
+        expect(run.code, contains('var \$linesValue = Line\$.zero();'));
+      },
+    );
   });
 
   group('failures', () {
@@ -530,7 +713,7 @@ class Txn {
 class Thing {
   const Thing({required this.data});
 
-  final Map<String, int> data;
+  final Object data;
 }
 ''';
         final lock = lockText(
@@ -547,11 +730,152 @@ class Thing {
           message,
           contains(
             'Cocoon stores int, double, bool, String, DateTime, Uint8List, '
-            'enums, List<...> of those, and @Embedded classes',
+            'enums, List<...> and Map<String|int, ...> of those, and '
+            '@Embedded classes',
           ),
         );
       },
     );
+
+    test('map keys must be String or int', () async {
+      const model = '''
+@Collection('things')
+class Thing {
+  const Thing({required this.data});
+  final Map<double, int> data;
+}
+''';
+      final run = await runCocoonBuilder(
+        _head + model,
+        lockText(
+          collections: {
+            'Thing': TestCollection('things', const {'data': 'int'}),
+          },
+        ),
+      );
+      expect(run.succeeded, isFalse);
+      final message = run.errors.join('\n');
+      expect(message, contains('field "data" of Thing'));
+      expect(message, contains('map keys must be String or int'));
+    });
+
+    test('map values may not be nullable', () async {
+      const model = '''
+@Collection('things')
+class Thing {
+  const Thing({required this.data});
+  final Map<String, int?> data;
+}
+''';
+      final run = await runCocoonBuilder(
+        _head + model,
+        lockText(
+          collections: {
+            'Thing': TestCollection('things', const {'data': 'int'}),
+          },
+        ),
+      );
+      expect(run.succeeded, isFalse);
+      final message = run.errors.join('\n');
+      expect(message, contains('field "data" of Thing'));
+      expect(message, contains('map values may not be nullable'));
+    });
+
+    test('a Map value inside a Map is rejected', () async {
+      const model = '''
+@Collection('things')
+class Thing {
+  const Thing({required this.data});
+  final Map<String, Map<String, int>> data;
+}
+''';
+      final run = await runCocoonBuilder(
+        _head + model,
+        lockText(
+          collections: {
+            'Thing': TestCollection('things', const {'data': 'int'}),
+          },
+        ),
+      );
+      expect(run.succeeded, isFalse);
+      final message = run.errors.join('\n');
+      expect(message, contains('field "data" of Thing'));
+      expect(message, contains('a Map value inside a Map is not supported'));
+    });
+
+    test('a Map inside a List inside a Map is rejected', () async {
+      const model = '''
+@Collection('things')
+class Thing {
+  const Thing({required this.data});
+  final Map<String, List<Map<String, int>>> data;
+}
+''';
+      final run = await runCocoonBuilder(
+        _head + model,
+        lockText(
+          collections: {
+            'Thing': TestCollection('things', const {'data': 'int'}),
+          },
+        ),
+      );
+      expect(run.succeeded, isFalse);
+      expect(
+        run.errors.join('\n'),
+        contains('a Map value inside a Map is not supported'),
+      );
+    });
+
+    test('nested lists are a build error naming the field', () async {
+      const model = '''
+@Collection('things')
+class Thing {
+  const Thing({required this.grid});
+  final List<List<int>> grid;
+}
+''';
+      final run = await runCocoonBuilder(
+        _head + model,
+        lockText(
+          collections: {
+            'Thing': TestCollection('things', const {'grid': 'int'}),
+          },
+        ),
+      );
+      expect(run.succeeded, isFalse);
+      expect(
+        run.errors.join('\n'),
+        contains('field "grid" of Thing: nested lists'),
+      );
+    });
+
+    test('indexing a map field fails naming the field', () async {
+      const model = '''
+@Collection('things', indexes: [Index(['meta'])])
+class Thing {
+  const Thing({required this.meta});
+  final Map<String, int> meta;
+}
+''';
+      final run = await runCocoonBuilder(
+        _head + model,
+        lockText(
+          collections: {
+            'Thing': TestCollection(
+              'things',
+              const {'meta': 'Map<String,int>'},
+              indexes: const [
+                ['meta'],
+              ],
+            ),
+          },
+        ),
+      );
+      expect(run.succeeded, isFalse);
+      final message = run.errors.join('\n');
+      expect(message, contains('Field "meta" of Thing cannot be indexed'));
+      expect(message, contains('Map fields are stored inside the document'));
+    });
 
     test('a stored field without a constructor parameter fails', () async {
       const model = '''

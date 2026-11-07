@@ -35,10 +35,14 @@ final class CocoonMigration {
 /// [fromNumber] move to field [toNumber], each transformed by [convert].
 ///
 /// [fromType] and [toType] are the lock's canonical type names (`String`,
-/// `int`, `List<String>`, ...), kept for review and error messages;
-/// [fromWire] and [toWire] are the exact wire encodings the two sides read
-/// and write. The generated code builds these through [FieldMigration.typed]
-/// so the conversion function stays type-checked.
+/// `int`, `List<String>`, `Map<String,int>`, ...), kept for review and error
+/// messages; [fromWire] and [toWire] are the exact wire encodings the two
+/// sides read and write — [MigrationWireType.map] for map fields, with the
+/// entry encodings in [fromMap] and [toMap]. The generated code builds
+/// scalar rewrites through [FieldMigration.typed] so the conversion function
+/// stays type-checked; map rewrites are built directly with a convert
+/// function that casts the decoded `Map<Object?, Object?>` to the old
+/// field's map type first.
 final class FieldMigration {
   /// Builds a rewrite with an untyped [convert].
   const FieldMigration({
@@ -52,6 +56,8 @@ final class FieldMigration {
     required this.toType,
     required this.toWire,
     required this.convert,
+    this.fromMap,
+    this.toMap,
   });
 
   /// Builds a rewrite whose [convert] takes and returns the field's real
@@ -63,6 +69,11 @@ final class FieldMigration {
   /// representation; enums yield `String`, their name) and [T] the new
   /// field's. Values are never null: documents without the old field are
   /// skipped entirely, before [convert] runs.
+  ///
+  /// Scalar rewrites only: a map field's decoded value is a
+  /// `Map<Object?, Object?>`, which cannot be cast to a typed map argument —
+  /// build map rewrites with the [FieldMigration] constructor directly and
+  /// cast inside [convert].
   static FieldMigration typed<S, T>({
     required String model,
     required String fromName,
@@ -73,6 +84,8 @@ final class FieldMigration {
     required int toNumber,
     required String toType,
     required MigrationWireType toWire,
+    MapWireType? fromMap,
+    MapWireType? toMap,
     required T Function(S value) convert,
   }) => FieldMigration(
     model: model,
@@ -80,10 +93,12 @@ final class FieldMigration {
     fromNumber: fromNumber,
     fromType: fromType,
     fromWire: fromWire,
+    fromMap: fromMap,
     toName: toName,
     toNumber: toNumber,
     toType: toType,
     toWire: toWire,
+    toMap: toMap,
     convert: (Object? value) => convert(value as S),
   );
 
@@ -113,6 +128,14 @@ final class FieldMigration {
 
   /// The wire encoding the converted values are stored with.
   final MigrationWireType toWire;
+
+  /// For a map field ([fromWire] is [MigrationWireType.map]): the wire
+  /// encodings of the old entries' keys and values. `null` otherwise.
+  final MapWireType? fromMap;
+
+  /// For a map field ([toWire] is [MigrationWireType.map]): the wire
+  /// encodings of the new entries' keys and values. `null` otherwise.
+  final MapWireType? toMap;
 
   /// Converts one stored value. Sees only documents whose old field was
   /// present, always with a non-null value; returning `null` drops the

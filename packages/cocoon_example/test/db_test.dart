@@ -44,6 +44,11 @@ void main() {
     expect(txn.data.rate, 4.123456);
     expect(txn.data.labels, ['food', 'weekly']);
     expect(txn.data.memo, 'groceries');
+    expect(txn.data.meta, {
+      'card': 'visa-4242',
+      'channel': 'web',
+      'batch': 'b-17',
+    });
     expect(txn.data.receipt, isNotNull);
 
     final split = (await splitRef.get())!;
@@ -134,6 +139,7 @@ void main() {
       expect(tOld.memo, isNull);
       expect(tOld.receipt, isNull);
       expect(tOld.labels, isEmpty);
+      expect(tOld.meta, isEmpty); // written before the field existed
 
       final tOlder =
           (await reopened

@@ -114,10 +114,17 @@ Rules the generator enforces (build errors say exactly what to fix):
   marked `@Ignore()`; getters are not stored. No generic models.
 - Supported types: `int`, `double`, `bool`, `String`, `DateTime` (UTC
   microseconds), `Uint8List`, enums (stored by name), `List<T>` of those, and
-  `@Embedded()` classes. Any of them nullable.
+  `@Embedded()` classes. Any of them nullable. Also `Map<K, V>` where `K` is
+  `String` or `int` and `V` is any supported non-Map type — values may not be
+  nullable or Maps; encode the absence of a value by omitting its entry. A
+  map is stored like protobuf's map type: one nested message per entry with
+  the key at field 1 and the value at field 2, entries written sorted by
+  key, so equal maps always encode to equal bytes.
 - A field missing from an older document decodes to the constructor default,
   else `null` when nullable, else the zero value (`0`, `''`, `false`, empty
-  list, epoch UTC, first enum value).
+  list, empty map, epoch UTC, first enum value).
+- Maps cannot be indexed: an `Index([...])` naming a map field is a build
+  error ("lists, maps and embedded classes live inside the document blob").
 - **Subcollection indexes start with the path params** (`accountId` above):
   a scoped query always filters them, so an index without them can't serve
   it. An index without params serves collection-group queries.

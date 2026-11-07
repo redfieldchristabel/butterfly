@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "version": 2,
+  "version": 3,
   "collections": {
     "Account": {
       "path": "accounts",
@@ -104,6 +104,10 @@
         "bookedOn": {
           "number": 10,
           "type": "int"
+        },
+        "meta": {
+          "number": 11,
+          "type": "Map<String,String>"
         }
       },
       "reserved": [

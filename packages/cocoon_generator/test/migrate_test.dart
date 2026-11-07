@@ -491,6 +491,163 @@ void main() {
   );
 
   test(
+    'a map type change moves the field and writes the map stub',
+    timeout: const Timeout(Duration(minutes: 2)),
+    () async {
+      // v1: meta is Map<String,int>; the model changes it to Map<int,String>
+      // (key and value types both changed: a type change, no decisions).
+      const metaMapV1Models = '''
+import 'package:cocoon/cocoon.dart';
+
+@Collection('staff', indexes: [Index(['name'])])
+class Staff {
+  const Staff({required this.name, required this.staffId});
+  final String name;
+  final String staffId;
+}
+
+@Collection('ledgers')
+class Ledger {
+  const Ledger({required this.meta});
+  final Map<String, int> meta;
+}
+''';
+      const metaMapV2Models = '''
+import 'package:cocoon/cocoon.dart';
+
+@Collection('staff', indexes: [Index(['name'])])
+class Staff {
+  const Staff({required this.name, required this.staffId});
+  final String name;
+  final String staffId;
+}
+
+@Collection('ledgers')
+class Ledger {
+  const Ledger({required this.meta});
+  final Map<int, String> meta;
+}
+''';
+      final ledgerV1Lock = lockText(
+        collections: {
+          'Staff': TestCollection(
+            'staff',
+            const {'name': 'String', 'staffId': 'String'},
+            indexes: const [
+              ['name'],
+            ],
+          ),
+          'Ledger': TestCollection('ledgers', const {
+            'meta': 'Map<String,int>',
+          }),
+        },
+      );
+      final pkg = await tempPackage(
+        models: metaMapV1Models,
+        lock: ledgerV1Lock,
+      );
+      File('${pkg.path}/lib/models.dart').writeAsStringSync(metaMapV2Models);
+      final exit = await migrate(pkg); // non-interactive: nothing to ask
+      expect(exit, 0);
+
+      final lock = SchemaLock.parse(lockFileOf(pkg));
+      expect(lock.version, 2);
+      final ledger = lock.collections['Ledger']!;
+      expect(ledger.field('meta')!.number, 2);
+      expect(ledger.field('meta')!.type, 'Map<int,String>');
+      expect(ledger.reserved, [1]);
+
+      final migrations = Directory('${pkg.path}/lib/cocoon_migrations');
+      final migrationFile = migrations.listSync().whereType<File>().singleWhere(
+        (f) => f.path.endsWith('.dart') && !f.path.endsWith('migrations.dart'),
+      );
+      final source = migrationFile.readAsStringSync();
+      // The stub converts the old map's parts as their stored
+      // representations (String keys, int values).
+      expect(
+        source,
+        contains(
+          'Map<int, String> upgradeLedgerMeta(Map<String, int> old) => '
+          "throw UnimplementedError('Write the conversion');",
+        ),
+      );
+      // The rewrite carries both sides' entry encodings and casts the
+      // decoded map to the old field's map type.
+      expect(source, contains('fromWire: MigrationWireType.map,'));
+      expect(
+        source,
+        contains(
+          'fromMap: MapWireType(\n'
+          '      key: MigrationWireType.text,\n'
+          '      value: MigrationWireType.sint64,\n'
+          '    ),',
+        ),
+      );
+      expect(source, contains('toWire: MigrationWireType.map,'));
+      expect(
+        source,
+        contains(
+          'toMap: MapWireType(\n'
+          '      key: MigrationWireType.sint64,\n'
+          '      value: MigrationWireType.text,\n'
+          '    ),',
+        ),
+      );
+      expect(
+        source,
+        contains(
+          '(value! as Map<Object?, Object?>).cast<String, int>(),',
+        ),
+      );
+    },
+  );
+
+  test(
+    'a map with a list value refuses the generated conversion',
+    timeout: const Timeout(Duration(minutes: 2)),
+    () async {
+      const listsV1Models = '''
+import 'package:cocoon/cocoon.dart';
+
+@Collection('ledgers')
+class Ledger {
+  const Ledger({required this.meta});
+  final Map<String, List<String>> meta;
+}
+''';
+      const listsV2Models = '''
+import 'package:cocoon/cocoon.dart';
+
+@Collection('ledgers')
+class Ledger {
+  const Ledger({required this.meta});
+  final Map<String, int> meta;
+}
+''';
+      final ledgerV1Lock = lockText(
+        collections: {
+          'Ledger': TestCollection('ledgers', const {
+            'meta': 'Map<String,List<String>>',
+          }),
+        },
+      );
+      final pkg = await tempPackage(
+        models: listsV1Models,
+        lock: ledgerV1Lock,
+      );
+      File('${pkg.path}/lib/models.dart').writeAsStringSync(listsV2Models);
+      final exit = await migrate(pkg);
+      expect(exit, 1);
+      expect(
+        lastIo.out.toString(),
+        contains('Change the field in two steps instead'),
+      );
+      // Nothing was written.
+      expect(SchemaLock.parse(lockFileOf(pkg)).version, 1);
+    },
+  );
+
+  test(
     'a second migrate regenerates the list with every file',
     timeout: const Timeout(Duration(minutes: 3)),
     () async {
@@ -745,13 +902,45 @@ void main() {
   );
 
   test(
-    'the cocoon_example lock is what migrate writes for its v1 lock',
+    'the cocoon_example lock is what migrate writes for its v2 lock',
     timeout: const Timeout(Duration(minutes: 3)),
     () async {
-      // The committed example lock was produced by this exact flow: its v1
-      // lock (`Txn.bookedOn` a String at number 1) plus its real models,
-      // migrated without flags (a pure type change needs no decisions). The
-      // generated part file is present, like in every real package.
+      // The committed example lock (v3, `Txn.meta` added) was produced by
+      // this exact flow: its v2 lock (the committed one minus `meta`) plus
+      // its real models, migrated without flags (a pure field addition
+      // needs no decisions). The generated part file is present, like in
+      // every real package.
+      final exampleLib = Directory('../cocoon_example/lib');
+      final models = File('${exampleLib.path}/models.dart').readAsStringSync();
+
+      final pkg = await tempPackage(
+        models: models,
+        lock: exampleV2Lock(),
+        extraFile: 'lib/models.cocoon.dart',
+        extraContent: "part of 'models.dart';\n",
+      );
+      final exit = await migrate(pkg); // non-interactive: nothing to ask
+      expect(exit, 0, reason: lastIo.out.toString());
+      // A field addition writes no migration file.
+      expect(migrationDirExists(pkg), isFalse);
+
+      // The written lock is byte-for-byte the committed one.
+      final committedLock = File(
+        '../cocoon_example/cocoon.lock.json',
+      ).readAsStringSync();
+      expect(lockFileOf(pkg), committedLock);
+    },
+  );
+
+  test(
+    'the example m0002 stub is what migrate writes for its v1 lock',
+    timeout: const Timeout(Duration(minutes: 3)),
+    () async {
+      // The committed m0002 migration file was produced by migrating the v1
+      // lock (`Txn.bookedOn` a String at number 1) against the real models.
+      // The `meta` addition in the same run needs no decision and no
+      // migration file, so the field-rewrite list is exactly the committed
+      // one. The generated part file is present, like in every real package.
       final exampleLib = Directory('../cocoon_example/lib');
       final models = File('${exampleLib.path}/models.dart').readAsStringSync();
 
@@ -769,12 +958,6 @@ void main() {
           'Wrote lib/cocoon_migrations/m0002_txn_booked_on_to_booked_on.dart.',
         ),
       );
-
-      // The written lock is byte-for-byte the committed one.
-      final committedLock = File(
-        '../cocoon_example/cocoon.lock.json',
-      ).readAsStringSync();
-      expect(lockFileOf(pkg), committedLock);
 
       // The generated list file is byte-for-byte the committed one.
       final committedList = File(
@@ -805,6 +988,24 @@ void main() {
       expect(committed, contains('int upgradeTxnBookedOn(String old) =>'));
     },
   );
+}
+
+/// The example package's v2 lock: the committed v3 lock minus the `meta`
+/// field addition, one version back. The committed lock is its `migrate`
+/// output.
+String exampleV2Lock() {
+  final committed =
+      jsonDecode(
+            File(
+              '../cocoon_example/cocoon.lock.json',
+            ).readAsStringSync(),
+          )
+          as Map<String, Object?>;
+  final collections = committed['collections']! as Map<String, Object?>;
+  final txn = collections['Txn']! as Map<String, Object?>;
+  (txn['fields']! as Map<String, Object?>).remove('meta');
+  committed['version'] = 2;
+  return '${const JsonEncoder.withIndent('  ').convert(committed)}\n';
 }
 
 /// The example package's v1 lock: the current schema with `Txn.bookedOn`

@@ -7,7 +7,8 @@
 ///
 /// Types map to the lock's canonical names: `int`, `double`, `bool`,
 /// `String`, `DateTime`, `Uint8List`, `enum:<Name>`, `List<...>`,
-/// `embedded:<Name>`, with a `?` suffix for nullable.
+/// `Map<String|int,...>`, `embedded:<Name>`, with a `?` suffix for nullable
+/// (maps and lists themselves; their elements and values are never nullable).
 library;
 
 import 'package:analyzer/dart/element/element.dart';
@@ -446,7 +447,44 @@ String _canonicalBase(DartType type, String context, _Extraction extraction) {
         '(${element.getDisplayString()}); make the list itself nullable instead',
       );
     }
+    if (element.isDartCoreList) {
+      throw CocoonBuildError(
+        '$context: nested lists (${element.getDisplayString()}) are not '
+        'supported; flatten the list or move the inner list into an '
+        '@Embedded class',
+      );
+    }
     return 'List<${_canonicalBase(element, context, extraction)}>';
+  }
+  if (type.isDartCoreMap) {
+    final arguments = (type as InterfaceType).typeArguments;
+    final key = arguments[0];
+    final value = arguments[1];
+    final keyCanonical = key.isDartCoreString
+        ? 'String'
+        : key.isDartCoreInt
+        ? 'int'
+        : null;
+    if (keyCanonical == null) {
+      throw CocoonBuildError(
+        '$context: map keys must be String or int, not '
+        '${key.getDisplayString()}',
+      );
+    }
+    if (value.nullabilitySuffix == NullabilitySuffix.question) {
+      throw CocoonBuildError(
+        '$context: map values may not be nullable '
+        '(${value.getDisplayString()}); encode absence by omitting the entry',
+      );
+    }
+    final valueCanonical = _canonicalBase(value, context, extraction);
+    if (valueCanonical.contains('Map<')) {
+      throw CocoonBuildError(
+        '$context: a Map value inside a Map is not supported '
+        '(${value.getDisplayString()})',
+      );
+    }
+    return 'Map<$keyCanonical,$valueCanonical>';
   }
   final element = type.element;
   if (element is EnumElement) {
@@ -481,14 +519,14 @@ String _canonicalBase(DartType type, String context, _Extraction extraction) {
     }
     throw CocoonBuildError(
       '$context: unsupported type ${element.name}. Cocoon stores int, double, '
-      'bool, String, DateTime, Uint8List, enums, List<...> of those, and '
-      '@Embedded classes',
+      'bool, String, DateTime, Uint8List, enums, List<...> and '
+      'Map<String|int, ...> of those, and @Embedded classes',
     );
   }
   throw CocoonBuildError(
     '$context: unsupported type ${type.getDisplayString()}. Cocoon stores '
-    'int, double, bool, String, DateTime, Uint8List, enums, List<...> of '
-    'those, and @Embedded classes',
+    'int, double, bool, String, DateTime, Uint8List, enums, List<...> and '
+    'Map<String|int, ...> of those, and @Embedded classes',
   );
 }
 

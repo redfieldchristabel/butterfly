@@ -526,6 +526,7 @@ class CollectionDiff {
       }
     }
     final indexable = {...names, ...pattern.params};
+    final typesByName = {for (final f in declared.fields) f.name: f.type};
     for (final index in declared.indexes) {
       if (index.isEmpty) {
         throw ArgumentError('Empty index in ${declared.model}');
@@ -535,6 +536,12 @@ class CollectionDiff {
         if (!indexable.contains(name)) {
           throw ArgumentError(
             'Index on unknown field "$name" in ${declared.model}',
+          );
+        }
+        if (typesByName[name]?.startsWith('Map<') ?? false) {
+          throw ArgumentError(
+            'Field "$name" of ${declared.model} cannot be indexed: Map '
+            'fields are stored inside the document blob and have no column',
           );
         }
       }

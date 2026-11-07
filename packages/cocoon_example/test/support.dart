@@ -47,7 +47,8 @@ Account accountFixture({required String name}) => Account(
 );
 
 /// A [Txn] exercising every stored type: `int`, enum, `DateTime`, `double`,
-/// nullable `String`, `List<String>` and nullable bytes.
+/// nullable `String`, `List<String>`, `Map<String, String>` and nullable
+/// bytes.
 Txn txnFixture({
   int bookedOn = 20260115,
   int amountMinor = -4299,
@@ -62,6 +63,7 @@ Txn txnFixture({
   rate: 4.123456,
   memo: 'groceries',
   labels: const ['food', 'weekly'],
+  meta: const {'card': 'visa-4242', 'channel': 'web', 'batch': 'b-17'},
   receipt: Uint8List.fromList(const [9, 8, 7, 0, 255]),
 );
 

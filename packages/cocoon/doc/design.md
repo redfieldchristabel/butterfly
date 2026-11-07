@@ -92,6 +92,13 @@ on the docs site under **Cocoon**:
   Flutter web app compiled into `extension/devtools/`) is a pure client
   over the service protocol — it never imports the engine, and documents
   decode through the generated adapter's `toInspectorJson`.
+- **Map fields** follow protobuf map semantics: one nested entry message per
+  entry, key at field 1, value at field 2; keys are `String` or `int`, values
+  any supported non-Map type. Entries are written sorted by key, so equal
+  maps always give equal canonical bytes — the journal-chain hash depends on
+  it. Maps stay inside the document blob (never columns), so they cannot be
+  indexed; a map type change migrates like any other (fresh field number,
+  `fromMap`/`toMap: MapWireType(key:, value:)` on the `FieldMigration`).
 - **Document ids**: time-ordered UUIDv7 (`newDocId()`); `validateDocId`
   enforces path-safe ids.
 
@@ -130,3 +137,5 @@ executor, so it is deferred.
 | On-device migration runner (`Cocoon.open` schema versions) | done |
 | Documentation site section (`docs/libraries/cocoon/`) | done |
 | DevTools extension (`packages/cocoon_devtools`, `ext.cocoon.*` service extensions) | done |
+| `Map<String, V>` / `Map<int, V>` fields (canonical protobuf map encoding, sorted keys; generator, migrations, inspector) | done |
+| Benchmark vs sembast (`packages/cocoon_bench`, finance-shaped data, `RESULTS.md`) | done |
