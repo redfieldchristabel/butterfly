@@ -15,7 +15,6 @@ import 'package:build_test/build_test.dart';
 import 'package:cocoon_generator/builder.dart';
 import 'package:glob/glob.dart';
 import 'package:package_config/package_config.dart';
-import 'package:test/test.dart';
 
 /// The packages whose real `lib/**.dart` sources the analyzer needs to
 /// resolve a test model importing `package:cocoon/cocoon.dart`.
@@ -129,10 +128,20 @@ final class BuildRun {
 
 /// Runs the real `cocoonBuilder` on `lib/models.dart` containing [models],
 /// with [lock] as the package's `cocoon.lock.json` (empty string = no lock).
-Future<BuildRun> runCocoonBuilder(String models, String lock) async {
+/// [extraFiles] adds further assets, e.g. migration stub files under
+/// `lib/cocoon_migrations/` (asset paths like `a|lib/cocoon_migrations/m.dart`).
+Future<BuildRun> runCocoonBuilder(
+  String models,
+  String lock, [
+  Map<String, String> extraFiles = const {},
+]) async {
   final result = await testBuilder(
     cocoonBuilder(const BuilderOptions({})),
-    {'a|lib/models.dart': models, if (lock != '') 'a|cocoon.lock.json': lock},
+    {
+      'a|lib/models.dart': models,
+      if (lock != '') 'a|cocoon.lock.json': lock,
+      ...extraFiles,
+    },
     readerWriter: await _freshReaderWriter(),
     flattenOutput: true,
   );
@@ -140,15 +149,19 @@ Future<BuildRun> runCocoonBuilder(String models, String lock) async {
 }
 
 /// Runs the schema-version builder on a `cocoon.lock.json` input and returns
-/// the generated `lib/cocoon_schema.g.dart` text.
-Future<String> runSchemaVersionBuilder(String lock) async {
+/// the outcome; [BuildRun.code] reads the generated `lib/cocoon_schema.g.dart`
+/// when the build succeeded. [extraFiles] adds further assets, e.g. migration
+/// stub files under `lib/cocoon_migrations/` (asset paths like
+/// `a|lib/cocoon_migrations/m.dart`).
+Future<BuildRun> runSchemaVersionBuilder(
+  String lock, [
+  Map<String, String> extraFiles = const {},
+]) async {
   final result = await testBuilder(
     cocoonSchemaVersionBuilder(const BuilderOptions({})),
-    {'a|cocoon.lock.json': lock},
+    {'a|cocoon.lock.json': lock, ...extraFiles},
     readerWriter: await _freshReaderWriter(),
     flattenOutput: true,
   );
-  final id = AssetId('a', 'lib/cocoon_schema.g.dart');
-  expect(result.outputs, contains(id));
-  return result.readerWriter.testing.readString(id);
+  return BuildRun(result, AssetId('a', 'lib/cocoon_schema.g.dart'));
 }

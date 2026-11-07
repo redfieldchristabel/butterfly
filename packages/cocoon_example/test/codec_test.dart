@@ -41,7 +41,6 @@ void main() {
   test('txn bytes are the canonical hand-written encoding', () {
     final txn = txnFixture();
     final writer = WireWriter();
-    writer.writeSint64(1, txn.bookedOn);
     writer.writeSint64(2, txn.amountMinor); // negative: zigzag sint64
     writer.writeString(3, txn.currency);
     writer.writeString(4, txn.status.name);
@@ -56,6 +55,9 @@ void main() {
       }
     });
     writer.writeBytes(9, txn.receipt!);
+    // bookedOn was a String at number 1 in schema v1; the type change moved
+    // it to number 10, and the old number stays reserved.
+    writer.writeSint64(10, txn.bookedOn);
 
     expect(txns.encode(txn), writer.toBytes());
   });
@@ -71,13 +73,13 @@ void main() {
       labels: const [],
     );
     final writer = WireWriter();
-    writer.writeSint64(1, 1);
     writer.writeSint64(2, 0);
     writer.writeString(3, 'MYR');
     writer.writeString(4, 'pending');
     writer.writeSint64(5, DateTime.utc(2026).microsecondsSinceEpoch);
     writer.writeDouble(6, 1);
     writer.writeMessage(8, (nested) {});
+    writer.writeSint64(10, 1);
 
     expect(txns.encode(txn), writer.toBytes());
   });
@@ -100,7 +102,7 @@ void main() {
       numbers.add(tag.field);
       reader.skip(tag.type);
     }
-    expect(numbers, [1, 2, 3, 4, 5, 6, 8]);
+    expect(numbers, [2, 3, 4, 5, 6, 8, 10]);
   });
 
   test(
@@ -130,14 +132,14 @@ void main() {
 
   test('a document written before memo/labels/receipt existed decodes with '
       'defaults', () {
-    // The encoding an old schema version produced: fields 1-6 only.
+    // The encoding an old schema version produced: fields 2-6 and 10 only.
     final old = WireWriter();
-    old.writeSint64(1, 20260110);
     old.writeSint64(2, -1200);
     old.writeString(3, 'SGD');
     old.writeString(4, TxnStatus.pending.name);
     old.writeSint64(5, DateTime.utc(2026, 1, 10, 8).microsecondsSinceEpoch);
     old.writeDouble(6, 0.31);
+    old.writeSint64(10, 20260110);
 
     final txn = txns.decode(old.toBytes());
     expect(txn.bookedOn, 20260110);
@@ -159,18 +161,19 @@ void main() {
       numbers.add(tag.field);
       reader.skip(tag.type);
     }
-    expect(numbers, [1, 2, 3, 4, 5, 6, 8]);
+    expect(numbers, [2, 3, 4, 5, 6, 8, 10]);
   });
 
   test('unknown field numbers from the future are skipped', () {
-    // Fields 1-6 of an old schema, plus field 50 that a newer version wrote.
+    // Fields 2-6 and 10 of an old schema, plus field 50 that a newer version
+    // wrote.
     final writer = WireWriter();
-    writer.writeSint64(1, 20260110);
     writer.writeSint64(2, -1200);
     writer.writeString(3, 'SGD');
     writer.writeString(4, TxnStatus.pending.name);
     writer.writeSint64(5, DateTime.utc(2026, 1, 10, 8).microsecondsSinceEpoch);
     writer.writeDouble(6, 0.31);
+    writer.writeSint64(10, 20260110);
     writer.writeString(50, 'a field from the future');
 
     final txn = txns.decode(writer.toBytes());

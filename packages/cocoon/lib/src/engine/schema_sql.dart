@@ -245,7 +245,8 @@ final class RegistryEntry {
 /// registered parents, and valid SQL-derived names.
 final class SchemaRegistry {
   SchemaRegistry._(this._entries)
-    : _byPattern = {for (final entry in _entries) entry.adapter.pattern: entry};
+    : _byPattern = {for (final entry in _entries) entry.adapter.pattern: entry},
+      _byModel = {for (final entry in _entries) entry.adapter.model: entry};
 
   /// Validates [collections] and builds the registry.
   ///
@@ -297,9 +298,14 @@ final class SchemaRegistry {
 
   final List<RegistryEntry> _entries;
   final Map<CollectionPattern, RegistryEntry> _byPattern;
+  final Map<String, RegistryEntry> _byModel;
 
   /// All entries, in registration order.
   List<RegistryEntry> get entries => _entries;
+
+  /// The entry for [model], or `null` when no adapter with that model name
+  /// was registered.
+  RegistryEntry? byModel(String model) => _byModel[model];
 
   static Iterable<CollectionPattern> _patternsOf(
     Iterable<RegistryEntry> entries,

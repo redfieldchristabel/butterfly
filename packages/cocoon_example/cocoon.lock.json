@@ -69,10 +69,6 @@
     "Txn": {
       "path": "accounts/{accountId}/txns",
       "fields": {
-        "bookedOn": {
-          "number": 1,
-          "type": "int"
-        },
         "amountMinor": {
           "number": 2,
           "type": "int"
@@ -104,9 +100,15 @@
         "receipt": {
           "number": 9,
           "type": "Uint8List?"
+        },
+        "bookedOn": {
+          "number": 10,
+          "type": "int"
         }
       },
-      "reserved": [],
+      "reserved": [
+        1
+      ],
       "indexes": [
         [
           "accountId",

@@ -26,6 +26,35 @@ enum WireType {
   };
 }
 
+/// The exact wire encoding of one field value involved in a schema
+/// migration.
+///
+/// The protobuf wire type alone cannot decode a value: `int64`, `sint64` and
+/// `bool` are all varints but decode differently. A [FieldMigration]
+/// therefore pins the encoding of both sides of the rewrite.
+enum MigrationWireType {
+  /// Plain two's-complement varint, as [WireWriter.writeInt64] writes it.
+  int64,
+
+  /// Zigzag varint, as [WireWriter.writeSint64] writes it. The code
+  /// generator encodes `int` and `DateTime` fields this way.
+  sint64,
+
+  /// Varint `0`/`1`, as [WireWriter.writeBool] writes it.
+  boolean,
+
+  /// Little-endian IEEE 754 double, as [WireWriter.writeDouble] writes it.
+  float64,
+
+  /// UTF-8 text, as [WireWriter.writeString] writes it. Enums are stored as
+  /// their name, so they migrate as [text] too.
+  text,
+
+  /// Length-delimited bytes, as [WireWriter.writeBytes] writes it. Nested
+  /// messages (lists and `@Embedded` values) are [bytes] as well.
+  bytes,
+}
+
 /// Writes the protobuf binary wire format in canonical form.
 ///
 /// Canonical means the same document always produces the same bytes, which
@@ -115,6 +144,18 @@ class WireWriter {
     }
     _lastField = field;
     _varint((field << 3) | type.id);
+  }
+
+  /// Writes one field whose value is already encoded: the exact [raw] bytes
+  /// (without the length prefix of `len` values) under a fresh tag.
+  void _writeRaw(int field, WireType type, List<int> raw) {
+    _tag(field, type);
+    if (type == WireType.len) {
+      _varint(raw.length);
+    }
+    _ensure(raw.length);
+    _buffer.setRange(_length, _length + raw.length, raw);
+    _length += raw.length;
   }
 
   void _varint(int value) {
@@ -227,6 +268,32 @@ class WireReader {
     }
   }
 
+  /// Returns the raw, undecoded bytes of one value of [type], positioned
+  /// right after the tag: the exact bytes a schema migration re-serializes
+  /// for fields it leaves untouched.
+  Uint8List _readRawValue(WireType type) => switch (type) {
+    WireType.varint => () {
+      final start = _position;
+      while (true) {
+        _need(1);
+        if ((_bytes[_position++] & 0x80) == 0) {
+          break;
+        }
+      }
+      return Uint8List.sublistView(_bytes, start, _position);
+    }(),
+    WireType.i64 => _fixedRaw(8),
+    WireType.len => readBytes(),
+    WireType.i32 => _fixedRaw(4),
+  };
+
+  Uint8List _fixedRaw(int count) {
+    _need(count);
+    final value = Uint8List.sublistView(_bytes, _position, _position + count);
+    _position += count;
+    return value;
+  }
+
   int _varint() {
     var result = 0;
     var shift = 0;
@@ -250,5 +317,102 @@ class WireReader {
         'have ${_bytes.length - _position}',
       );
     }
+  }
+}
+
+/// Rewrites one canonical document for a schema migration: field [from]'s
+/// value moves to field [to], transformed by [convert].
+///
+/// Reads the last occurrence of field [from] (a singular field occurs at
+/// most once), decodes it as [fromWire], hands the value to [convert],
+/// removes every [from] occurrence and writes the converted value at [to]
+/// encoded as [toWire]. Every other field is re-serialized byte-for-byte, in
+/// the same canonical ascending order, and the result is a new list — [doc]
+/// itself is never modified.
+///
+/// When field [from] is absent the document is returned unchanged — the
+/// same instance, with [convert] not called and field [to] not written. A
+/// `null` result of [convert] drops the value instead of writing it.
+///
+/// Throws a [TypeError] when a converted value does not fit [toWire] (for
+/// example a [String] for [MigrationWireType.int64]).
+Uint8List rewriteField(
+  Uint8List doc, {
+  required int from,
+  required MigrationWireType fromWire,
+  required int to,
+  required MigrationWireType toWire,
+  required Object? Function(Object? value) convert,
+}) {
+  final reader = WireReader(doc);
+  final kept = <(int, WireType, Uint8List)>[];
+  Uint8List? oldRaw;
+  while (!reader.isAtEnd) {
+    final tag = reader.readTag();
+    final raw = reader._readRawValue(tag.type);
+    if (tag.field == from) {
+      oldRaw = raw;
+    } else {
+      kept.add((tag.field, tag.type, raw));
+    }
+  }
+  if (oldRaw == null) {
+    return doc;
+  }
+  final converted = convert(_decodeWireValue(oldRaw, fromWire));
+
+  final writer = WireWriter();
+  var inserted = converted == null;
+  for (final (field, type, raw) in kept) {
+    if (!inserted && field >= to) {
+      _writeWireValue(writer, to, toWire, converted!);
+      inserted = true;
+    }
+    writer._writeRaw(field, type, raw);
+  }
+  if (!inserted) {
+    _writeWireValue(writer, to, toWire, converted!);
+  }
+  return writer.toBytes();
+}
+
+/// Decodes one raw wire value as [kind].
+///
+/// The raw bytes of a `len` value are its payload (the length prefix was
+/// consumed when the document was parsed), so text and bytes decode
+/// directly; varint and fixed values decode from their exact bytes.
+Object? _decodeWireValue(Uint8List raw, MigrationWireType kind) {
+  return switch (kind) {
+    MigrationWireType.int64 => WireReader(raw).readInt64(),
+    MigrationWireType.sint64 => WireReader(raw).readSint64(),
+    MigrationWireType.boolean => WireReader(raw).readBool(),
+    MigrationWireType.float64 => WireReader(raw).readDouble(),
+    MigrationWireType.text => utf8.decode(raw),
+    // Copy: the view points into the source document, and the conversion
+    // may outlive it.
+    MigrationWireType.bytes => Uint8List.fromList(raw),
+  };
+}
+
+/// Encodes [value] at [field] as [kind].
+void _writeWireValue(
+  WireWriter writer,
+  int field,
+  MigrationWireType kind,
+  Object? value,
+) {
+  switch (kind) {
+    case MigrationWireType.int64:
+      writer.writeInt64(field, value! as int);
+    case MigrationWireType.sint64:
+      writer.writeSint64(field, value! as int);
+    case MigrationWireType.boolean:
+      writer.writeBool(field, value! as bool);
+    case MigrationWireType.float64:
+      writer.writeDouble(field, value! as double);
+    case MigrationWireType.text:
+      writer.writeString(field, value! as String);
+    case MigrationWireType.bytes:
+      writer.writeBytes(field, value! as List<int>);
   }
 }

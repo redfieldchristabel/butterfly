@@ -6,13 +6,15 @@ library;
 export 'src/annotations.dart';
 export 'src/cursor.dart';
 export 'src/engine/adapter.dart';
-export 'src/engine/naming.dart' show tableNameFor, validNamePattern;
+export 'src/engine/naming.dart'
+    show snakeCase, tableNameFor, validNamePattern;
 export 'src/engine/changes.dart' show Change, ChangeOp;
 export 'src/engine/cocoon.dart';
 export 'src/engine/query.dart'
     show CocoonQuery, MissingIndexException, QueryPage;
 export 'src/engine/refs.dart';
 export 'src/id.dart';
+export 'src/migration.dart';
 export 'src/path.dart';
 export 'src/schema.dart';
 export 'src/wire.dart';

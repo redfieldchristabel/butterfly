@@ -14,6 +14,10 @@ const String metaTableName = '_cocoon_meta';
 /// committed write.
 const String changesTableName = '_cocoon_changes';
 
+/// Key under which `_cocoon_meta` stores the database's schema version: the
+/// lock version the running app last migrated the file to.
+const String schemaVersionMetaKey = 'schema_version';
+
 /// Converts a Dart identifier to `snake_case`.
 ///
 /// `Txn` becomes `txn`, `AccountNote` becomes `account_note` and acronym runs

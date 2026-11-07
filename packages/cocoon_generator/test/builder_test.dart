@@ -371,7 +371,7 @@ class Thing {
     });
 
     test('the schema version constant comes from the lock', () async {
-      final code = await runSchemaVersionBuilder(
+      final run = await runSchemaVersionBuilder(
         lockText(
           version: 12,
           collections: {
@@ -379,7 +379,7 @@ class Thing {
           },
         ),
       );
-      expect(code, contains('const cocoonSchemaVersion = 12;'));
+      expect(run.code, contains('const cocoonSchemaVersion = 12;'));
     });
   });
 
@@ -636,5 +636,68 @@ class LedgerTxn {
         );
       },
     );
+  });
+
+  group('the migration gate', () {
+    const lock = '''
+{
+  "format": 1,
+  "version": 2,
+  "collections": {
+    "Txn": {
+      "path": "accounts/{accountId}/txns",
+      "fields": {
+        "bookedOn": {"number": 10, "type": "int"}
+      },
+      "reserved": [1],
+      "indexes": []
+    }
+  }
+}
+''';
+
+    test(
+      'a migration file that still throws UnimplementedError fails',
+      () async {
+        final run = await runSchemaVersionBuilder(lock, {
+          'a|lib/cocoon_migrations/m0002_txn_booked_on.dart': '''
+// GENERATED CODE - DO NOT MODIFY BY HAND, except the conversion bodies.
+//
+// Cocoon schema migration to version 2. Implement every
+// `upgrade...` function below, then run build_runner again: the build
+// fails while any `UnimplementedError` remains.
+
+import 'package:cocoon/cocoon.dart';
+
+int upgradeTxnBookedOn(String old) =>
+    throw UnimplementedError('Write the conversion');
+''',
+        });
+        expect(run.succeeded, isFalse);
+        expect(
+          run.errors.join('\n'),
+          contains('still contains an unimplemented conversion'),
+        );
+      },
+    );
+
+    test('an implemented migration passes even though the header mentions '
+        'UnimplementedError', () async {
+      final run = await runSchemaVersionBuilder(lock, {
+        'a|lib/cocoon_migrations/m0002_txn_booked_on.dart': '''
+// GENERATED CODE - DO NOT MODIFY BY HAND, except the conversion bodies.
+//
+// Cocoon schema migration to version 2. Implement every
+// `upgrade...` function below, then run build_runner again: the build
+// fails while any `UnimplementedError` remains.
+
+import 'package:cocoon/cocoon.dart';
+
+int upgradeTxnBookedOn(String old) => int.parse(old.replaceAll('-', ''));
+''',
+      });
+      expect(run.succeeded, isTrue);
+      expect(run.errors, isEmpty);
+    });
   });
 }

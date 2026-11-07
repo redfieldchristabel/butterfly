@@ -12,13 +12,14 @@ built on SQLite.
   Firestore: a query runs only when an index serves it.
 - **No hand-written migrations**: field numbers are pinned by name in a
   committed `cocoon.lock.json`, so reordering or adding fields needs nothing,
-  and reopening the database reconciles tables, columns and indexes on its
-  own.
+  reopening the database reconciles tables, columns and indexes on its own,
+  and a type change needs exactly one conversion line that the on-device
+  runner applies for you.
 
-> Status: the storage engine, the change log, realtime watches and the
-> `cocoon_generator` build_runner codegen are in. The interactive
-> `migrate` CLI (which writes `cocoon.lock.json` for you) and the DevTools
-> inspector are next. See [doc/design.md](doc/design.md).
+> Status: the storage engine, the change log, realtime watches, the
+> `cocoon_generator` codegen (with the interactive `migrate` command that
+> maintains `cocoon.lock.json`) and the on-device migration runner are in.
+> The DevTools inspector is next. See [doc/design.md](doc/design.md).
 
 ## The 30-second version
 
@@ -122,8 +123,66 @@ Rules the generator enforces (build errors say exactly what to fix):
   it. An index without params serves collection-group queries.
 - The build fails when the models and `cocoon.lock.json` disagree:
   `Cocoon schema changed for <Model>: run "dart run cocoon_generator:migrate"`.
-  The builder never writes the lock. (The `migrate` CLI arrives in the next
-  release; until then, write the lock by hand, as `cocoon_example` does.)
+  The builder never writes the lock; the migrate command does — see the next
+  section.
+
+## Schema migrations
+
+Two tools compare the models against the committed `cocoon.lock.json`. The
+build only *fails* when they disagree; `migrate` *fixes* the disagreement:
+
+```sh
+dart run cocoon_generator:migrate
+```
+
+It asks only what a human must answer. For every removed field with new
+fields alongside it, a numbered menu offers the rename candidates — best
+first, Enter accepts the preselected one — and a final drop option; fields
+without candidates and removed collections ask a plain `y/N`. Everything
+else is decided without asking: added fields get fresh numbers, reorders
+and index changes change nothing, and a type change always moves the field
+to a fresh number with a conversion stub. The command writes the updated
+lock and, only when stored data must change, a numbered migration file:
+
+```dart
+// lib/cocoon_migrations/m0003_txn_currency_to_currency_code.dart
+// Txn.currency: String (#3) -> currencyCode: int (#10)
+int upgradeTxnCurrency(String old) => switch (old) {
+  'MYR' => 458,
+  'SGD' => 702,
+  _ => 0,
+};
+```
+
+Implement the stubs — the build fails while any `UnimplementedError`
+remains — and commit the lock and the migration file together, so renames
+and conversions show up in review. Pass both artifacts to the engine:
+
+```dart
+final db = await Cocoon.open(
+  file,
+  collections: [accounts, txns],
+  schemaVersion: cocoonSchemaVersion, // from lib/cocoon_schema.g.dart
+  migrations: cocoonMigrations, // from lib/cocoon_migrations/migrations.dart
+  onMigrationProgress: (done, total) => print('$done/$total'),
+);
+```
+
+On the device, opening compares the schema version stored in `_cocoon_meta`
+with `cocoonSchemaVersion`. A fresh database just stores the version. An
+older database runs every pending migration once, in order, inside ONE
+transaction: documents are rewritten at the wire level in batches of 500,
+one change-log row per rewritten document is appended, the migrated tables'
+columns and indexes are rebuilt from the rewritten bytes, and only then is
+the new version stored. A database written by a NEWER app version refuses
+to open (`SchemaTooNewException`); any failure — a throwing conversion
+included — rolls the whole open back.
+
+Scripts and pre-commit hooks drive the command without a terminal:
+`--rename Model.old=new`, `--drop Model.field`, `--drop-collection Model`
+(drops are never implied by `--yes`), `--check` (exit 1 when the lock would
+change, no writes), and a missing decision on non-interactive stdin exits 2
+listing the flags that would resolve it. See the cocoon_generator README.
 
 ## Writing an adapter by hand
 
@@ -422,9 +481,11 @@ final db = await Cocoon.open(
 
 On open, Cocoon creates missing tables and indexes in one transaction, adds
 new field columns (backfilling them by decoding existing rows in batches of
-500), and drops columns and indexes the adapters no longer declare. When the
-stored shape matches, opening does no DDL at all. Tables in the file without
-a registered adapter are left alone.
+500), and drops columns and indexes the adapters no longer declare. When
+the stored shape matches, opening does no DDL at all. Tables in the file
+without a registered adapter are left alone. Pass `schemaVersion:` and
+`migrations:` (see "Schema migrations") and the same transaction first
+applies every pending schema migration.
 
 One `Cocoon` instance must own its database file: do not open the same file
 from two instances or two processes — SQLite's write lock and the hot-cache

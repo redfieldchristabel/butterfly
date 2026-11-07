@@ -85,8 +85,8 @@ void main() {
       await db.close();
 
       // 2. Replace the blobs with what an older schema version wrote:
-      //    t-old has fields 1-6 (no memo, labels, receipt) and t-older has
-      //    fields 1-5 (also no rate).
+      //    t-old has fields 2-6 and 10 (no memo, labels, receipt) and
+      //    t-older has fields 2-5 and 10 (also no rate).
       final rawDb = raw.sqlite3.open(dbPath);
       final update = rawDb.prepare('UPDATE txn SET data = ? WHERE path = ?');
       void overwrite(String path, void Function(WireWriter) write) {
@@ -96,19 +96,19 @@ void main() {
       }
 
       overwrite('accounts/a1/txns/t-old', (w) {
-        w.writeSint64(1, 20260110);
         w.writeSint64(2, -1200);
         w.writeString(3, 'SGD');
         w.writeString(4, TxnStatus.pending.name);
         w.writeSint64(5, DateTime.utc(2026, 1, 10, 8).microsecondsSinceEpoch);
         w.writeDouble(6, 0.31);
+        w.writeSint64(10, 20260110);
       });
       overwrite('accounts/a1/txns/t-older', (w) {
-        w.writeSint64(1, 20260105);
         w.writeSint64(2, 500);
         w.writeString(3, 'MYR');
         w.writeString(4, TxnStatus.posted.name);
         w.writeSint64(5, DateTime.utc(2026, 1, 5, 9).microsecondsSinceEpoch);
+        w.writeSint64(10, 20260105);
       });
       update.close();
       rawDb.close();

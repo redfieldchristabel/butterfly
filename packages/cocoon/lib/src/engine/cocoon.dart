@@ -6,11 +6,13 @@ import 'package:sqlite_async/sqlite_async.dart'
 
 import '../cursor.dart';
 import '../id.dart';
+import '../migration.dart';
 import '../path.dart';
 import 'adapter.dart';
 import 'cache.dart';
 import 'changes.dart';
 import 'executor.dart';
+import 'migrate.dart';
 import 'naming.dart';
 import 'query.dart';
 import 'refs.dart';
@@ -90,10 +92,21 @@ final class Cocoon {
   /// The parent directory of [path] must exist. Throws an [ArgumentError]
   /// when the adapters are invalid (duplicate models, unknown index fields,
   /// a subcollection whose parent collection has no adapter, ...).
+  ///
+  /// With [schemaVersion] (the generated `cocoonSchemaVersion`) the open
+  /// also tracks the schema version in `_cocoon_meta`: a fresh database just
+  /// stores it, an older one runs every step of [migrations] with a greater
+  /// version once, in order, in the same transaction, and a database written
+  /// by a NEWER version refuses to open with a [SchemaTooNewException].
+  /// [onMigrationProgress] reports `(documents processed, documents total)`
+  /// per batch while the steps run. See the README's "Schema migrations".
   static Future<Cocoon> open(
     String path, {
     required List<CollectionAdapter<Object?>> collections,
     CocoonOptions options = const CocoonOptions(),
+    int? schemaVersion,
+    List<CocoonMigration> migrations = const [],
+    void Function(int done, int total)? onMigrationProgress,
   }) async {
     final executor = SqliteExecutor(
       SqliteDatabase(
@@ -106,6 +119,9 @@ final class Cocoon {
         executor,
         collections: collections,
         options: options,
+        schemaVersion: schemaVersion,
+        migrations: migrations,
+        onMigrationProgress: onMigrationProgress,
       );
     } on Object {
       await executor.close();
@@ -114,14 +130,32 @@ final class Cocoon {
   }
 
   /// Opens over an existing [executor]; used by tests to spy on statements.
+  ///
+  /// Same schema-version handling as [open]: see its [schemaVersion],
+  /// [migrations] and [onMigrationProgress] documentation.
   @visibleForTesting
   static Future<Cocoon> openWith(
     CocoonExecutor executor, {
     required List<CollectionAdapter<Object?>> collections,
     CocoonOptions options = const CocoonOptions(),
+    int? schemaVersion,
+    List<CocoonMigration> migrations = const [],
+    void Function(int done, int total)? onMigrationProgress,
   }) async {
     final registry = SchemaRegistry.build(collections);
-    await _reconcile(executor, registry);
+    await executor.writeTransaction((tx) async {
+      await _createMetaTableIfMissing(tx);
+      await _createChangesTableIfMissing(tx);
+      final migratedTables = await _applySchemaVersion(
+        tx,
+        registry,
+        schemaVersion: schemaVersion,
+        migrations: migrations,
+        keepChanges: options.keepChanges,
+        onMigrationProgress: onMigrationProgress,
+      );
+      await _reconcile(tx, registry, forceTables: migratedTables);
+    });
     return Cocoon._(
       executor,
       registry,
@@ -562,50 +596,95 @@ final class Cocoon {
 
   // -- Schema reconciliation ----------------------------------------------
 
+  /// Compares the stored schema version with [schemaVersion] and applies
+  /// every pending [CocoonMigration] (see [runSchemaMigrationsInTx]); then
+  /// stores the current version. Returns the migrated tables, which the
+  /// reconciler must rebuild even when their shape hash matches.
+  ///
+  /// A `null` [schemaVersion] (databases opened without version tracking)
+  /// does nothing.
+  static Future<Set<String>> _applySchemaVersion(
+    CocoonTx tx,
+    SchemaRegistry registry, {
+    required int? schemaVersion,
+    required List<CocoonMigration> migrations,
+    required bool keepChanges,
+    void Function(int done, int total)? onMigrationProgress,
+  }) async {
+    if (schemaVersion == null) {
+      return const {};
+    }
+    final row = await tx.getOptional(
+      'SELECT value FROM $metaTableName WHERE key = ?',
+      [schemaVersionMetaKey],
+    );
+    final stored = row == null ? 0 : int.parse(row['value']! as String);
+    if (stored > schemaVersion) {
+      throw SchemaTooNewException(stored, schemaVersion);
+    }
+    if (stored == schemaVersion) {
+      return const {};
+    }
+    final pending = [
+      for (final migration in migrations)
+        if (migration.version > stored) migration,
+    ]..sort((a, b) => a.version.compareTo(b.version));
+    final migratedTables = pending.isEmpty
+        ? const <String>{}
+        : await runSchemaMigrationsInTx(
+            tx: tx,
+            registry: registry,
+            pending: pending,
+            keepChanges: keepChanges,
+            onProgress: onMigrationProgress,
+          );
+    await tx.execute(
+      'INSERT OR REPLACE INTO $metaTableName (key, value) VALUES (?, ?)',
+      [schemaVersionMetaKey, '$schemaVersion'],
+    );
+    return migratedTables;
+  }
+
   static Future<void> _reconcile(
-    CocoonExecutor executor,
-    SchemaRegistry registry,
-  ) {
-    return executor.writeTransaction((tx) async {
-      await _createMetaTableIfMissing(tx);
-      await _createChangesTableIfMissing(tx);
-      for (final entry in registry.entries) {
-        final stored = await tx.getOptional(
-          'SELECT value FROM $metaTableName WHERE key = ?',
-          ['shape:${entry.table}'],
-        );
-        final tableExists =
-            await tx.getOptional(
-              "SELECT name FROM sqlite_master WHERE type = 'table' "
-              'AND name = ?',
-              [entry.table],
-            ) !=
-            null;
-        if (tableExists &&
-            stored != null &&
-            stored['value'] == entry.shapeHash) {
-          // Shape unchanged: no DDL beyond the two reads above.
-          continue;
-        }
-        if (!tableExists) {
-          await tx.execute(
-            createTableSql(entry.table, entry.paramSqlNames, entry.columnDdls),
-          );
-          await tx.execute(
-            createScopeIndexSql(entry.table, entry.paramSqlNames),
-          );
-          for (final index in entry.indexes) {
-            await tx.execute(createIndexSql(entry.table, index));
-          }
-        } else {
-          await _reconcileTable(tx, entry);
-        }
-        await tx.execute(
-          'INSERT OR REPLACE INTO $metaTableName (key, value) VALUES (?, ?)',
-          ['shape:${entry.table}', entry.shapeHash],
-        );
+    CocoonTx tx,
+    SchemaRegistry registry, {
+    Set<String> forceTables = const {},
+  }) async {
+    for (final entry in registry.entries) {
+      final stored = await tx.getOptional(
+        'SELECT value FROM $metaTableName WHERE key = ?',
+        ['shape:${entry.table}'],
+      );
+      final tableExists =
+          await tx.getOptional(
+            "SELECT name FROM sqlite_master WHERE type = 'table' "
+            'AND name = ?',
+            [entry.table],
+          ) !=
+          null;
+      if (!forceTables.contains(entry.table) &&
+          tableExists &&
+          stored != null &&
+          stored['value'] == entry.shapeHash) {
+        // Shape unchanged: no DDL beyond the two reads above.
+        continue;
       }
-    });
+      if (!tableExists) {
+        await tx.execute(
+          createTableSql(entry.table, entry.paramSqlNames, entry.columnDdls),
+        );
+        await tx.execute(createScopeIndexSql(entry.table, entry.paramSqlNames));
+        for (final index in entry.indexes) {
+          await tx.execute(createIndexSql(entry.table, index));
+        }
+      } else {
+        await _reconcileTable(tx, entry);
+      }
+      await tx.execute(
+        'INSERT OR REPLACE INTO $metaTableName (key, value) VALUES (?, ?)',
+        ['shape:${entry.table}', entry.shapeHash],
+      );
+    }
   }
 
   static Future<void> _createMetaTableIfMissing(CocoonTx tx) async {

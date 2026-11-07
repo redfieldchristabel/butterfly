@@ -1,5 +1,23 @@
 ## Unreleased
 
+- Schema migrations, end to end. `dart run cocoon_generator:migrate` asks
+  only what a human must answer (renames, drops), updates the committed
+  `cocoon.lock.json` and, when stored data must change, writes a numbered
+  migration file with one conversion stub per type change. Implement the
+  stubs, commit both, and pass `schemaVersion: cocoonSchemaVersion` and
+  `migrations: cocoonMigrations` to `Cocoon.open`: pending migrations run
+  once, in order, inside the open transaction — documents rewritten in
+  batches of 500 with a progress callback, one change-log row per rewritten
+  document, migrated columns and indexes rebuilt from the rewritten bytes.
+  A database written by a newer app refuses to open
+  (`SchemaTooNewException`); a failing conversion rolls the whole open back.
+- The migration building blocks are public: `CocoonMigration` (one version
+  step), `FieldMigration` (+ the type-checked `FieldMigration.typed<S, T>`
+  wrapper the generated code uses) and `MigrationWireType`, the exact wire
+  encoding of both sides of a rewrite. `rewriteField` is the pure wire-level
+  rewrite they run on: absent old fields are skipped without calling the
+  conversion, `null` conversions drop the value, and everything else is
+  re-serialized byte-for-byte in canonical order.
 - Code generation: annotate plain classes with `@Collection` (and nested
   value classes with `@Embedded`) and `cocoon_generator` writes the adapter,
   typed query handles (`Txn$.bookedOn`) and the canonical codec. Field numbers

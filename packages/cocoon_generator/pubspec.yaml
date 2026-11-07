@@ -11,13 +11,13 @@ dependencies:
   analyzer: ^12.1.0
   build: ^4.0.0
   cocoon: ^0.0.1
+  glob: ^2.1.2
   source_gen: ^4.2.0
 
 dev_dependencies:
   # Pinned: 3.5.17+ pulls newer build_runner versions than this workspace
   # locks, and 3.5.23 needs build ^5.
   build_test: 3.5.16
-  glob: ^2.1.2
   lints: ^6.0.0
   package_config: ^2.1.0
   test: ^1.24.0

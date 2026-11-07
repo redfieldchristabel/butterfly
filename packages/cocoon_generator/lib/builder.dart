@@ -15,6 +15,7 @@ import 'dart:async';
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:build/build.dart';
 import 'package:cocoon/cocoon.dart';
+import 'package:glob/glob.dart';
 import 'package:source_gen/source_gen.dart';
 
 import 'src/extract.dart';
@@ -50,7 +51,7 @@ class CocoonGenerator extends Generator {
         schemaChangedMessage(
           models.first,
           'cocoon.lock.json is missing (models: ${models.join(', ')}); create '
-              'it with `cocoon migrate` and add it to the build.yaml sources',
+          'it with `cocoon migrate` and add it to the build.yaml sources',
         ),
       );
     }
@@ -135,6 +136,7 @@ class _CocoonSchemaVersionBuilder implements Builder {
     final lock = SchemaLock.parse(
       await buildStep.readAsString(buildStep.inputId),
     );
+    await _requireImplementedMigrations(buildStep);
     await buildStep.writeAsString(
       AssetId(buildStep.inputId.package, 'lib/cocoon_schema.g.dart'),
       '// GENERATED CODE - DO NOT MODIFY BY HAND\n'
@@ -147,5 +149,25 @@ class _CocoonSchemaVersionBuilder implements Builder {
       '/// detect pending schema migrations.\n'
       'const cocoonSchemaVersion = ${lock.version};\n',
     );
+  }
+
+  /// Fails the build while any migration file still throws
+  /// `UnimplementedError`: the generated conversion stubs must be
+  /// implemented before the package builds against the new schema.
+  Future<void> _requireImplementedMigrations(BuildStep buildStep) async {
+    await for (final id in buildStep.findAssets(
+      Glob('lib/cocoon_migrations/m*.dart'),
+    )) {
+      final source = await buildStep.readAsString(id);
+      // Match the `throw`, not the bare class name: the generated file
+      // header documents the gate itself and mentions `UnimplementedError`.
+      if (source.contains('throw UnimplementedError')) {
+        throw CocoonBuildError(
+          'Cocoon migration ${id.path} still contains an unimplemented '
+          'conversion: implement the `upgrade...` functions in it, then run '
+          'build_runner again.',
+        );
+      }
+    }
   }
 }

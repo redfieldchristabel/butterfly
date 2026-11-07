@@ -73,18 +73,25 @@ class Txn { ... }
 
 ### Who runs what
 
-- **`cocoon migrate`** runs on the developer's machine, interactively. It diffs
-  models against the lock (`SchemaDiff`), asks about every ambiguous
-  removed/added pair with the best rename candidate preselected
-  (`CollectionDiff.candidatesFor`), confirms drops, then writes the new lock
-  and, only when data must change, a numbered migration file. Both are
-  committed, so renames show up in review.
+- **`dart run cocoon_generator:migrate`** runs on the developer's machine,
+  interactively. It diffs models against the lock (`SchemaDiff`), asks about
+  every ambiguous removed/added pair with the best rename candidate
+  preselected (`CollectionDiff.candidatesFor`), confirms drops, then writes
+  the new lock and, only when data must change, a numbered migration file.
+  Both are committed, so renames show up in review.
 - **build_runner** (local and CI) only generates codecs, typed fields and
   queries. It never writes the lock or migrations; it **fails** when
-  `SchemaDiff.isEmpty` is false, telling the developer to run `cocoon migrate`.
-- **On device**, opening the database compares the stored schema version with
-  the compiled one, runs pending migration steps in order inside one
-  transaction (with a progress callback), and reconciles indexes.
+  `SchemaDiff.isEmpty` is false, telling the developer to run
+  `cocoon_generator:migrate`, and it fails while any migration file still
+  contains `UnimplementedError`.
+- **On device**, opening the database compares the stored schema version
+  with the compiled one, runs pending migration steps in order inside one
+  transaction (with a progress callback), and reconciles indexes. Steps
+  rewrite documents at the wire level (`rewriteField`): the old field value
+  is decoded, converted, removed and re-encoded at the new number, one
+  change-log row per rewritten document is appended, and the migrated
+  tables' columns and indexes are then rebuilt from the rewritten bytes by
+  the reconciler. A file newer than the app refuses to open.
 
 ## Queries and pagination
 
@@ -243,5 +250,6 @@ executor, so it is deferred.
 | Change log + watches | done |
 | build_runner generator (`cocoon_generator`), `@Embedded`, lock check | done |
 | Example package (`cocoon_example`) | done |
-| `cocoon migrate` interactive CLI | planned |
+| `dart run cocoon_generator:migrate` interactive CLI | done |
+| On-device migration runner (`Cocoon.open` schema versions) | done |
 | DevTools extension | planned |
