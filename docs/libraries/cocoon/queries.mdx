@@ -1,0 +1,159 @@
+---
+title: Queries & Indexes
+description: Typed filters and sorts, the index rule (MissingIndexException), collection-group queries, keyset pagination and count.
+---
+
+Queries are built from the typed handles the generator emits (`Txn$.bookedOn`)
+or that you hand-write (`txnBookedOn`) — both are the same `FieldColumn`
+class. Every query needs an index that serves it, exactly like Firestore.
+
+## Filters and ordering
+
+```dart
+final a1 = db.collection(accounts).doc('a1');
+
+final q = a1.collection(txns)
+    .where(Txn$.bookedOn.isGreaterThanOrEqualTo(20260101))
+    .orderBy(Txn$.bookedOn, descending: true)
+    .limit(50);
+
+final page = await q.get(); // QueryPage<Txn>: .docs, .nextCursor
+for (final snap in page.docs) {
+  // snap.ref, snap.id, snap.data
+}
+```
+
+Filter ops on a `FieldColumn`: `isEqualTo`, `isNotEqualTo`, `isLessThan`,
+`isLessThanOrEqualTo`, `isGreaterThan`, `isGreaterThanOrEqualTo`,
+`whereIn` (at most 30 values) and `isNull`/`isNotNull` on nullable columns.
+`ParamColumn` handles expose `isEqualTo`, `isNotEqualTo` and `whereIn` for
+path params. Filter methods accept non-null values only; `isEqualTo(null)`
+throws — use `isNull()`.
+
+Rules on ordering:
+
+- Sort keys are never null: `orderBy` on a nullable column throws.
+- Blob columns cannot be sorted.
+- Each column can appear once as a sort key.
+- The document id is always appended as the final tiebreaker, following the
+  direction of the last sort key.
+- A subcollection ref scopes by its parent automatically: `a1`'s txns never
+  include `a2`'s.
+
+## The index rule
+
+A query runs only when a declared (or implicit) index serves it — otherwise
+`get()` and `count()` throw a `MissingIndexException` whose message spells
+the `Index([...])` to declare:
+
+```text
+MissingIndexException: No index serves this query on Txn
+(accounts/{accountId}/txns). Add Index(['accountId', '-memo']) to its
+@Collection(indexes: [...]), or call .allowFullScan() to read it anyway.
+```
+
+An index serves a query when it has, in order:
+
+1. all equality-filtered names (`=`, `IN`, `IS NULL` — any order among
+   themselves, including the scoped path params),
+2. then the sort keys with matching directions (or all reversed),
+3. and at most one range name (`!=`, comparisons, `IS NOT NULL`), which must
+   be the first sort key — or, with no sort keys, the next index part after
+   the equality prefix.
+
+Every table also has an implicit `UNIQUE` index over `(path params..., id)`,
+which serves "list a parent's docs by id" and plain scoped queries. Queries
+Queries with no filters and no sort keys are also fine. `.allowFullScan()`
+opts out of the rule explicitly:
+
+```dart
+final anyOrder = await a1.collection(txns).query().allowFullScan().get();
+```
+
+`unique: true` indexes are the exception to the trailing id: a unique index
+never gets the id appended (otherwise the constraint could never fire), and
+it is unique across the whole collection group — add the path param, e.g.
+`Index(['accountId', 'ref'], unique: true)`, to make it unique per parent.
+
+## Collection-group queries
+
+Dropping the parent filter queries every document of the pattern, whatever
+parent it belongs to. Parent params can then be filtered explicitly:
+
+```dart
+final postedAcrossAccounts = await db
+    .collectionGroup(txns)
+    .where(Txn$.status.isEqualTo(TxnStatus.posted))
+    .orderBy(Txn$.bookedOn, descending: true)
+    .get();
+
+final a2Txns = await db
+    .collectionGroup(txns)
+    .where(Txn$.accountId.isEqualTo('a2'))
+    .get();
+```
+
+## Keyset pagination and cursors
+
+`limit` fetches one extra row to detect the next page;
+`QueryPage.nextCursor` is `null` on the last page. Cursors are opaque and
+query-bound: a cursor from another query (or another parent) is rejected
+with a `CursorMismatchException`, a malformed one with an
+`InvalidCursorException`. The page size is not part of a cursor's identity,
+so you may fetch a wide page after a narrow one.
+
+```dart
+QueryPage<Txn>? page = await q.get();
+while (page != null) {
+  for (final snap in page.docs) { /* ... */ }
+  page = page.nextCursor == null
+      ? null
+      : await q.startAfter(page.nextCursor!).get();
+}
+```
+
+## Pagination: With Cocoon vs. raw sqlite
+
+<Tabs>
+  <TabItem label="With Cocoon" value="with-cocoon">
+    The planner builds the keyset predicate, mixed sort directions included,
+    and the cursor is a fingerprinted opaque string:
+
+    ```dart
+    final page = await a1.collection(txns)
+        .orderBy(txnBookedOn, descending: true)
+        .limit(20)
+        .get();
+    final next = page.nextCursor == null
+        ? null
+        : await a1.collection(txns)
+            .orderBy(txnBookedOn, descending: true)
+            .startAfter(page.nextCursor!)
+            .get();
+    ```
+  </TabItem>
+  <TabItem label="Without Cocoon (raw sqlite)" value="without-cocoon">
+    You write the row-value keyset comparison and re-validate the offset
+    keys on every page:
+
+    ```dart
+    import 'package:sqlite3/sqlite3.dart';
+
+    List<Map<String, Object?>> nextPage(Database db, int lastBookedOn, String lastId) =>
+        db.select(
+          'SELECT path, id, data FROM txns '
+          'WHERE p_account_id = ? AND (f_booked_on, id) < (?, ?) '
+          'ORDER BY f_booked_on DESC, id DESC LIMIT 20',
+          ['a1', lastBookedOn, lastId],
+        );
+    ```
+  </TabItem>
+</Tabs>
+
+## Count
+
+`count()` runs `SELECT count(*)` under the same index rule:
+
+```dart
+final total = await q.count();
+```

@@ -1,0 +1,161 @@
+---
+title: Realtime, Watches and the Change Log
+description: Watch documents and queries live, with byte-level deduplication and coalescing, and read the durable change log for sync outboxes.
+---
+
+Every committed write appends one row per touched document to an internal
+change log, in the same transaction as the write. The log feeds the watches
+below, and the same rows can drive a sync outbox or an audit trail.
+
+## Watching a document
+
+```dart
+// Emits the current value on listen (null when the document does not
+// exist), then re-reads only when a commit touched this exact path. An
+// emission whose canonical bytes equal the previous one is skipped, so an
+// identical rewrite never fires and models need no ==.
+final docSub = txRef.watch().listen((snap) {
+  // snap is DocSnapshot<Txn>? — null after a delete.
+});
+
+await docSub.cancel(); // stops the stream and unregisters the watcher
+```
+
+## Watching a query
+
+```dart
+// Emits the current page on listen, then re-runs only when a commit touched
+// the query's collection (and, for subcollection queries, a path inside the
+// parent scope). Commits landing while a re-run is in flight are coalesced
+// into at most one more re-run, and a page whose paths + bytes equal the
+// previous page is not emitted.
+final pageSub = a1.collection(txns)
+    .orderBy(Txn$.bookedOn, descending: true)
+    .limit(20)
+    .watch()
+    .listen((page) { /* rebuild your list */ });
+```
+
+Scope rules: writes to other tables or to other parents never re-run a
+scoped query watch; a rolled-back transaction emits nothing at all (its
+change rows and notifications are discarded with it).
+
+## Anchored live ranges: `watchFrom`
+
+The rows after `cursor`, up to the query's limit, with the anchor fixed —
+rows inserted before it never shift the window. This is how live paginated
+lists avoid shifting pages:
+
+```dart
+final firstPage = await a1.collection(txns)
+    .orderBy(Txn$.bookedOn, descending: true)
+    .limit(20)
+    .get();
+
+final windowSub = a1.collection(txns)
+    .orderBy(Txn$.bookedOn, descending: true)
+    .limit(20)
+    .watchFrom(firstPage.nextCursor) // anchor at the previous page's end
+    .listen((page) { /* ... */ });
+```
+
+`watchFrom(null)` anchors at the very start of the query. Beyond the fixed
+anchor, `watchFrom` behaves exactly like `watch` (coalescing, byte
+deduplication, lifecycle). Anchor the window on the previous page's
+`nextCursor` and keep it there, while `nextCursor` from the emissions still
+pages further on demand.
+
+## Live updates: With Cocoon vs. raw sqlite
+
+<Tabs>
+  <TabItem label="With Cocoon" value="with-cocoon">
+    The watch re-reads only when a commit touched the watched path or
+    collection, deduplicates identical results, and unregisters itself on
+    cancel:
+
+    ```dart
+    final sub = txRef.watch().listen((snap) => render(snap));
+    // later:
+    await sub.cancel();
+    ```
+  </TabItem>
+  <TabItem label="Without Cocoon (raw sqlite)" value="without-cocoon">
+    You poll on a timer, re-read the row, diff against your previous copy,
+    and remember to stop the timer on dispose:
+
+    ```dart
+    import 'dart:async';
+    import 'dart:typed_data';
+    import 'package:sqlite3/sqlite3.dart';
+
+    bool sameBytes(Uint8List? a, Uint8List? b) {
+      if (a == null || b == null) return a == b;
+      if (a.length != b.length) return false;
+      for (var i = 0; i < a.length; i++) {
+        if (a[i] != b[i]) return false;
+      }
+      return true;
+    }
+
+    Stream<Uint8List?> watchTxn(Database db, String path) async* {
+      Uint8List? last;
+      while (true) {
+        final rows = db.select(
+          'SELECT data FROM txns WHERE path = ?', [path],
+        );
+        final bytes = rows.isEmpty ? null : rows.first['data']! as Uint8List;
+        if (!sameBytes(bytes, last)) {
+          last = bytes;
+          yield bytes;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+## Lifecycle
+
+Watch streams are broadcast and lazy: work starts on the first listen, the
+watcher unregisters when the last listener cancels (re-listening restarts
+it), and closing the database completes every stream:
+
+```dart
+await db.close(); // completes every watch stream this instance created
+```
+
+Errors while re-reading are delivered on the stream as errors, not silently
+dropped.
+
+## Reading the change log directly
+
+For a sync outbox or an audit trail, read the log rows instead of — or
+alongside — watches:
+
+```dart
+var watermark = savedWatermark; // the last seq you processed, 0 at first
+final changes = await db.changesSince(watermark);
+// Change: seq, collection (model name), path, op (set/delete), at (UTC)
+for (final change in changes) {
+  // ... push to your server / audit trail ...
+  watermark = change.seq;
+}
+// Durably save `watermark`, then trim what you've processed:
+await db.pruneChanges(upToSeq: watermark);
+
+// db.lastChangeSeq() is the highest seq ever assigned; it never goes
+// backwards, even after a full prune.
+```
+
+- `changesSince(seq)` returns at most `limit` rows (default 1000), oldest
+  first; keep calling with the last row's `seq` until the list comes back
+  empty. Cascade deletes log one row per deleted document.
+- `pruneChanges(upToSeq:)` deletes every row with `seq <= upToSeq`; call it
+  once changes are durably processed elsewhere, or the log grows forever.
+
+<Info>
+  `CocoonOptions(keepChanges: false)` stops writing log rows for apps that
+  only need the in-process watches: notifications are unaffected, and
+  `changesSince` simply returns nothing.
+</Info>

@@ -1,5 +1,12 @@
 ## Unreleased
 
+- Documentation: Cocoon now has its own tab on the Butterfly docs site
+  ([docs/libraries/cocoon/](../../../docs/libraries/cocoon/)) — overview and
+  why, models and code generation, collections and documents, queries and
+  indexes, realtime, schema migrations and internals — plus installation
+  steps in the site's Installation page. `doc/design.md` is now the short
+  decision record + Status table linking to those pages.
+
 - Schema migrations, end to end. `dart run cocoon_generator:migrate` asks
   only what a human must answer (renames, drops), updates the committed
   `cocoon.lock.json` and, when stored data must change, writes a numbered

@@ -1,0 +1,140 @@
+---
+title: Collections & Documents
+description: Typed references, subcollections, cascade deletes, transactions and the bounded hot-document cache.
+---
+
+Everything in Cocoon works through typed references. Open the database once
+with the adapters of every collection the app stores, then navigate:
+
+```dart
+final db = await Cocoon.open(file, collections: [accounts, txns, splits]);
+
+final a1 = db.collection(accounts).doc('a1'); // DocRef<Account>
+final txnsRef = a1.collection(txns); // CollectionRef<Txn> under accounts/a1
+```
+
+`db.collection(adapter)` only accepts top-level adapters — for a
+subcollection you go through `doc(...).collection(adapter)`, and that call is
+checked at the type level of the pattern: it throws an `ArgumentError`
+unless the adapter's pattern is a child of the document's collection, so
+`a1.collection(splits)` cannot be built under the wrong parent.
+
+## Writing, reading, deleting
+
+```dart
+final a1 = db.collection(accounts).doc('a1');
+
+await a1.set(account); // upsert by id
+final snap = await a1.get(); // DocSnapshot<Account>? — .ref, .id, .data
+await a1.delete(); // removes a1 and every document below it
+
+final txRef = await txnsRef.add(txn); // DocRef<Txn>, fresh id
+await txRef.set(txn.copyWith(status: TxnStatus.posted));
+```
+
+- `set` upserts: it inserts the document, or replaces the stored value when
+  a document with this id already exists.
+- `add` generates a fresh time-ordered id (UUIDv7 via `newDocId()`) and
+  returns the new document's reference.
+- `get` returns `null` when the document does not exist. Reads are served
+  from the bounded hot-document cache when possible.
+- `delete` removes the document **and its whole subtree** — every document
+  in subcollections below it. Prefix-siblings are safe: deleting
+  `accounts/a1` never touches `accounts/a10`.
+- Document ids are path segments: they can't be empty, contain `/`, be
+  `.`/`..`, or exceed 256 characters (`validateDocId` enforces this).
+  Time-ordered UUIDv7 ids (`newDocId()`, used by `add`) keep listings in
+  insertion order by default.
+
+## Cascade deletes: With Cocoon vs. raw sqlite
+
+<Tabs>
+  <TabItem label="With Cocoon" value="with-cocoon">
+    One call deletes the account, all of its transactions, and all of every
+    transaction's splits, atomically — and one change-log row per deleted
+    document is appended, so watches and `changesSince` readers see them:
+
+    ```dart
+    await a1.delete(); // accounts/a1, its txns, and their splits
+    ```
+  </TabItem>
+  <TabItem label="Without Cocoon (raw sqlite)" value="without-cocoon">
+    You track the subtree yourself, per table, in one transaction, and
+    remember that `LIKE 'accounts/a1/%'` must not match `accounts/a10`:
+
+    ```dart
+    import 'package:sqlite3/sqlite3.dart';
+
+    void deleteAccount(Database db, String accountId) {
+      db.execute('BEGIN');
+      try {
+        final from = 'accounts/$accountId/';
+        final to = 'accounts/${accountId}0';
+        db.execute(
+          "DELETE FROM splits WHERE path >= ? AND path < ? AND "
+          "path LIKE 'accounts/' || ? || '/%'", [from, to, accountId],
+        );
+        db.execute(
+          "DELETE FROM txns WHERE path >= ? AND path < ?", [from, to],
+        );
+        db.execute('DELETE FROM accounts WHERE path = ?', ['accounts/$accountId']);
+        db.execute('COMMIT');
+      } on Object {
+        db.execute('ROLLBACK');
+        rethrow;
+      }
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+## Transactions
+
+Group reads and writes into one atomic unit with `runTransaction`. Reads
+inside the transaction see its own writes; an exception rolls back
+everything — including the hot-document cache, which is only updated after a
+successful commit.
+
+```dart
+await db.runTransaction((tx) async {
+  final snap = await tx.get(txRef);
+  await tx.set(txRef, snap!.data.copyWith(status: TxnStatus.posted));
+  await tx.add(a1.collection(txns), otherTxn);
+});
+```
+
+`tx` supports `get`, `set`, `add` and `delete` (with the same cascade
+semantics). `set`/`add`/`delete` called outside a transaction each run in
+their own transaction.
+
+## The hot-document cache
+
+Recently read documents stay in a bounded LRU cache keyed by full path, so
+hot reads never hit SQLite while RAM stays capped:
+
+```dart
+final db = await Cocoon.open(
+  file,
+  collections: [accounts, txns, splits],
+  options: const CocoonOptions(
+    durability: Durability.full, // PRAGMA synchronous; `normal` for speed
+    cacheSize: 2000, // bounded LRU of decoded hot documents; 0 disables
+    keepChanges: true, // write the change log the watches and sync read
+  ),
+);
+```
+
+- Writes update the cache after normalizing through the wire codec, so the
+  cached value is exactly what a cold read would decode (for example,
+  `DateTime` fields come back in UTC).
+- Deletes — including cascade deletes — evict the whole subtree.
+- This is why **one `Cocoon` instance must own its database file**: do not
+  open the same file from two instances or two processes. SQLite's write
+  lock and the hot cache both assume a single writer.
+
+On open, Cocoon creates missing tables and indexes in one transaction, adds
+new field columns (backfilling them by decoding existing rows in batches of
+500), and drops columns and indexes the adapters no longer declare. When the
+stored shape matches, opening does no DDL at all. Tables in the file without
+a registered adapter are left alone — see
+[Internals](/libraries/cocoon/internals).

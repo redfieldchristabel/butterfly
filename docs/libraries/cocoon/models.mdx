@@ -1,0 +1,204 @@
+---
+title: Models & Code Generation
+description: Annotate plain Dart classes with @Collection and let cocoon_generator write the adapter, typed query handles and canonical codec.
+---
+
+In Cocoon, your model class **is** the schema. Annotate plain Dart classes
+and `cocoon_generator` (build_runner) generates the `CollectionAdapter`, the
+typed query handles and the canonical protobuf codec for each. Field numbers
+come from the committed `cocoon.lock.json`, never from field order — see
+[Schema Migrations](/libraries/cocoon/migrations).
+
+## The annotations
+
+All annotations come from `package:cocoon/cocoon.dart`:
+
+<Property
+  name="@Collection(path, indexes: [])"
+  type="class annotation"
+>
+  Marks a class as a collection model. `path` is the collection pattern —
+  collection ids separated by `{param}` placeholders, e.g. `accounts` or
+  `accounts/{accountId}/txns`. `indexes` declares the composite indexes
+  Cocoon creates and keeps in sync.
+</Property>
+
+<Property
+  name="@Index(fields, unique: false)"
+  type="Index"
+>
+  One composite index. Field (or path param) names in sort order; a `-`
+  prefix sorts that part descending. The document id is always appended as
+  the final tiebreaker so keyset pagination stays stable. `unique: true`
+  creates a `UNIQUE` index.
+</Property>
+
+<Property name="@Embedded()" type="class annotation">
+  Marks a class as embeddable: it is stored inline inside a collection
+  model's document, encoded as a nested protobuf message. Embedded classes
+  follow the same constructor and type rules as models, and their field
+  numbers are pinned in the lock under their type name.
+</Property>
+
+<Property name="@Ignore()" type="field/getter annotation">
+  Excludes a field from storage; it is neither encoded nor tracked by the
+  lock.
+</Property>
+
+## An example
+
+```dart title="lib/models.dart"
+import 'dart:typed_data';
+
+import 'package:cocoon/cocoon.dart';
+
+part 'models.cocoon.dart';
+
+@Embedded()
+class Address {
+  const Address({required this.city, required this.postCode, this.line2});
+  final String city;
+  final String postCode;
+  final String? line2;
+}
+
+enum TxnStatus { pending, posted, failed }
+
+@Collection('accounts', indexes: [Index(['name'])])
+class Account {
+  const Account({
+    required this.name,
+    required this.openedAt,
+    required this.balanceMinor, // minor units; may be negative
+    required this.active,
+    this.tags = const [],
+    this.address,
+    this.avatar,
+  });
+  final String name;
+  final DateTime openedAt;
+  final int balanceMinor;
+  final bool active;
+  final List<String> tags;
+  final Address? address;
+  final Uint8List? avatar;
+}
+
+@Collection(
+  'accounts/{accountId}/txns',
+  indexes: [
+    Index(['accountId', '-bookedOn']),
+    Index(['status', 'bookedOn']),
+  ],
+)
+class Txn {
+  const Txn({
+    required this.bookedOn, // yyyymmdd
+    required this.amountMinor, // minor units; may be negative
+    required this.currency,
+    required this.status,
+    required this.createdAt,
+    this.memo,
+  });
+  final int bookedOn;
+  final int amountMinor;
+  final String currency;
+  final TxnStatus status;
+  final DateTime createdAt;
+  final String? memo;
+
+  // Methods are never stored; helpers like copyWith are yours to write.
+  Txn copyWith({TxnStatus? status}) => Txn(
+    bookedOn: bookedOn,
+    amountMinor: amountMinor,
+    currency: currency,
+    status: status ?? this.status,
+    createdAt: createdAt,
+    memo: memo,
+  );
+}
+```
+
+Declare the part file the generator writes (`part 'models.cocoon.dart';`,
+exactly as above), point build_runner at the lock, and run it:
+
+```yaml title="build.yaml"
+targets:
+  $default:
+    sources:
+      - lib/**
+      - cocoon.lock.json
+      - $package$
+```
+
+```bash
+dart run build_runner build -d
+```
+
+## What the generator emits
+
+Per `@Collection` model:
+
+- an adapter instance named after the last collection id, plus its
+  `CollectionAdapter` class: `accounts` (`AccountCollection`), `txns`
+  (`TxnCollection`);
+- typed query handles on a `$` holder class, one `static final
+  FieldColumn` per indexed field and path param: `Txn$.bookedOn`,
+  `Txn$.accountId`;
+- the canonical `encode`/`decode` codec (protobuf wire format).
+
+Additionally, `lib/cocoon_schema.g.dart` carries the package's
+`const cocoonSchemaVersion` — hand it to `Cocoon.open` as shown in
+[Schema Migrations](/libraries/cocoon/migrations).
+
+```dart
+final db = await Cocoon.open(file, collections: [accounts, txns]);
+final recent = await db.collection(accounts).doc('a1').collection(txns)
+    .orderBy(Txn$.bookedOn, descending: true)
+    .limit(50)
+    .get();
+```
+
+<Info>
+  The generated `*.cocoon.dart` and `lib/cocoon_schema.g.dart` files are
+  build outputs, not committed source. `cocoon.lock.json` **is** committed —
+  it is the source of truth for field numbers.
+</Info>
+
+## Rules the generator enforces
+
+Build errors say exactly what to fix:
+
+- One generative constructor whose parameters are named like the stored
+  fields (named or positional). Stored fields are final instance fields not
+  marked `@Ignore()`; getters are not stored. No generic models, no abstract
+  models, no super parameters.
+- Supported field types: `int`, `double`, `bool`, `String`, `DateTime` (UTC
+  microseconds), `Uint8List`, enums (stored by name), `List<T>` of those
+  (elements may not be nullable), and `@Embedded()` classes — any of them
+  nullable except list elements.
+- A field missing from an older document decodes to the constructor default,
+  else `null` when nullable, else the zero value (`0`, `''`, `false`, empty
+  list, epoch UTC, first enum value).
+- **Subcollection indexes start with the path params** (`accountId` above):
+  a scoped query always filters them, so an index without them can't serve
+  it. An index without params serves collection-group queries.
+- The build fails when the models and `cocoon.lock.json` disagree:
+
+  ```text
+  Cocoon schema changed for Txn: run "dart run cocoon_generator:migrate" (added: currencyCode; removed: currency).
+  ```
+
+  The builder never writes the lock; the `migrate` command does.
+
+## Without code generation
+
+Every generated artifact is a plain class you can write by hand: one
+`CollectionAdapter<T>` per collection, with typed `FieldColumn` handles
+(`FieldColumn.integer`, `.real`, `.boolean`, `.text`, `.dateTime`,
+`.enumerated`, `.blob`), `ParamColumn` handles for path params, `IndexDef`
+declarations and a `WireWriter`/`WireReader` codec. The full hand-written
+example lives in the [package README][cocoon-readme]; the storage contract it
+must satisfy is described in [Internals](/libraries/cocoon/internals).
+
+[cocoon-readme]: https://github.com/redfieldchristabel/butterfly/blob/master/packages/cocoon/README.md

@@ -42,6 +42,11 @@
       "href": "/libraries/auth"
     },
     {
+      "id": "cocoon",
+      "title": "Cocoon",
+      "href": "/libraries/cocoon"
+    },
+    {
       "id": "cli",
       "title": "CLI & Tooling",
       "href": "/features"
@@ -115,6 +120,20 @@
       "pages": [
         { "title": "User Storage (DB)", "href": "/libraries/auth/features/datasources", "icon": "database" },
         { "title": "Firebase, Google & OAuth2", "href": "/libraries/auth/features/providers", "icon": "id-card" }
+      ]
+    },
+    {
+      "group": "Cocoon Database",
+      "tab": "cocoon",
+      "icon": "database",
+      "pages": [
+        { "title": "Overview & Why Cocoon", "href": "/libraries/cocoon", "icon": "house" },
+        { "title": "Models & Code Generation", "href": "/libraries/cocoon/models", "icon": "tags" },
+        { "title": "Collections & Documents", "href": "/libraries/cocoon/collections", "icon": "folder-tree" },
+        { "title": "Queries & Indexes", "href": "/libraries/cocoon/queries", "icon": "magnifying-glass" },
+        { "title": "Realtime: Watches & Change Log", "href": "/libraries/cocoon/realtime", "icon": "bolt" },
+        { "title": "Schema Migrations", "href": "/libraries/cocoon/migrations", "icon": "arrows-rotate" },
+        { "title": "Internals & Storage Layout", "href": "/libraries/cocoon/internals", "icon": "screwdriver-wrench" }
       ]
     },
     {

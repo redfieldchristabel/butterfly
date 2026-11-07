@@ -1,0 +1,139 @@
+---
+title: Internals, Storage Layout and Wire Format
+description: How Cocoon stores documents in SQLite (one table per collection model, typed index columns), the canonical protobuf wire format, and money guidance.
+---
+
+This page documents the storage contract `cocoon_generator` emits against —
+and the design decisions behind it. You only need it when writing an adapter
+by hand or reasoning about on-disk data.
+
+## Why SQLite, and why not one file per document
+
+- **SQLite through `sqlite_async`** gives one writer plus reader isolates,
+  WAL, and real transactions — everything Cocoon's guarantees hang off.
+  Everything goes through a small internal executor interface
+  (`CocoonExecutor`), so swapping executors (raw `package:sqlite3`, or a web
+  executor later) touches one file.
+- **One table per collection model**, not one per parent instance and not
+  one shared `docs` table: `accounts/a1/txns/t1` and `accounts/a2/txns/t5`
+  both live in the `txns` table. Wins: change notifications scoped per
+  collection, no sparse columns, no `collection` column in every index, and
+  per-table planner statistics.
+- A file-per-document store (Hive-box style) cannot answer "all txns of
+  account a1, newest first" without loading the world into RAM; SQLite
+  answers it with an index range scan and stays bounded.
+
+## Table shape
+
+One table per collection model, named `snake_case(model)` (`Txn` → `txn`;
+`sqlite_` and `_cocoon` prefixes are refused). The example below is the
+`txns` table of `accounts/{accountId}/txns`:
+
+```sql
+CREATE TABLE txn (
+  path TEXT NOT NULL UNIQUE,   -- full document path
+  id TEXT NOT NULL,
+  p_account_id TEXT NOT NULL,  -- one per path param
+  data BLOB NOT NULL,          -- canonical wire bytes
+  f_booked_on INTEGER NOT NULL
+    CHECK (typeof(f_booked_on) = 'integer'),  -- one per FieldColumn
+  f_memo TEXT CHECK (f_memo IS NULL OR typeof(f_memo) = 'text')
+)
+```
+
+- **Path params are typed columns** (`p_account_id`). Querying one parent is
+  an index range scan; skipping the parent filter is a collection-group
+  query for free. The full `path` is also kept, so a subtree (cascade
+  delete, export) is `path >= 'accounts/a1/' AND path < 'accounts/a10'`.
+- **Indexed fields are copied into real typed columns at write time**
+  (`f_`-prefixed). SQLite can't look inside the blob; real columns are
+  better than JSON generated columns: real integers, no silent
+  REAL-vs-INTEGER drift, real indexes. `integer`/`real`/`text` columns carry
+  a `typeof` CHECK (NULL allowed when the field is nullable); blob columns
+  are unchecked.
+- **Large binaries** (receipts, statements) stay as files; documents store
+  paths.
+- **No in-memory copy of the database.** A bounded LRU cache of recently
+  read documents (`CocoonOptions.cacheSize`, default 2000) gives Hive-like
+  hot reads while RAM stays capped.
+
+## Indexes
+
+- Every table gets an implicit `UNIQUE` index over `(p_params..., id)` —
+  `cx_<table>_scope` — which serves "list a parent's docs by id" and scoped
+  queries.
+- Declared indexes become `CREATE [UNIQUE] INDEX cx_<table>_<16hex>`, where
+  the hex fingerprints the canonical definition; the doc id is appended as
+  the final part with the direction of the last declared part.
+- A `unique` index is the exception: it never gets the id (otherwise the
+  constraint could never fire), and it is unique across the whole collection
+  group, so add the path param (e.g. `Index(['accountId', 'ref'],
+  unique: true)`) to make it unique per parent.
+- **Reconcile on open** runs in one write transaction: create missing
+  tables; add missing `f_` columns and backfill them by decoding every row
+  with the adapter in batches of 500 (keyed by `path`); drop undeclared
+  `f_` columns (their indexes go first); create missing and drop stale
+  `cx_` indexes. A per-table shape hash in `_cocoon_meta` makes a no-change
+  open do no DDL at all. Tables without a registered adapter are never
+  touched.
+- SQLite cannot add a `NOT NULL` column to a table with rows, so backfilled
+  columns are declared nullable and the adapter's non-null invariant is
+  enforced at write time.
+
+## Canonical protobuf wire format
+
+The document body (`data`) is a protobuf blob encoded canonically by the
+generated codec (`WireWriter`): the same document always yields the same
+bytes, which is what lets watches deduplicate emissions by byte equality and
+a journal chain hash documents directly.
+
+Canonical means:
+
+- fields are written in ascending field-number order (anything else throws);
+- unknown fields are never carried over;
+- the caller decides presence: non-null values are written, nulls skipped.
+
+The generated codecs map Dart types to wire encodings like this:
+
+| Dart type | Wire encoding |
+| --- | --- |
+| `int`, `DateTime` (UTC microseconds) | zigzag varint (`sint64`) |
+| `bool` | varint `0`/`1` |
+| `double` | little-endian IEEE 754 (`double`, wire type i64) |
+| `String`, enum (by name) | UTF-8, length-delimited |
+| `Uint8List` | length-delimited bytes |
+| `List<T>` / `@Embedded` value | nested length-delimited message |
+
+Missing fields decode to the constructor default, else `null` when
+nullable, else the zero value — so documents written before a field existed
+still load. Unknown field numbers from the future are skipped (`reader.skip`),
+which is what makes old readers tolerant of newer writers.
+
+## Internal tables
+
+Cocoon keeps two internal tables (both reserved-name prefixed):
+
+```sql
+-- key/value metadata: schema_version, per-table shape hashes
+CREATE TABLE _cocoon_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+
+-- the change log: one row per touched document per committed write
+CREATE TABLE _cocoon_changes (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  tbl TEXT NOT NULL,
+  path TEXT NOT NULL,
+  op TEXT NOT NULL CHECK (op IN ('set','delete')),
+  at INTEGER NOT NULL
+)
+```
+
+## Money guidance
+
+Cocoon stores integers exactly — use that for money:
+
+- store amounts as `int` **minor units** (cents, sen) plus an ISO 4217
+  currency code field; the generator writes ints as zigzag `sint64` and
+  indexes them as SQLite `INTEGER`;
+- `SUM` over integer columns is exact and throws on overflow;
+- **never** `TOTAL()` or `AVG()` for money — they return REAL;
+- never sum across currencies; convert first, then sum.

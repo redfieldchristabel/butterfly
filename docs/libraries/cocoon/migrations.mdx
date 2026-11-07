@@ -1,0 +1,167 @@
+---
+title: Schema Migrations
+description: The committed cocoon.lock.json, the interactive migrate command, the flags for scripts, and the on-device migration runner.
+---
+
+Cocoon never needs hand-written migrations. Field numbers are pinned by name
+in a committed `cocoon.lock.json`, so most schema changes need nothing at
+all — and a type change needs exactly one conversion line that the on-device
+runner applies for you.
+
+## What each change needs
+
+| Change | What happens |
+| --- | --- |
+| Add a field | Fresh number. Old documents decode the default. Nothing to run. |
+| Remove a field | Its number is reserved forever. Confirm the drop in `migrate`. |
+| Reorder fields | Nothing — order never mattered. |
+| Add/drop an index | Applied by diffing on open; no migration file. |
+| Rename (same type) | Developer confirms; same number, data untouched. |
+| Type change | New number, old reserved, migration file with a typed upgrade stub. |
+| Rename + type change | Same as a type change. Numbers are never silently reused. |
+| Move a collection to a different path | Refused — delete the documents and store them under a new collection instead. |
+
+## The two tools
+
+Two tools compare the models against the committed `cocoon.lock.json`:
+
+- **build_runner** (local and CI) only generates codecs, typed fields and
+  queries. It never writes the lock or migrations; it **fails** when models
+  and lock disagree, and it fails while any migration file still contains an
+  unimplemented conversion.
+- **`dart run cocoon_generator:migrate`** runs on the developer's machine,
+  interactively. It fixes the disagreement: writes the new lock and — only
+  when stored data must change — a numbered migration file.
+
+```sh
+dart run cocoon_generator:migrate
+```
+
+## What the prompt looks like
+
+The command asks only what a human must answer. For every removed field
+with new fields alongside it, a numbered menu offers the rename candidates —
+best first, `Enter` accepts the preselected one — and a final drop option:
+
+```text
+Txn: `currency` (String, #3) is gone and these are new:
+  1) currencyCode (int)  rename, convert data
+  2) drop currency (its number is reserved forever)
+Choice [1]:
+```
+
+Fields without candidates ask a plain confirm (`y/N`, default `No` —
+answering `No` aborts without writing anything):
+
+```text
+Txn: `memo` (String?, #6) is gone. Drop it (number 6 is reserved forever)? [y/N]
+```
+
+Removed collections and embedded classes confirm the same way:
+
+```text
+Collection Ledger has no model anymore. Drop it (existing documents become unreadable if the collection ever returns)? [y/N]
+```
+
+Everything else is decided without asking: added fields get fresh numbers,
+reorders and index changes change nothing, and a type change always moves
+the field to a fresh number (the old number is reserved forever) and writes
+a conversion stub. A candidate already chosen for another field is not
+offered again.
+
+The command then writes the updated lock and, when needed, the migration
+file:
+
+```text
+Wrote cocoon.lock.json (version 3).
+Wrote lib/cocoon_migrations/m0003_txn_currency_to_currency_code.dart.
+Next: implement the `upgrade...` functions in the new migration file, then run build_runner.
+Wrote lib/cocoon_migrations/migrations.dart.
+```
+
+## Migration files
+
+The generated file contains one typed conversion stub per type change —
+implement them, and commit the lock, the migration file and the models
+together so renames and conversions show up in review:
+
+```dart
+// lib/cocoon_migrations/m0003_txn_currency_to_currency_code.dart
+// Txn.currency: String (#3) -> currencyCode: int (#10)
+int upgradeTxnCurrency(String old) => switch (old) {
+  'MYR' => 458,
+  'SGD' => 702,
+  _ => 0,
+};
+```
+
+The build fails while any `upgrade...` function still throws
+`UnimplementedError`. Stub types follow the stored representation:
+`int` and `DateTime` fields convert as `int` (their microseconds), enums as
+their `String` name, and only present values are converted — documents
+without the old field are skipped, and a conversion returning `null` drops
+the value.
+
+## Flags for scripts and CI
+
+Scripts and pre-commit hooks drive the command without a terminal:
+
+| Flag | Meaning |
+| --- | --- |
+| `--rename Model.old=new` | Decide a rename without the menu (repeatable). |
+| `--drop Model.field` | Drop a removed field, reserving its number (repeatable). |
+| `--drop-collection Model` | Confirm a removed collection or embedded class (repeatable). |
+| `--yes` | Accept the default answer of every rename menu; **never** covers drops. |
+| `--check` | Exit 1 when the run would change anything; writes nothing. |
+
+```sh
+# Pre-commit gate: fail when the lock is out of date, never write it
+dart run cocoon_generator:migrate --check
+```
+
+When stdin is not a terminal and a decision is missing, the command exits 2
+and lists the flags that would resolve it:
+
+```text
+Non-interactive stdin with 1 decision(s) missing:
+  - Txn: removed field `currency` (String, #3): pass --rename Txn.currency=currencyCode (or --drop Txn.currency)
+```
+
+Exit codes: `0` up to date or written, `1` refused/aborted/`--check` would
+change, `2` usage error or missing non-interactive decision. Output is
+colored only when stdout is a terminal.
+
+<Warning>
+  **CI never generates migrations.** Keep the interactive `migrate` run (and
+  its answers) on the developer's machine; the lock and migration files are
+  committed artifacts. CI only runs `build_runner build`, which fails when
+  someone forgot to run `migrate` or left a stub unimplemented — a useful
+  gate is `dart run cocoon_generator:migrate --check` before the build.
+</Warning>
+
+## The on-device runner
+
+Pass both artifacts to the engine when opening the database:
+
+```dart
+final db = await Cocoon.open(
+  file,
+  collections: [accounts, txns],
+  schemaVersion: cocoonSchemaVersion, // from lib/cocoon_schema.g.dart
+  migrations: cocoonMigrations, // from lib/cocoon_migrations/migrations.dart
+  onMigrationProgress: (done, total) => print('$done/$total'),
+);
+```
+
+On the device, opening compares the schema version stored in the internal
+`_cocoon_meta` table with `cocoonSchemaVersion`:
+
+- A **fresh database** just stores the version.
+- An **older database** runs every pending migration once, in order, inside
+  ONE transaction: documents are rewritten at the wire level in batches of
+  500, one change-log row per rewritten document is appended, the migrated
+  tables' columns and indexes are rebuilt from the rewritten bytes, and only
+  then is the new version stored. Any failure — a throwing conversion
+  included — rolls the whole open back.
+- A database written by a **newer** app version refuses to open with a
+  `SchemaTooNewException`; upgrade the app instead.

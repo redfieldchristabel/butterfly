@@ -30,6 +30,9 @@ Butterfly is a **modular, ejectable toolkit of Flutter packages and a Dart CLI**
   <Card title="Authentication & Storage" icon="key" href="/libraries/auth">
     Decouple external identity (Firebase, Google, OAuth2) from your app user model and local cache (Sembast, Hive, Isar).
   </Card>
+  <Card title="Cocoon Local Database" icon="database" href="/libraries/cocoon">
+    A typed, disk-backed, Firestore-style local database on SQLite — collections, indexed queries, watches and on-device migrations, standalone.
+  </Card>
 </CardGroup>
 
 ## How the pieces fit together
@@ -71,6 +74,8 @@ Butterfly separates your app into clean, replaceable layers so your UI never tal
 | `auth_management_firebase` | Firebase Auth identity adapter | `FirebaseAuthManagementRepository<T>`, `FirebaseUser`, `SignInWithGoogleWebMixin` |
 | `auth_management_firebase_google` | Native Google Sign-In for Firebase | `SignInWithGoogleFirebase` |
 | `auth_management_oauth2` | OAuth2 client & grant mixins | `BaseOauth2AuthManagement<T>`, `AuthorizationCodeGrantMixin`, `ClientCredential` |
+| `cocoon` | Typed Firestore-style local database on SQLite | `Cocoon`, `CocoonOptions`, `DocRef<T>`, `CollectionRef<T>`, `CocoonQuery<T>`, `QueryPage<T>` |
+| `cocoon_generator` | build_runner codegen for Cocoon | `@Collection` adapters, `Txn$.bookedOn` handles, `cocoonSchemaVersion`, `migrate` CLI |
 
 ## Design principles & adoption rules
 

@@ -1,0 +1,145 @@
+---
+title: Overview & Why Cocoon
+description: A typed, disk-backed, Firestore-style local database for Dart and Flutter, built on SQLite. Standalone, no Butterfly packages needed.
+---
+
+**Cocoon** (`package:cocoon`) is a typed, disk-backed, Firestore-style local
+database for Dart and Flutter, built on SQLite. Collections, documents and
+subcollections (`accounts/{accountId}/txns`), indexed queries with keyset
+pagination, realtime watches and a change log — with your model classes as
+the schema.
+
+<Info>
+  <Icon name="plug" /> **Standalone:** Cocoon depends on no other Butterfly
+  package and not on Flutter — pure Dart on `sqlite_async`. It works in
+  Flutter apps, Dart servers and CLIs alike.
+</Info>
+
+## Why Cocoon exists
+
+Nothing in Dart today gives all four of these at once:
+
+| | Typed | On disk (bounded RAM) | Real queries | Firestore-style API |
+| --- | --- | --- | --- | --- |
+| sembast | no (`Map`) | no (whole DB in RAM) | yes | yes |
+| Hive CE | yes | normal boxes load everything | no | no |
+| drift | yes | yes | yes | no (tables + SQL) |
+| Isar | yes | yes | yes | close, but stalled |
+| ObjectBox | yes | yes | yes | closed core, license limits |
+| **Cocoon** | **yes** | **yes (LRU cache)** | **yes (index rule)** | **yes** |
+
+- **sembast** keeps every document in RAM forever — fine for small caches,
+  not for years of transactions.
+- **Hive CE** normal boxes also load everything into memory and cannot query
+  beyond key lookups.
+- **drift** is excellent but its API is tables and SQL, not a document tree.
+- **Isar 3** development has stalled; **ObjectBox** has a closed core.
+
+Cocoon's answer: store documents as canonical protobuf blobs in SQLite, copy
+indexed fields into real typed columns at write time, and enforce a
+Firestore-style index rule over them.
+
+## The 30-second version
+
+```dart
+final db = await Cocoon.open(file, collections: [accounts, txns, splits]);
+
+final a1 = db.collection(accounts).doc('a1'); // root: CollectionRef<Account>
+await a1.set(Account(
+  name: 'Acme',
+  openedAt: DateTime.utc(2026, 1, 1),
+  balanceMinor: 0,
+  active: true,
+)); // upsert
+
+final txRef = await a1.collection(txns).add(txn); // id = UUIDv7
+final snap = await txRef.get(); // DocSnapshot<Txn>? (null when missing)
+
+await a1.delete(); // deletes a1 AND its whole subtree
+```
+
+The models above come from annotating plain Dart classes; `cocoon_generator`
+writes the adapters, typed query handles (`Txn$.bookedOn`) and codecs. See
+[Models & Code Generation](/libraries/cocoon/models).
+
+## Installation
+
+Cocoon is not on pub.dev; install it from the Butterfly repository as a git
+dependency. `cocoon_generator` and `build_runner` are needed for code
+generation.
+
+```yaml title="pubspec.yaml"
+dependencies:
+  cocoon:
+    git:
+      url: https://github.com/redfieldchristabel/butterfly.git
+      ref: master
+      path: packages/cocoon
+
+dev_dependencies:
+  build_runner: ^2.4.13
+  cocoon_generator:
+    git:
+      url: https://github.com/redfieldchristabel/butterfly.git
+      ref: master
+      path: packages/cocoon_generator
+```
+
+After editing `pubspec.yaml`, run `dart pub get` (or `flutter pub get` in a
+Flutter app), then follow [Models & Code Generation](/libraries/cocoon/models)
+to wire up `build.yaml` and annotate your first model.
+
+## The native SQLite library
+
+Cocoon talks to SQLite through `sqlite_async` on top of `package:sqlite3`
+(FFI). Native SQLite must be available at runtime:
+
+<Tabs>
+  <TabItem label="Flutter" value="flutter">
+    Add [`sqlite3_flutter_libs`](https://pub.dev/packages/sqlite3_flutter_libs)
+    to the app; it bundles the right native SQLite for Android, iOS, macOS,
+    Linux and Windows:
+
+    ```yaml title="pubspec.yaml"
+    dependencies:
+      sqlite3_flutter_libs: ^0.5.0
+    ```
+  </TabItem>
+  <TabItem label="Dart CLI / server" value="dart-cli">
+    Nothing to install with current `package:sqlite3` releases — its build
+    hook compiles the bundled SQLite amalgamation (a C toolchain must be
+    available at build time) or fetches a precompiled binary.
+
+    On older SDKs without native-assets support, install the system SQLite
+    development package instead (`apt install libsqlite3-dev` or your
+    platform's equivalent).
+  </TabItem>
+</Tabs>
+
+<Warning>
+  **Native platforms only.** The wire codec relies on Dart's native 64-bit
+  `int`; there is no web build.
+</Warning>
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Models & Code Generation" icon="tags" href="/libraries/cocoon/models">
+    Annotate plain classes; let `cocoon_generator` write the rest.
+  </Card>
+  <Card title="Collections & Documents" icon="folder-tree" href="/libraries/cocoon/collections">
+    Refs, subcollections, cascade deletes and transactions.
+  </Card>
+  <Card title="Queries & Indexes" icon="magnifying-glass" href="/libraries/cocoon/queries">
+    Filters, ordering, the index rule and keyset pagination.
+  </Card>
+  <Card title="Realtime" icon="bolt" href="/libraries/cocoon/realtime">
+    Doc and query watches, plus the durable change log.
+  </Card>
+  <Card title="Schema Migrations" icon="arrows-rotate" href="/libraries/cocoon/migrations">
+    The interactive `migrate` command and the on-device runner.
+  </Card>
+  <Card title="Internals" icon="screwdriver-wrench" href="/libraries/cocoon/internals">
+    Storage layout, the canonical wire format and money guidance.
+  </Card>
+</CardGroup>

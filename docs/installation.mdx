@@ -112,6 +112,28 @@ Every library lives under `packages/<package_name>` in the monorepo. Add only th
           path: packages/auth_management_oauth2
     ```
   </TabItem>
+  <TabItem label="Cocoon (local database)" value="cocoon-deps">
+    Add the Cocoon database plus its code generator. Cocoon is standalone pure Dart — no other Butterfly package and no Flutter dependency:
+
+    ```yaml title="pubspec.yaml"
+    dependencies:
+      cocoon:
+        git:
+          url: https://github.com/redfieldchristabel/butterfly.git
+          ref: master
+          path: packages/cocoon
+
+    dev_dependencies:
+      build_runner: ^2.4.13
+      cocoon_generator:
+        git:
+          url: https://github.com/redfieldchristabel/butterfly.git
+          ref: master
+          path: packages/cocoon_generator
+    ```
+
+    In a Flutter app also add `sqlite3_flutter_libs` so the native SQLite is bundled; see [Cocoon: Overview & Why Cocoon](/libraries/cocoon).
+  </TabItem>
 </Tabs>
 
 After editing `pubspec.yaml`, run `flutter pub get`.
@@ -155,6 +177,9 @@ The wizard walks upward to locate your project root, creates `lib/models`, `lib/
   </Card>
   <Card title="Auth & Riverpod" icon="bolt" href="/libraries/auth/features/riverpod">
     Set up `AuthService` with automatic Riverpod `userProvider` state sync.
+  </Card>
+  <Card title="Cocoon Local Database" icon="database" href="/libraries/cocoon">
+    Annotate models, generate adapters, and query a Firestore-style SQLite database.
   </Card>
   <Card title="CLI Reference" icon="wand-magic-sparkles" href="/features">
     Generate models, version constants, and conventional commits.
