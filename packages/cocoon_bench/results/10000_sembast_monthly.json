@@ -1,0 +1,1 @@
+{"engine":"sembast","size":10000,"op":"monthly","runs":[{"engine":"sembast","size":10000,"op":"monthly","elapsedMs":28,"docsScanned":100,"grandTotalMinor":3560437},{"engine":"sembast","size":10000,"op":"monthly","elapsedMs":28,"docsScanned":100,"grandTotalMinor":3560437},{"engine":"sembast","size":10000,"op":"monthly","elapsedMs":28,"docsScanned":100,"grandTotalMinor":3560437}]}

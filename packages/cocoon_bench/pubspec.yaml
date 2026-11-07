@@ -1,0 +1,20 @@
+name: cocoon_bench
+resolution: workspace
+publish_to: none
+description: "An honest benchmark of Cocoon against sembast on finance-shaped data."
+version: 0.0.1
+homepage: https://github.com/redfieldchristabel/butterfly
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  cocoon: ^0.0.1
+  sembast: ^3.9.0
+  sqlite3: ^3.5.2
+
+dev_dependencies:
+  build_runner: ^2.4.13
+  cocoon_generator: ^0.0.1
+  lints: ^6.0.0
+  test: ^1.24.0
