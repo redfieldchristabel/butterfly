@@ -9,12 +9,14 @@ import '../id.dart';
 import '../path.dart';
 import 'adapter.dart';
 import 'cache.dart';
+import 'changes.dart';
 import 'executor.dart';
 import 'naming.dart';
 import 'query.dart';
 import 'refs.dart';
 import 'schema_sql.dart';
 import 'sqlite_executor.dart';
+import 'watch.dart';
 
 /// How eagerly commits hit the disk.
 enum Durability {
@@ -34,6 +36,7 @@ final class CocoonOptions {
   const CocoonOptions({
     this.durability = Durability.full,
     this.cacheSize = defaultCacheSize,
+    this.keepChanges = true,
   });
 
   /// The default hot-document cache size.
@@ -45,6 +48,14 @@ final class CocoonOptions {
   /// The bounded hot-document cache size, in documents. `0` disables the
   /// cache; reads then always hit SQLite.
   final int cacheSize;
+
+  /// Whether every commit appends its change rows to the on-disk change log
+  /// that [Cocoon.changesSince] reads.
+  ///
+  /// `true` (the default) keeps the log. `false` skips writing the rows —
+  /// the log stays empty — while in-process watch notifications are
+  /// unaffected; pick it when only `watch()` streams are needed.
+  final bool keepChanges;
 }
 
 /// A typed, disk-backed, Firestore-style local database on SQLite.
@@ -65,11 +76,13 @@ final class CocoonOptions {
 /// file from two instances (or processes) at once — the hot-document cache
 /// and SQLite's write lock both assume a single writer.
 final class Cocoon {
-  Cocoon._(this._executor, this._registry, this._cache);
+  Cocoon._(this._executor, this._registry, this._cache, this._keepChanges);
 
   final CocoonExecutor _executor;
   final SchemaRegistry _registry;
   final DocumentCache _cache;
+  final bool _keepChanges;
+  final WatchHub _watchHub = WatchHub();
 
   /// Opens (or creates) the database at [path] and reconciles the schema
   /// with [collections] inside one write transaction.
@@ -109,11 +122,20 @@ final class Cocoon {
   }) async {
     final registry = SchemaRegistry.build(collections);
     await _reconcile(executor, registry);
-    return Cocoon._(executor, registry, DocumentCache(options.cacheSize));
+    return Cocoon._(
+      executor,
+      registry,
+      DocumentCache(options.cacheSize),
+      options.keepChanges,
+    );
   }
 
-  /// Closes the database.
-  Future<void> close() => _executor.close();
+  /// Closes the database. Every watch stream this instance created
+  /// completes; using references of a closed database throws.
+  Future<void> close() {
+    _watchHub.close();
+    return _executor.close();
+  }
 
   /// The root collection backed by a top-level [adapter].
   ///
@@ -151,10 +173,19 @@ final class Cocoon {
   @visibleForTesting
   int get debugCacheLength => _cache.length;
 
+  /// How many watch streams are currently registered (listening).
+  @visibleForTesting
+  int get debugWatcherCount => _watchHub.length;
+
+  /// The hub every live watch registers with.
+  @internal
+  WatchHub get watchHub => _watchHub;
+
   // -- Engine internals ----------------------------------------------------
 
   /// Runs [body] in one write transaction, applying its staged cache updates
-  /// only after the commit succeeds.
+  /// only after the commit succeeds, then delivers one commit event with the
+  /// touched paths to the watch hub. Rolled-back transactions report nothing.
   @internal
   Future<R> writeTx<R>(
     Future<R> Function(CocoonTx tx, CacheStage stage) body,
@@ -162,7 +193,26 @@ final class Cocoon {
     final stage = CacheStage();
     final result = await _executor.writeTransaction((tx) => body(tx, stage));
     stage.applyTo(_cache);
+    final touched = stage.takeTouched();
+    if (touched.isNotEmpty) {
+      _watchHub.emit(CommitEvent(touched));
+    }
     return result;
+  }
+
+  /// The live stream behind [DocRef.watch].
+  @internal
+  Stream<DocSnapshot<T>?> watchDoc<T extends Object>(DocRef<T> ref) {
+    final table = _registry.entryFor(ref.adapter).table;
+    return DocWatch<T>(this, ref, table).stream;
+  }
+
+  /// The live stream behind [CocoonQuery.watch].
+  @internal
+  Stream<QueryPage<T>> watchQuery<T extends Object>(CocoonQuery<T> query) {
+    final spec = query.spec;
+    final table = _registry.entryFor(spec.adapter).table;
+    return QueryWatch<T>(this, query, table, spec.scopePath).stream;
   }
 
   @internal
@@ -221,6 +271,9 @@ final class Cocoon {
       'ON CONFLICT(path) DO UPDATE SET $updates',
       [ref.path.path, ref.path.id, ...paramValues, bytes, ...columnValues],
     );
+    await _recordChanges(tx, stage, [
+      (entry.table, ref.path.path, ChangeOp.set),
+    ]);
     stage.put(ref.path.path, stored);
   }
 
@@ -251,26 +304,90 @@ final class Cocoon {
     DocRef<Object> ref,
   ) async {
     final entry = _registry.entryFor(ref.adapter);
-    await tx.execute('DELETE FROM ${entry.table} WHERE path = ?', [
-      ref.path.path,
-    ]);
+    // One change row per deleted document, including every cascaded one:
+    // DELETE ... RETURNING keeps reading the paths and deleting atomic.
+    final deleted = <(String table, String path)>[
+      ...await _deleteReturning(tx, entry.table, ref.path.path),
+    ];
     final (:from, :to) = ref.path.descendants;
     for (final candidate in _registry.entries) {
       if (SchemaRegistry.descendsFrom(
         candidate.adapter.pattern,
         ref.adapter.pattern,
       )) {
-        await tx.execute(
-          'DELETE FROM ${candidate.table} WHERE path >= ? AND path < ?',
-          [from, to],
-        );
+        deleted.addAll(await _deleteSubtree(tx, candidate.table, from, to));
       }
     }
+    await _recordChanges(tx, stage, [
+      for (final (table, path) in deleted) (table, path, ChangeOp.delete),
+    ]);
     stage.evictSubtree(ref.path.path);
   }
 
+  /// Deletes the document at [path] from [table], returning its `(table,
+  /// path)` pair only when a row was actually removed.
+  Future<List<(String, String)>> _deleteReturning(
+    CocoonTx tx,
+    String table,
+    String path,
+  ) async {
+    final rows = await tx.getAll(
+      'DELETE FROM $table WHERE path = ? RETURNING path',
+      [path],
+    );
+    return [for (final row in rows) (table, row['path']! as String)];
+  }
+
+  /// Deletes the half-open subtree range from [table], returning one
+  /// `(table, path)` pair per removed document.
+  Future<List<(String, String)>> _deleteSubtree(
+    CocoonTx tx,
+    String table,
+    String from,
+    String to,
+  ) async {
+    final rows = await tx.getAll(
+      'DELETE FROM $table WHERE path >= ? AND path < ? RETURNING path',
+      [from, to],
+    );
+    return [for (final row in rows) (table, row['path']! as String)];
+  }
+
+  /// Appends one change-log row per touched document (when the log is on)
+  /// and records the touched set for the post-commit notification.
+  Future<void> _recordChanges(
+    CocoonTx tx,
+    CacheStage stage,
+    List<(String table, String path, ChangeOp op)> changes,
+  ) async {
+    if (changes.isEmpty) {
+      return;
+    }
+    for (final (table, path, op) in changes) {
+      stage.touched(table, path, op);
+    }
+    if (!_keepChanges) {
+      return;
+    }
+    final at = DateTime.now().toUtc().microsecondsSinceEpoch;
+    await tx.executeBatch(
+      'INSERT INTO $changesTableName (tbl, path, op, at) VALUES (?, ?, ?, ?)',
+      [
+        for (final (table, path, op) in changes) [table, path, op.name, at],
+      ],
+    );
+  }
+
   @internal
-  Future<QueryPage<T>> runQuery<T extends Object>(CocoonQuery<T> query) async {
+  Future<QueryPage<T>> runQuery<T extends Object>(CocoonQuery<T> query) async =>
+      (await runQueryWithBytes<T>(query)).$1;
+
+  /// Runs [query], also returning each document's stored wire bytes in page
+  /// order — the signature query watches deduplicate pages by.
+  @internal
+  Future<(QueryPage<T>, List<Uint8List>)> runQueryWithBytes<T extends Object>(
+    CocoonQuery<T> query,
+  ) async {
     final spec = query.spec;
     final entry = _registry.entryFor(spec.adapter);
     final plan = planQuery(
@@ -300,7 +417,10 @@ final class Cocoon {
     final docs = <DocSnapshot<T>>[
       for (final row in pageRows) _snapshotFromRow<T>(entry, row),
     ];
-    return QueryPage<T>(docs, nextCursor);
+    final bytes = <Uint8List>[
+      for (final row in pageRows) row['data']! as Uint8List,
+    ];
+    return (QueryPage<T>(docs, nextCursor), bytes);
   }
 
   @internal
@@ -318,6 +438,81 @@ final class Cocoon {
     );
     final rows = await _executor.getAll(plan.countSql, plan.countArgs);
     return rows.first['c']! as int;
+  }
+
+  // -- Change log -----------------------------------------------------------
+
+  /// Returns the change-log rows newer than [seq], oldest first.
+  ///
+  /// Every committed write appends one row per touched document — including
+  /// one row per cascaded delete — in the same transaction as the write.
+  /// Returns at most [limit] rows; keep calling with the last row's
+  /// [Change.seq] until the list comes back empty. With
+  /// `CocoonOptions.keepChanges` disabled the log is never written and this
+  /// always returns an empty list.
+  Future<List<Change>> changesSince(int seq, {int limit = 1000}) async {
+    if (limit < 1) {
+      throw ArgumentError.value(limit, 'limit', 'Must be at least 1');
+    }
+    final rows = await _executor.getAll(
+      'SELECT seq, tbl, path, op, at FROM $changesTableName '
+      'WHERE seq > ? ORDER BY seq LIMIT ?',
+      [seq, limit],
+    );
+    return [for (final row in rows) _changeFromRow(row)];
+  }
+
+  /// The highest seq ever assigned to a change, or `0` when nothing was
+  /// logged yet.
+  ///
+  /// It never goes backwards: pruning removes rows but keeps the head, so a
+  /// sync outbox can compare its own watermark against it at any time.
+  Future<int> lastChangeSeq() async {
+    final row = await _executor.getOptional(
+      'SELECT seq FROM sqlite_sequence WHERE name = ?',
+      [changesTableName],
+    );
+    return (row?['seq'] as int?) ?? 0;
+  }
+
+  /// Deletes every change row with `seq <= upToSeq`.
+  ///
+  /// Call it once changes are durably processed elsewhere (synced, audited);
+  /// the log would otherwise grow forever.
+  Future<void> pruneChanges({required int upToSeq}) {
+    return _executor.writeTransaction((tx) async {
+      await tx.execute('DELETE FROM $changesTableName WHERE seq <= ?', [
+        upToSeq,
+      ]);
+    });
+  }
+
+  Change _changeFromRow(Map<String, Object?> row) {
+    final table = row['tbl']! as String;
+    final op = row['op']! as String;
+    return Change(
+      seq: row['seq']! as int,
+      collection: _modelOfTable(table),
+      path: row['path']! as String,
+      op: switch (op) {
+        'set' => ChangeOp.set,
+        'delete' => ChangeOp.delete,
+        _ => throw StateError('Unknown change op "$op" in the change log'),
+      },
+      at: DateTime.fromMicrosecondsSinceEpoch(row['at']! as int, isUtc: true),
+    );
+  }
+
+  /// The model name of a registered SQL [table], or the table name itself
+  /// for a table without a registered adapter (defensive; the log only ever
+  /// holds rows for registered collections).
+  String _modelOfTable(String table) {
+    for (final entry in _registry.entries) {
+      if (entry.table == table) {
+        return entry.adapter.model;
+      }
+    }
+    return table;
   }
 
   DocSnapshot<T> _snapshotFromRow<T extends Object>(
@@ -373,6 +568,7 @@ final class Cocoon {
   ) {
     return executor.writeTransaction((tx) async {
       await _createMetaTableIfMissing(tx);
+      await _createChangesTableIfMissing(tx);
       for (final entry in registry.entries) {
         final stored = await tx.getOptional(
           'SELECT value FROM $metaTableName WHERE key = ?',
@@ -419,6 +615,16 @@ final class Cocoon {
     );
     if (exists == null) {
       await tx.execute(createMetaTableSql());
+    }
+  }
+
+  static Future<void> _createChangesTableIfMissing(CocoonTx tx) async {
+    final exists = await tx.getOptional(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      [changesTableName],
+    );
+    if (exists == null) {
+      await tx.execute(createChangesTableSql());
     }
   }
 

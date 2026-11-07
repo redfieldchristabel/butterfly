@@ -171,16 +171,37 @@ class Txn { ... }
   This requires one `Cocoon` instance to own the database file; no
   multi-process writers.
 
-## Realtime
+## Realtime (implemented)
 
-- A `changes` table (`seq` autoincrement, collection, path, op, hlc) is written
-  in the same transaction as every write. The same log drives watch
-  invalidation, a future sync outbox and auditing.
-- Watches are **per query**, invalidated only by changes to their collection
-  (and, for document watches, their id), coalesced per transaction, and
-  deduplicated by value equality so unchanged results don't rebuild widgets.
-- Live paginated lists watch an anchored range (`key >= anchor`), not "first N",
-  so page boundaries don't shift under inserts.
+- The `_cocoon_changes` table (`seq` autoincrement, `tbl` SQL table name,
+  `path`, `op` in set/delete, `at` UTC microseconds) is created on open and
+  written in the same transaction as every write. Cascade deletes log one
+  row per deleted document via `DELETE ... RETURNING path`, which keeps
+  reading the paths and deleting atomic. `CocoonOptions.keepChanges = false`
+  skips the rows entirely for apps that only need in-process watches — the
+  notification set is kept in memory either way — and
+  `pruneChanges(upToSeq:)` trims consumed rows for sync/audit readers.
+- After each committed transaction — and only then; a rollback discards its
+  log rows and its notification set, so it emits nothing — the engine
+  delivers ONE internal commit event (the distinct (table, path, op) set) to
+  the watch hub, after the cache was updated. Delivery is synchronous and
+  cheap; watchers re-read on their own schedule.
+- `DocRef.watch()` emits the current value on listen (`null` when absent)
+  and re-reads only when a commit touched the exact path. Emissions whose
+  canonical wire bytes equal the previous emission are skipped: byte
+  equality is value equality, so models need no `==`.
+- Query watches re-run only when a commit touched the query's table — and,
+  for subcollection queries, a path inside the parent scope; other tables
+  and other parents never re-run them. Commits landing while a re-run is in
+  flight are coalesced into at most one more re-run, and a page whose
+  document paths and bytes equal the previous page is not emitted.
+- `watchFrom(cursor)` pins the anchor: every re-run starts after the same
+  cursor, so inserts before the anchor never shift the window. Live
+  paginated lists anchor on the previous page's `nextCursor` instead of
+  "first N", so page boundaries don't shift under inserts.
+- Watch streams are broadcast and lazy: work starts on the first listen,
+  the watcher unregisters when the last listener cancels, and closing the
+  database completes every stream.
 
 ## Money (guidance for apps)
 
@@ -219,7 +240,7 @@ executor, so it is deferred.
 | Open + reconcile (backfill, column/index diff, shape hash) | done |
 | Document ids (`newDocId`, UUIDv7) | done |
 | Bounded LRU document cache | done |
-| Change log + watches | next |
+| Change log + watches | done |
 | build_runner generator (`cocoon_generator`) | planned |
 | `cocoon migrate` interactive CLI | planned |
 | DevTools extension | planned |

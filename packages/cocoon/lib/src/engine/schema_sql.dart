@@ -133,6 +133,17 @@ String createMetaTableSql() =>
     'CREATE TABLE IF NOT EXISTS $metaTableName '
     '(key TEXT PRIMARY KEY, value TEXT NOT NULL)';
 
+/// The `CREATE TABLE` statement for the internal change log: one row per
+/// touched document, appended in the same transaction as every write.
+String createChangesTableSql() =>
+    'CREATE TABLE IF NOT EXISTS $changesTableName (\n'
+    '  seq INTEGER PRIMARY KEY AUTOINCREMENT,\n'
+    '  tbl TEXT NOT NULL,\n'
+    '  path TEXT NOT NULL,\n'
+    "  op TEXT NOT NULL CHECK (op IN ('set','delete')),\n"
+    '  at INTEGER NOT NULL\n'
+    ')';
+
 /// A stable fingerprint of one table's physical shape (params, columns,
 /// declared indexes). Stored in `_cocoon_meta`; when it matches on open, the
 /// reconciler does no DDL at all.

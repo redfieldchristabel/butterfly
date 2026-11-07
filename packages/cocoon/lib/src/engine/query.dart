@@ -626,6 +626,32 @@ final class CocoonQuery<T extends Object> {
   /// Runs the query and returns one page.
   Future<QueryPage<T>> get() => _db.runQuery(this);
 
+  /// Watches the query.
+  ///
+  /// The stream starts work on the first listen and stops when the last
+  /// listener cancels (the watcher unregisters; re-listening restarts it).
+  /// It emits the current page on listen, then re-runs the query only when a
+  /// committed transaction touched the query's collection — and, for
+  /// subcollection queries, a path inside the parent scope; writes to other
+  /// tables or other parents never re-run it. Re-runs are coalesced: commits
+  /// landing while a re-run is in flight cause at most one more re-run. A
+  /// page whose document paths and canonical bytes equal the previous page
+  /// is not emitted. Closing the database completes the stream.
+  Stream<QueryPage<T>> watch() => _db.watchQuery(this);
+
+  /// Watches an anchored live range: rows from [cursor] onward, up to the
+  /// query's limit, with the anchor fixed at [cursor] (pass `null` to anchor
+  /// at the very start of the query).
+  ///
+  /// The anchor never moves, so rows inserted before it don't shift the
+  /// window — this is how live paginated lists avoid shifting pages: anchor
+  /// the window on the previous page's `nextCursor` and keep it there, while
+  /// `nextCursor` from the emissions still pages further on demand. Beyond
+  /// that, [watchFrom] behaves exactly like [watch] (coalescing, byte
+  /// deduplication, lifecycle).
+  Stream<QueryPage<T>> watchFrom(String? cursor) =>
+      (cursor == null ? this : startAfter(cursor)).watch();
+
   /// Counts the matching documents (`SELECT count(*)`), under the same index
   /// rule as [get].
   Future<int> count() => _db.runCount(this);

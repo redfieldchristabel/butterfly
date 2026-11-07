@@ -1,5 +1,25 @@
 ## Unreleased
 
+- Realtime watches. `docRef.watch()` emits the current value on listen and
+  again only when a commit changes that exact document — a rewrite that
+  encodes to the same canonical bytes never emits, and a delete emits
+  `null`. `query.watch()` emits pages, re-runs only for commits in the
+  query's collection (and parent scope, for subcollections), coalesces
+  bursts of commits into at most one more re-run, and skips pages identical
+  to the previous one — so UIs rebuild only when something they show
+  changed. Cancelling a subscription unregisters the watcher; closing the
+  database completes every watch stream.
+- `query.watchFrom(cursor)`: a live window anchored at a fixed cursor. Rows
+  inserted before the anchor never shift it — how live paginated lists keep
+  their pages stable while new data arrives.
+- A durable change log. Every commit appends one row per touched document
+  (`Change`: seq, collection, path, op, at) in the same transaction as the
+  write, including one row per cascaded delete. Read it with
+  `db.changesSince(seq)`, track the head with `db.lastChangeSeq()`, and trim
+  consumed rows with `db.pruneChanges(upToSeq: ...)` — ready for a future
+  sync outbox or audit trail. Opt out with `CocoonOptions(keepChanges:
+  false)` when only in-process watches are needed; notifications are
+  unaffected.
 - The storage engine is here: open a Cocoon database on disk, write and read
   typed documents in collections and subcollections, delete a document with
   its whole subtree, and run transactions — all on SQLite with bounded RAM

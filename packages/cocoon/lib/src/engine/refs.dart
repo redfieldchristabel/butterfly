@@ -78,6 +78,18 @@ final class DocRef<T extends Object> {
   /// subcollections below it).
   Future<void> delete() => _db.deleteDoc(this);
 
+  /// Watches the document.
+  ///
+  /// The stream starts work on the first listen and stops when the last
+  /// listener cancels (the watcher unregisters; re-listening restarts it).
+  /// It emits the current value on listen — `null` when the document does
+  /// not exist — then re-reads only when a committed transaction touched
+  /// this exact path. Emissions whose canonical wire bytes equal the
+  /// previous emission are skipped: byte equality is value equality, so an
+  /// identical rewrite never emits and models need no `==`. A delete emits
+  /// `null`. Closing the database completes the stream.
+  Stream<DocSnapshot<T>?> watch() => _db.watchDoc<T>(this);
+
   @override
   bool operator ==(Object other) => other is DocRef && other.path == path;
 

@@ -1,5 +1,7 @@
 import 'dart:collection';
 
+import 'changes.dart' show ChangeOp, TouchedChange;
+
 /// Bounded LRU cache of recently read, decoded documents, keyed by full path.
 ///
 /// Keeps hot-document reads out of SQLite while RAM stays capped: when
@@ -65,6 +67,7 @@ final class DocumentCache {
 /// simply discarded, so the cache never reflects uncommitted writes.
 final class CacheStage {
   final List<void Function(DocumentCache)> _operations = [];
+  final Set<TouchedChange> _touched = {};
 
   /// Stages a decoded value for [path].
   void put(String path, Object value) =>
@@ -73,6 +76,24 @@ final class CacheStage {
   /// Stages the eviction of [path] and its subtree.
   void evictSubtree(String path) =>
       _operations.add((cache) => cache.evictSubtree(path));
+
+  /// Records that this transaction touched a document (its SQL [table],
+  /// full [path] and the [op] performed). The distinct set is reported once
+  /// after the commit succeeds and drives the watch notifications.
+  void touched(String table, String path, ChangeOp op) =>
+      _touched.add((table, path, op));
+
+  /// The distinct (table, path, op) set this transaction touched, taking it:
+  /// the stage is single-use per transaction and the set is only reported
+  /// for committed transactions.
+  Set<TouchedChange> takeTouched() {
+    if (_touched.isEmpty) {
+      return const {};
+    }
+    final taken = Set<TouchedChange>.of(_touched);
+    _touched.clear();
+    return taken;
+  }
 
   /// Applies every staged update to [cache], in write order.
   void applyTo(DocumentCache cache) {

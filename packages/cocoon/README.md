@@ -14,11 +14,12 @@ built on SQLite.
   against the stored schema and reconciles tables, columns and indexes on
   its own.
 
-> Status: the storage engine is in. Paths, the canonical protobuf codec,
-> cursors and the schema diff are in; the code generator, `cocoon migrate`
-> CLI and DevTools inspector are next. Until the generator exists,
-> collection glue is a hand-written `CollectionAdapter<T>` — exactly the
-> class the generator will emit. See [doc/design.md](doc/design.md).
+> Status: the storage engine, the change log and realtime watches are in.
+> Paths, the canonical protobuf codec, cursors and the schema diff are in;
+> the code generator, `cocoon migrate` CLI and DevTools inspector are next.
+> Until the generator exists, collection glue is a hand-written
+> `CollectionAdapter<T>` — exactly the class the generator will emit. See
+> [doc/design.md](doc/design.md).
 
 ## The 30-second version
 
@@ -254,6 +255,66 @@ Reads inside the transaction see its own writes; an exception rolls back
 everything. `set`/`add`/`delete` outside a transaction each run in their own
 transaction.
 
+## Realtime: watches and the change log
+
+Every committed write appends one row per touched document to an internal
+change log, in the same transaction as the write. The log feeds the watches
+below, and the same rows can later drive sync and audits.
+
+```dart
+// Watch one document. Emits the current value on listen (null when the
+// document does not exist), then re-reads only when a commit touched this
+// exact path. An emission whose canonical bytes equal the previous one is
+// skipped, so an identical rewrite never fires and models need no ==.
+final docSub = txRef.watch().listen((snap) {
+  // snap is DocSnapshot<Txn>? — null after a delete.
+});
+
+// Watch a query. Emits the current page on listen, then re-runs only when a
+// commit touched the query's collection (and, for subcollection queries, a
+// path inside the parent scope). Commits landing while a re-run is in
+// flight are coalesced into at most one more re-run, and a page whose
+// paths + bytes equal the previous page is not emitted.
+final pageSub = a1.collection(txns)
+    .orderBy(txnBookedOn, descending: true)
+    .limit(20)
+    .watch()
+    .listen((page) { ... });
+
+// Anchored live range: the rows after `cursor`, up to the limit, with the
+// anchor fixed — rows inserted before it never shift the window. This is
+// how live paginated lists avoid shifting pages.
+final windowSub = a1.collection(txns)
+    .orderBy(txnBookedOn, descending: true)
+    .limit(20)
+    .watchFrom(firstPage.nextCursor)
+    .listen((page) { ... });
+
+await docSub.cancel(); // stops the stream and unregisters the watcher
+await db.close(); // completes every watch stream
+```
+
+Reading the log directly — for a sync outbox or an audit trail:
+
+```dart
+var watermark = savedWatermark; // the last seq you processed, 0 at first
+final changes = await db.changesSince(watermark);
+// Change: seq, collection (model name), path, op (set/delete), at (UTC)
+for (final change in changes) {
+  // ... push to your server / audit trail ...
+  watermark = change.seq;
+}
+// Durably save `watermark`, then trim what you've processed:
+await db.pruneChanges(upToSeq: watermark);
+
+// db.lastChangeSeq() is the highest seq ever assigned; it never goes
+// backwards, even after a full prune.
+```
+
+`CocoonOptions(keepChanges: false)` stops writing log rows for apps that
+only need the in-process watches; notifications are unaffected, and
+`changesSince` simply returns nothing.
+
 ## Opening and options
 
 ```dart
@@ -263,6 +324,7 @@ final db = await Cocoon.open(
   options: const CocoonOptions(
     durability: Durability.full, // PRAGMA synchronous; `normal` for speed
     cacheSize: 2000, // bounded LRU of decoded hot documents; 0 disables
+    keepChanges: true, // write the change log the watches and sync read
   ),
 );
 ```

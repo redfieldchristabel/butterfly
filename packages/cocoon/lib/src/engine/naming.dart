@@ -10,6 +10,10 @@ final RegExp validNamePattern = RegExp(r'^[a-zA-Z][a-zA-Z0-9_]*$');
 /// Name of the internal metadata table.
 const String metaTableName = '_cocoon_meta';
 
+/// Name of the internal change log table, one row per touched document per
+/// committed write.
+const String changesTableName = '_cocoon_changes';
+
 /// Converts a Dart identifier to `snake_case`.
 ///
 /// `Txn` becomes `txn`, `AccountNote` becomes `account_note` and acronym runs
