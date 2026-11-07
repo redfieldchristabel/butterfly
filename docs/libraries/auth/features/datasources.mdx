@@ -107,7 +107,7 @@ Every `AuthServiceRepository<T>` requires a `dbRepo` implementing `AuthManagemen
     </Warning>
   </Accordion>
   <Accordion title="Isar Community (auth_management_database_isar_community)">
-    `AuthManagementIsarRepository<T>` requires your model to extend `BaseUser` from `package:auth_management_database_isar_community/auth_management_database_isar_community.dart` (which provides `Id id = Isar.autoIncrement`) and requires calling `await isarRepo.initialize(AppUserSchema)` before use. It throws `UnsupportedError` on Web.
+    `AuthManagementIsarRepository<T>` requires your model to extend `BaseUser` from `package:auth_management_database_isar_community/auth_management_database_isar_community.dart` (a plain `Id id` holder whose constructor **requires** the id — pass `Isar.autoIncrement` yourself) and requires calling `await isarRepo.initialize(AppUserSchema)` before use. It throws an `Exception` on Web.
 
     <Error>
       **Current implementation defects in `AuthManagementIsarRepository`:**

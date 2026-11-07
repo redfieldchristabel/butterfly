@@ -106,7 +106,7 @@ description: Guard duplicate in-isolate actions with synchronous acquire/release
 ## Important implementation caveats
 
 <Error>
-  **Do not pass a positive `timeout` to `acquire()`:** When a key is already locked and `timeout > Duration.zero`, `_waitForLockSync` enters a broken synchronous path. Without a persistence watch stream, it runs a tight synchronous `while` loop that **freezes the Dart isolate** until the lock expires. With a watch stream, it schedules async listeners and immediately returns `false` without waiting. Always call `acquire('key')` without `timeout` and handle `false` gracefully.
+  **Do not pass a positive `timeout` to `acquire()`:** When a key is already locked and `timeout > Duration.zero`, `_waitForLock` enters a broken synchronous path. Without a persistence watch stream, it runs a tight synchronous busy-wait loop that **freezes the Dart isolate** until the timeout elapses. With a watch stream, it schedules async listeners and immediately returns `false` without waiting. Always call `acquire('key')` without `timeout` and handle `false` gracefully.
 </Error>
 
 <AccordionGroup>

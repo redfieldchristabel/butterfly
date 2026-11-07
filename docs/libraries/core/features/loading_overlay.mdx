@@ -150,7 +150,7 @@ description: Display an app-wide loading barrier driven by your CoreService cont
 ## Controller API (`ButterflyLoadingController<T>`)
 
 <Property name="LoadingOverlay({Key? key, required Widget child})" type="Widget">
-  Reads `BaseCoreService.instance.loadingService` in `initState`. Make sure your `CoreService` has been constructed before `LoadingOverlay` mounts. There are no `isLoading`, `opacity`, `color`, or `indicator` constructor parameters on `LoadingOverlay`.
+  Reads `BaseCoreService.instance.loadingService` when its `State` is constructed (a field initializer that runs just before `initState`). Make sure your `CoreService` has been constructed before `LoadingOverlay` mounts. There are no `isLoading`, `opacity`, `color`, or `indicator` constructor parameters on `LoadingOverlay`.
 </Property>
 
 ---

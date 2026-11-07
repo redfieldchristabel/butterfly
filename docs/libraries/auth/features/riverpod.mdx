@@ -161,7 +161,7 @@ description: Publish the signed-in user to Riverpod automatically with one initi
   <Accordion defaultOpen title="Startup order & build-safe microtask delivery">
     You can call `authService.initialize()` in `main()` before `runApp` without worrying about race conditions:
     - Any user emitted by `streamUser()` **before** `riverpodProvider.initialize(ref)` runs is held as pending inside `AuthServiceProviderRepository`.
-    - When `riverpodProvider.initialize(ref)` runs inside your root `ConsumerWidget.build`, it schedules pending delivery via `Future.microtask` so Riverpod never throws a *"tried to modify a provider while the widget tree was building"* assertion.
+    - When `riverpodProvider.initialize(ref)` runs inside your root `ConsumerWidget.build`, it schedules pending delivery via `scheduleMicrotask` so Riverpod never throws a *"tried to modify a provider while the widget tree was building"* assertion.
     - Subsequent calls to `riverpodProvider.initialize(ref)` on rebuilds are safe no-ops.
   </Accordion>
   <Accordion title="Why define userProvider instead of watching riverpodUserStateProvider directly?">
