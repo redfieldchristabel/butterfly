@@ -34,8 +34,15 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+  # The same git source the parent package uses for auth_management: the
+  # example is resolved alongside the workspace (pub follows example/ dirs
+  # of workspace members), and a path dep here clashes with the parent's
+  # git dep on the same package.
   auth_management:
-    path: ../../auth_management
+    git:
+      url: git@github.com:redfieldchristabel/butterfly.git
+      ref: master
+      path: packages/auth_management
   auth_management_database_hive_ce:
     path: ../
   hive_ce: ^2.10.1

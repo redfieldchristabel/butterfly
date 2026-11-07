@@ -30,8 +30,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # Hosted, like the parent package's own auth_management dependency: the
+  # example is resolved alongside the workspace (pub follows example/ dirs
+  # of workspace members), and a path dep here clashes with the parent's
+  # hosted dep on the same package.
   auth_management:
-    path: ../../auth_management
   auth_management_database_isar_community:
     path: ../
   isar_community:

@@ -36,9 +36,11 @@ packages:
   auth_management:
     dependency: "direct main"
     description:
-      path: "../../auth_management"
-      relative: true
-    source: path
+      path: "packages/auth_management"
+      ref: master
+      resolved-ref: "10d7ecba8f363d349e63e2ad592e1bf60b66f7ed"
+      url: "git@github.com:redfieldchristabel/butterfly.git"
+    source: git
     version: "0.3.0"
   auth_management_database_hive_ce:
     dependency: "direct main"
