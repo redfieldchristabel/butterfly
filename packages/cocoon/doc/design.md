@@ -241,6 +241,7 @@ executor, so it is deferred.
 | Document ids (`newDocId`, UUIDv7) | done |
 | Bounded LRU document cache | done |
 | Change log + watches | done |
-| build_runner generator (`cocoon_generator`) | planned |
+| build_runner generator (`cocoon_generator`), `@Embedded`, lock check | done |
+| Example package (`cocoon_example`) | done |
 | `cocoon migrate` interactive CLI | planned |
 | DevTools extension | planned |

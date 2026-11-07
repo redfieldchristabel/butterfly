@@ -1,5 +1,15 @@
 ## Unreleased
 
+- Code generation: annotate plain classes with `@Collection` (and nested
+  value classes with `@Embedded`) and `cocoon_generator` writes the adapter,
+  typed query handles (`Txn$.bookedOn`) and the canonical codec. Field numbers
+  come from the committed `cocoon.lock.json`, so reordering fields never
+  matters, and the build stops with a clear message when the models and the
+  lock disagree instead of silently writing data under the wrong numbers.
+- Documents written before a field existed still load: the field takes the
+  constructor default, `null`, or its zero value.
+- `CollectionAdapter` has a const constructor, so adapters can be `const`.
+
 - Realtime watches. `docRef.watch()` emits the current value on listen and
   again only when a commit changes that exact document — a rewrite that
   encodes to the same canonical bytes never emits, and a delete emits

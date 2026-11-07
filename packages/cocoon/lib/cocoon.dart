@@ -6,6 +6,7 @@ library;
 export 'src/annotations.dart';
 export 'src/cursor.dart';
 export 'src/engine/adapter.dart';
+export 'src/engine/naming.dart' show tableNameFor, validNamePattern;
 export 'src/engine/changes.dart' show Change, ChangeOp;
 export 'src/engine/cocoon.dart';
 export 'src/engine/query.dart'

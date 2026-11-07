@@ -26,6 +26,7 @@ melos:
           - auth_management_database_isar_community
           - auth_management_provider_riverpod
           - core_management_route_go_router
+          - cocoon_example
     format:
       exec: dart format --set-exit-if-changed .
     update_deps:

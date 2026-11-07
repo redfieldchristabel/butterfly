@@ -244,4 +244,126 @@ void main() {
     expect(source, contains('"staffId": {\n'));
     expect(() => SchemaLock.parse('{"format": 99}'), throwsFormatException);
   });
+
+  group('embedded classes', () {
+    DeclaredEmbedded address(List<DeclaredField> fields) =>
+        DeclaredEmbedded('Address', fields);
+
+    test('a new embedded class is numbered in its own space', () {
+      final resolved = SchemaDiff.compute(
+        SchemaLock.empty(),
+        [
+          staff(const [DeclaredField('name', 'String')]),
+        ],
+        [
+          address(const [
+            DeclaredField('city', 'String'),
+            DeclaredField('line2', 'String?'),
+          ]),
+        ],
+      ).resolve();
+      final lock = resolved.lock;
+      expect(lock.version, 1);
+      final spec = lock.embedded['Address']!;
+      expect(spec.fields, const [
+        FieldSpec(name: 'city', number: 1, type: 'String'),
+        FieldSpec(name: 'line2', number: 2, type: 'String?'),
+      ]);
+      expect(spec.reserved, isEmpty);
+      // The collection's numbers are unaffected by the embedded class.
+      expect(lock.collections['Staff']!.field('name')!.number, 1);
+    });
+
+    test('embedded entries round-trip through the lock text', () {
+      final withEmbedded = SchemaDiff.compute(
+        SchemaLock.empty(),
+        [
+          staff(const [DeclaredField('name', 'String')]),
+        ],
+        [
+          address(const [DeclaredField('city', 'String')]),
+        ],
+      ).resolve().lock;
+      final source = withEmbedded.toSource();
+      expect(source, contains('"embedded"'));
+      expect(SchemaLock.parse(source).toSource(), source);
+    });
+
+    test('a lock without embedded entries parses as none', () {
+      expect(v1.embedded, isEmpty);
+      expect(v1.toSource(), isNot(contains('"embedded"')));
+    });
+
+    test('a type change moves the embedded field to a new number', () {
+      final locked = SchemaDiff.compute(SchemaLock.empty(), [], [
+        address(const [DeclaredField('city', 'String')]),
+      ]).resolve().lock;
+
+      final resolved = SchemaDiff.compute(locked, [], [
+        address(const [DeclaredField('city', 'int')]),
+      ]).resolve();
+      final spec = resolved.lock.embedded['Address']!;
+      expect(spec.field('city')!.number, 2);
+      expect(spec.reserved, {1});
+      expect(resolved.upgrades['Address']!.single.from.type, 'String');
+    });
+
+    test('renames resolve without renumbering', () {
+      final locked = SchemaDiff.compute(SchemaLock.empty(), [], [
+        address(const [
+          DeclaredField('city', 'String'),
+          DeclaredField('zip', 'String'),
+        ]),
+      ]).resolve().lock;
+
+      final resolved =
+          SchemaDiff.compute(locked, [], [
+            address(const [
+              DeclaredField('city', 'String'),
+              DeclaredField('postCode', 'String'),
+            ]),
+          ]).resolve(
+            embeddedRenames: {
+              'Address': {'zip': 'postCode'},
+            },
+          );
+      expect(resolved.lock.embedded['Address']!.field('postCode')!.number, 2);
+      expect(resolved.lock.embedded['Address']!.reserved, isEmpty);
+      expect(resolved.upgrades, isEmpty);
+      expect(resolved.lock.version, 2);
+    });
+
+    test('dropping every reference drops the lock entry', () {
+      final locked = SchemaDiff.compute(SchemaLock.empty(), [], [
+        address(const [DeclaredField('city', 'String')]),
+      ]).resolve().lock;
+
+      final resolved = SchemaDiff.compute(locked, []).resolve();
+      expect(resolved.lock.embedded, isEmpty);
+      // Like a dropped collection, an unreferenced embedded class needs no
+      // device-side migration: old documents simply carry extra nested data.
+      expect(resolved.lock.version, locked.version);
+    });
+
+    test('an embedded class may not be declared twice', () {
+      expect(
+        () => SchemaDiff.compute(SchemaLock.empty(), const [], [
+          address(const [DeclaredField('city', 'String')]),
+          address(const [DeclaredField('line2', 'String?')]),
+        ]),
+        throwsArgumentError,
+      );
+    });
+
+    test('nullability is part of the type', () {
+      final locked = SchemaDiff.compute(SchemaLock.empty(), [], [
+        address(const [DeclaredField('city', 'String')]),
+      ]).resolve().lock;
+      final diff = SchemaDiff.compute(locked, [], [
+        address(const [DeclaredField('city', 'String?')]),
+      ]);
+      expect(diff.embedded.single.typeChanged, hasLength(1));
+      expect(diff.isEmpty, isFalse);
+    });
+  });
 }

@@ -486,6 +486,10 @@ final class IndexDef {
 /// }
 /// ```
 abstract class CollectionAdapter<T> {
+  /// Builds an adapter. Const, so generated adapters can be `const`
+  /// top-level instances.
+  const CollectionAdapter();
+
   /// The model class name, e.g. `Txn`. Determines the table name.
   String get model;
 

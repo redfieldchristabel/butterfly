@@ -10,16 +10,15 @@ built on SQLite.
   hot documents stays in memory.
 - **Real queries**: indexed filters and sorts with keyset pagination, like
   Firestore: a query runs only when an index serves it.
-- **No hand-written migrations**: reopening the database diffs your adapters
-  against the stored schema and reconciles tables, columns and indexes on
-  its own.
+- **No hand-written migrations**: field numbers are pinned by name in a
+  committed `cocoon.lock.json`, so reordering or adding fields needs nothing,
+  and reopening the database reconciles tables, columns and indexes on its
+  own.
 
-> Status: the storage engine, the change log and realtime watches are in.
-> Paths, the canonical protobuf codec, cursors and the schema diff are in;
-> the code generator, `cocoon migrate` CLI and DevTools inspector are next.
-> Until the generator exists, collection glue is a hand-written
-> `CollectionAdapter<T>` — exactly the class the generator will emit. See
-> [doc/design.md](doc/design.md).
+> Status: the storage engine, the change log, realtime watches and the
+> `cocoon_generator` build_runner codegen are in. The interactive
+> `migrate` CLI (which writes `cocoon.lock.json` for you) and the DevTools
+> inspector are next. See [doc/design.md](doc/design.md).
 
 ## The 30-second version
 
@@ -35,12 +34,104 @@ final snap = await txRef.get(); // DocSnapshot<Txn>? (null when missing)
 await a1.delete(); // deletes a1 AND its whole subtree
 ```
 
-## Writing an adapter
+## Models and code generation
+
+Annotate plain Dart classes and let `cocoon_generator` write the adapter,
+the typed query handles and the canonical codec. Field numbers come from the
+committed `cocoon.lock.json`, never from field order.
+
+```yaml
+# pubspec.yaml
+dependencies:
+  cocoon: ^0.0.1
+dev_dependencies:
+  build_runner: ^2.4.13
+  cocoon_generator: ^0.0.1
+```
+
+```yaml
+# build.yaml: the generator reads the lock from the package root
+targets:
+  $default:
+    sources:
+      - lib/**
+      - cocoon.lock.json
+      - $package$
+```
+
+```dart
+import 'package:cocoon/cocoon.dart';
+
+part 'models.cocoon.dart';
+
+@Embedded()
+class Address {
+  const Address({required this.city, this.line2});
+  final String city;
+  final String? line2;
+}
+
+@Collection('accounts', indexes: [Index(['name'])])
+class Account {
+  const Account({required this.name, this.tags = const [], this.address});
+  final String name;
+  final List<String> tags;
+  final Address? address;
+}
+
+@Collection('accounts/{accountId}/txns', indexes: [
+  Index(['accountId', '-bookedOn']),
+])
+class Txn {
+  const Txn({required this.bookedOn, required this.amountMinor, this.memo});
+  final int bookedOn; // yyyymmdd
+  final int amountMinor; // minor units
+  final String? memo;
+}
+```
+
+`dart run build_runner build -d` then generates, per model:
+
+- an adapter instance named after the last collection id: `accounts`,
+  `txns` (classes `AccountCollection`, `TxnCollection`);
+- typed handles on a `$` holder for every indexed field and path param:
+  `Txn$.bookedOn`, `Txn$.accountId`;
+- `const cocoonSchemaVersion` in `lib/cocoon_schema.g.dart`.
+
+```dart
+final db = await Cocoon.open(file, collections: [accounts, txns]);
+final recent = await db.collection(accounts).doc('a1').collection(txns)
+    .orderBy(Txn$.bookedOn, descending: true)
+    .limit(50)
+    .get();
+```
+
+Rules the generator enforces (build errors say exactly what to fix):
+
+- One generative constructor whose parameters are named like the stored
+  fields (named or positional). Stored fields are final instance fields not
+  marked `@Ignore()`; getters are not stored. No generic models.
+- Supported types: `int`, `double`, `bool`, `String`, `DateTime` (UTC
+  microseconds), `Uint8List`, enums (stored by name), `List<T>` of those, and
+  `@Embedded()` classes. Any of them nullable.
+- A field missing from an older document decodes to the constructor default,
+  else `null` when nullable, else the zero value (`0`, `''`, `false`, empty
+  list, epoch UTC, first enum value).
+- **Subcollection indexes start with the path params** (`accountId` above):
+  a scoped query always filters them, so an index without them can't serve
+  it. An index without params serves collection-group queries.
+- The build fails when the models and `cocoon.lock.json` disagree:
+  `Cocoon schema changed for <Model>: run "dart run cocoon_generator:migrate"`.
+  The builder never writes the lock. (The `migrate` CLI arrives in the next
+  release; until then, write the lock by hand, as `cocoon_example` does.)
+
+## Writing an adapter by hand
 
 One adapter per collection model. It declares the table shape, the indexed
 fields copied into typed columns, and the canonical wire codec. This is the
-class the code generator emits from `@Collection` models; hand-write it the
-same way for now.
+class the code generator emits from `@Collection` models; you only need this
+when you can't use codegen. The examples below use hand-written handles
+(`txnBookedOn`); generated code exposes the same handles as `Txn$.bookedOn`.
 
 ```dart
 enum TxnStatus { pending, posted, failed }

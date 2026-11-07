@@ -43,3 +43,25 @@ class Index {
 class Ignore {
   const Ignore();
 }
+
+/// Marks a class as embeddable: it is stored inline inside a [Collection]
+/// model's document, encoded as a nested protobuf message.
+///
+/// The embedded class follows the same rules as a collection model: one
+/// generative constructor whose parameters are named exactly like the stored
+/// final fields (named or positional), and the same supported field types.
+/// Its field numbers are pinned in `cocoon.lock.json` under its type name,
+/// in a number space of its own.
+///
+/// ```dart
+/// @Embedded()
+/// class Address {
+///   const Address({required this.city, this.line2});
+///   final String city;
+///   final String? line2;
+/// }
+/// ```
+@Target({TargetKind.classType})
+class Embedded {
+  const Embedded();
+}

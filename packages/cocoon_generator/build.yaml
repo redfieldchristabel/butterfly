@@ -1,0 +1,16 @@
+builders:
+  cocoon:
+    target: ":cocoon_generator"
+    import: "package:cocoon_generator/builder.dart"
+    builder_factories: ["cocoonBuilder"]
+    build_extensions: {".dart": [".cocoon.dart"]}
+    auto_apply: dependents
+    build_to: source
+
+  cocoon_schema_version:
+    target: ":cocoon_generator"
+    import: "package:cocoon_generator/builder.dart"
+    builder_factories: ["cocoonSchemaVersionBuilder"]
+    build_extensions: {"cocoon.lock.json": ["lib/cocoon_schema.g.dart"]}
+    auto_apply: dependents
+    build_to: source
