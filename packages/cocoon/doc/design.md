@@ -98,6 +98,79 @@ class Txn { ... }
   `{v, q: queryFingerprint, k: [keys..., id]}`. A cursor from another query is
   rejected (`CursorMismatchException`).
 
+## Storage engine (implemented)
+
+- **Executor seam**: everything talks to the internal `CocoonExecutor`
+  interface (`getAll`, `getOptional`, `execute`, `executeBatch`,
+  `writeTransaction`, `readTransaction`, `close`). Only
+  `sqlite_executor.dart` imports `package:sqlite_async`/`package:sqlite3`;
+  `PRAGMA synchronous` comes from `SqliteOptions` (WAL stays sqlite_async's
+  default), driven by `CocoonOptions.durability` (`full` default, `normal`
+  optional).
+- **Table shape**, one per adapter (`snake_case(model)`; `sqlite_` and
+  `_cocoon` prefixes refused):
+
+  ```sql
+  CREATE TABLE txn (
+    path TEXT NOT NULL UNIQUE,   -- full document path
+    id TEXT NOT NULL,
+    p_account_id TEXT NOT NULL,  -- one per path param
+    data BLOB NOT NULL,          -- canonical wire bytes
+    f_booked_on INTEGER NOT NULL
+      CHECK (typeof(f_booked_on) = 'integer'),  -- one per FieldColumn
+    f_memo TEXT CHECK (f_memo IS NULL OR typeof(f_memo) = 'text')
+  )
+  ```
+
+  `integer`/`real`/`text` columns carry a `typeof` CHECK (NULL allowed when
+  the field is nullable); blob columns are unchecked.
+- **Indexes**: every table gets an implicit `UNIQUE` index over
+  `(p_params..., id)` (`cx_<table>_scope`) that serves "list a parent's docs
+  by id" and scoped queries. Declared indexes become
+  `CREATE [UNIQUE] INDEX cx_<table>_<16 hex>` where the hex fingerprints the
+  canonical definition; the doc id is appended as the final part with the
+  direction of the last declared part. A `unique` index is the exception: it
+  never gets the id (otherwise the constraint could never fire), and it is
+  unique across the whole collection group, so add the path param (e.g.
+  `Index(['accountId', 'ref'], unique: true)`) to make it unique per parent.
+- **Reconcile on open** runs in one write transaction: create missing tables;
+  add missing `f_` columns and backfill them by decoding every row with the
+  adapter in batches of 500 (keyed by `path`); drop undeclared `f_` columns
+  (their indexes go first); create missing and drop stale `cx_` indexes. A
+  per-table shape hash in `_cocoon_meta` makes a no-change open do no DDL
+  beyond reading it. SQLite cannot add a `NOT NULL` column to a table with
+  rows, so backfilled columns are declared nullable and the adapter's
+  non-null invariant is enforced at write time. Tables without a registered
+  adapter are never touched.
+- **Index rule** (pure, unit-tested): a query is served when some index has,
+  in order, all equality-filtered names (`=`, `IN`, `IS NULL` — any order
+  among themselves, scoped params included), then the sort keys with matching
+  directions (or all reversed), and at most one range name (`!=`, comparisons,
+  `IS NOT NULL`), which must be the first sort key — or, with no sort keys,
+  the next index part after the equality prefix. Otherwise
+  `MissingIndexException` names the `Index([...])` to add; `.allowFullScan()`
+  opts out. Tests assert via `EXPLAIN QUERY PLAN` that allowed queries never
+  bare-scan the table.
+- **Pagination**: `LIMIT ?+1` detects the next page. The cursor carries the
+  sort keys' SQL values and the id, fingerprinted over a canonical query
+  description (table, scope, filters with values, order — limit excluded, so
+  cursors survive page-size changes). All-same-direction orders use a
+  row-value comparison; mixed directions expand to the OR form. The id
+  tiebreaker follows the direction of the last sort key so index order can be
+  reused (or reversed).
+- **Transactions**: `runTransaction` wraps sqlite_async's write transaction.
+  Reads inside see the transaction's own writes (they hit the transaction,
+  never the cache). Cache updates are staged and applied only after the
+  commit succeeds, so a rollback leaves the database and the cache
+  consistent. Standalone `set`/`add`/`delete` each open their own
+  transaction.
+- **Hot-document cache**: LRU keyed by full path, storing decoded values;
+  `CocoonOptions.cacheSize` (default 2000, 0 disables). Writes update it
+  (after normalizing through the wire codec, so cached values match what a
+  cold read decodes) and deletes — including cascades — evict the subtree.
+  This requires one `Cocoon` instance to own the database file; no
+  multi-process writers.
+
 ## Realtime
 
 - A `changes` table (`seq` autoincrement, collection, path, op, hlc) is written
@@ -140,7 +213,12 @@ executor, so it is deferred.
 | Canonical wire codec (`WireWriter`, `WireReader`) | done |
 | Cursors (`CursorCodec`, `queryFingerprint`) | done |
 | Schema lock + diff + rename resolution | done |
-| Storage engine (executor, tables, index columns, transactions) | next |
+| Storage engine (executor, tables, index columns, transactions) | done |
+| Hand-written adapter contract (`CollectionAdapter`, columns, indexes) | done |
+| Indexed queries, keyset pagination, count, index rule | done |
+| Open + reconcile (backfill, column/index diff, shape hash) | done |
+| Document ids (`newDocId`, UUIDv7) | done |
+| Bounded LRU document cache | done |
 | Change log + watches | next |
 | build_runner generator (`cocoon_generator`) | planned |
 | `cocoon migrate` interactive CLI | planned |
