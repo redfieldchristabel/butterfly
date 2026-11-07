@@ -133,6 +133,7 @@
         { "title": "Queries & Indexes", "href": "/libraries/cocoon/queries", "icon": "magnifying-glass" },
         { "title": "Realtime: Watches & Change Log", "href": "/libraries/cocoon/realtime", "icon": "bolt" },
         { "title": "Schema Migrations", "href": "/libraries/cocoon/migrations", "icon": "arrows-rotate" },
+        { "title": "DevTools Inspector", "href": "/libraries/cocoon/inspector", "icon": "gauge-high" },
         { "title": "Internals & Storage Layout", "href": "/libraries/cocoon/internals", "icon": "screwdriver-wrench" }
       ]
     },

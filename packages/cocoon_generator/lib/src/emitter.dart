@@ -346,6 +346,49 @@ String _ctorArgs(ExtractedClass clazz) {
   return args.join(', ');
 }
 
+/// Writes the map entries of a generated `toInspectorJson`: one JSON key per
+/// stored field, in lock-number order. Nullable fields are skipped when
+/// null, so the inspector shows only what the document actually carries.
+void _jsonFields(
+  StringBuffer out,
+  String indent,
+  List<_FieldEmit> fields,
+  String valueExpr,
+) {
+  for (final field in fields) {
+    final read = '$valueExpr.${field.name}';
+    if (!field.type.nullable) {
+      out.writeln(
+        "$indent'${field.name}': ${_jsonValueExpr(field.type, read)},",
+      );
+      continue;
+    }
+    out
+      ..writeln('${indent}if ($read != null)')
+      ..writeln(
+        "$indent    '${field.name}': ${_jsonValueExpr(field.type, '$read!')},",
+      );
+  }
+}
+
+/// The JSON expression reading one non-null value of [type] off [readExpr].
+///
+/// Dates become UTC ISO-8601 strings, enums their name, binary fields a
+/// `<N bytes>` placeholder; embedded classes and lists recurse.
+String _jsonValueExpr(_Type type, String readExpr) => switch (type.base) {
+  _TypeBase.intT => readExpr,
+  _TypeBase.doubleT => readExpr,
+  _TypeBase.boolT => readExpr,
+  _TypeBase.stringT => readExpr,
+  _TypeBase.dateTimeT => '$readExpr.toUtc().toIso8601String()',
+  _TypeBase.bytesT => "'<\${$readExpr.length} bytes>'",
+  _TypeBase.enumT => '$readExpr.name',
+  _TypeBase.embeddedT => '${type.name}\$.inspectorJson($readExpr)',
+  _TypeBase.listT =>
+    "[for (final \$element in $readExpr) "
+        "${_jsonValueExpr(type.element!, '\$element')}]",
+};
+
 String _memberName(String name) =>
     _objectMemberNames.contains(name) ? '\$$name' : name;
 
@@ -481,6 +524,14 @@ String _emitModel(
       '    return ${model.clazz.constructorPrefix}(${_ctorArgs(model.clazz)});',
     )
     ..writeln('  }')
+    ..writeln()
+    ..writeln('  @override')
+    ..writeln(
+      '  Map<String, Object?> toInspectorJson(${model.clazz.name} value) => {',
+    );
+  _jsonFields(out, '    ', fields, 'value');
+  out
+    ..writeln('  };')
     ..writeln('}');
 
   if (columns.isNotEmpty || model.params.isNotEmpty) {
@@ -613,6 +664,14 @@ String _emitEmbedded(
       "    return ${extracted.clazz.constructorPrefix}(${_ctorArgs(extracted.clazz)});",
     )
     ..writeln('  }')
+    ..writeln()
+    ..writeln('  /// JSON view of [value] for the DevTools inspector: dates as')
+    ..writeln('  /// UTC ISO-8601 strings, enums by name, binary fields as')
+    ..writeln('  /// `<N bytes>`, lists and nested embedded classes recursed.')
+    ..writeln('  static Map<String, Object?> inspectorJson($model value) => {');
+  _jsonFields(out, '    ', fields, 'value');
+  out
+    ..writeln('  };')
     ..writeln('}');
   return out.toString();
 }

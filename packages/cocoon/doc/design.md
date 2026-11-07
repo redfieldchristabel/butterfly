@@ -16,6 +16,8 @@ on the docs site under **Cocoon**:
   change log.
 - [Schema Migrations](/libraries/cocoon/migrations) — the lock, the migrate
   command, the on-device runner.
+- [DevTools Inspector](/libraries/cocoon/inspector) — the Cocoon tab for
+  running debug apps.
 - [Internals](/libraries/cocoon/internals) — storage layout, wire format,
   money guidance.
 
@@ -82,6 +84,14 @@ on the docs site under **Cocoon**:
   prunable, ready for a sync outbox or audit trail.
 - **Large binaries** (receipts, statements) stay as files; documents store
   paths.
+- **Inspector**: read-only `dart:developer` service extensions
+  (`ext.cocoon.*`) register once per process when a database opens, in
+  debug and profile builds only (product never registers). Handlers answer
+  plain JSON and committed changes stream as `cocoon:changes` events from
+  the commit notifier. The DevTools tab (`packages/cocoon_devtools`, a
+  Flutter web app compiled into `extension/devtools/`) is a pure client
+  over the service protocol — it never imports the engine, and documents
+  decode through the generated adapter's `toInspectorJson`.
 - **Document ids**: time-ordered UUIDv7 (`newDocId()`); `validateDocId`
   enforces path-safe ids.
 
@@ -119,4 +129,4 @@ executor, so it is deferred.
 | `dart run cocoon_generator:migrate` interactive CLI | done |
 | On-device migration runner (`Cocoon.open` schema versions) | done |
 | Documentation site section (`docs/libraries/cocoon/`) | done |
-| DevTools extension | planned |
+| DevTools extension (`packages/cocoon_devtools`, `ext.cocoon.*` service extensions) | done |

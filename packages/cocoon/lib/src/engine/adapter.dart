@@ -508,4 +508,13 @@ abstract class CollectionAdapter<T> {
 
   /// Decodes canonical wire bytes back into the model.
   T decode(Uint8List bytes);
+
+  /// Decodes [value] into a JSON-shaped map for the DevTools inspector.
+  ///
+  /// The default returns an empty map, in which case the inspector falls
+  /// back to showing the indexed columns. The code generator overrides this
+  /// for every `@Collection` model with the full field tree: DateTime fields
+  /// as UTC ISO-8601 strings, enums by name, binary fields as
+  /// `<N bytes>`, embedded classes and lists as nested JSON.
+  Map<String, Object?> toInspectorJson(T value) => const {};
 }

@@ -1,0 +1,24 @@
+name: cocoon_devtools
+publish_to: none
+resolution: workspace
+description: "DevTools extension for Cocoon: browse documents, run typed queries, watch changes live and read the schema of a running debug app."
+version: 0.0.1
+homepage: https://github.com/redfieldchristabel/butterfly
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  devtools_app_shared: ^0.5.1
+  devtools_extensions: ^0.5.1
+  flutter:
+    sdk: flutter
+  vm_service: ">=13.0.0 <16.0.0"
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true

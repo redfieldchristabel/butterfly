@@ -6,8 +6,10 @@ import 'package:sqlite_async/sqlite_async.dart'
 
 import '../cursor.dart';
 import '../id.dart';
+import '../inspector/service.dart';
 import '../migration.dart';
 import '../path.dart';
+import '../schema.dart';
 import 'adapter.dart';
 import 'cache.dart';
 import 'changes.dart';
@@ -78,13 +80,32 @@ final class CocoonOptions {
 /// file from two instances (or processes) at once — the hot-document cache
 /// and SQLite's write lock both assume a single writer.
 final class Cocoon {
-  Cocoon._(this._executor, this._registry, this._cache, this._keepChanges);
+  Cocoon._(
+    this._executor,
+    this._registry,
+    this._cache,
+    this._keepChanges, {
+    this.databasePath,
+    this.schemaLock,
+  });
 
   final CocoonExecutor _executor;
   final SchemaRegistry _registry;
   final DocumentCache _cache;
   final bool _keepChanges;
   final WatchHub _watchHub = WatchHub();
+
+  /// The file path the database was opened from, or `null` when it was
+  /// opened over a custom executor via [openWith]. Surfaced by the DevTools
+  /// inspector's database list.
+  @internal
+  final String? databasePath;
+
+  /// The schema lock the app handed to [open], or `null`. When present, the
+  /// DevTools inspector's schema view can also show pinned field numbers
+  /// and reserved numbers; without it, only what the engine knows.
+  @internal
+  final SchemaLock? schemaLock;
 
   /// Opens (or creates) the database at [path] and reconciles the schema
   /// with [collections] inside one write transaction.
@@ -100,6 +121,10 @@ final class Cocoon {
   /// by a NEWER version refuses to open with a [SchemaTooNewException].
   /// [onMigrationProgress] reports `(documents processed, documents total)`
   /// per batch while the steps run. See the README's "Schema migrations".
+  ///
+  /// With [schemaLock] (the parsed `cocoon.lock.json`) the DevTools
+  /// inspector's schema view can also show pinned field numbers and
+  /// reserved numbers; without it, it shows only what the engine knows.
   static Future<Cocoon> open(
     String path, {
     required List<CollectionAdapter<Object?>> collections,
@@ -107,6 +132,7 @@ final class Cocoon {
     int? schemaVersion,
     List<CocoonMigration> migrations = const [],
     void Function(int done, int total)? onMigrationProgress,
+    SchemaLock? schemaLock,
   }) async {
     final executor = SqliteExecutor(
       SqliteDatabase(
@@ -122,6 +148,8 @@ final class Cocoon {
         schemaVersion: schemaVersion,
         migrations: migrations,
         onMigrationProgress: onMigrationProgress,
+        schemaLock: schemaLock,
+        databasePath: path,
       );
     } on Object {
       await executor.close();
@@ -132,7 +160,8 @@ final class Cocoon {
   /// Opens over an existing [executor]; used by tests to spy on statements.
   ///
   /// Same schema-version handling as [open]: see its [schemaVersion],
-  /// [migrations] and [onMigrationProgress] documentation.
+  /// [migrations] and [onMigrationProgress] documentation. [schemaLock] and
+  /// [databasePath] are only surfaced to the DevTools inspector.
   @visibleForTesting
   static Future<Cocoon> openWith(
     CocoonExecutor executor, {
@@ -141,6 +170,8 @@ final class Cocoon {
     int? schemaVersion,
     List<CocoonMigration> migrations = const [],
     void Function(int done, int total)? onMigrationProgress,
+    SchemaLock? schemaLock,
+    String? databasePath,
   }) async {
     final registry = SchemaRegistry.build(collections);
     await executor.writeTransaction((tx) async {
@@ -156,17 +187,22 @@ final class Cocoon {
       );
       await _reconcile(tx, registry, forceTables: migratedTables);
     });
-    return Cocoon._(
+    final db = Cocoon._(
       executor,
       registry,
       DocumentCache(options.cacheSize),
       options.keepChanges,
+      databasePath: databasePath,
+      schemaLock: schemaLock,
     );
+    CocoonInspectorService.attach(db);
+    return db;
   }
 
   /// Closes the database. Every watch stream this instance created
   /// completes; using references of a closed database throws.
   Future<void> close() {
+    CocoonInspectorService.detach(this);
     _watchHub.close();
     return _executor.close();
   }
@@ -214,6 +250,16 @@ final class Cocoon {
   /// The hub every live watch registers with.
   @internal
   WatchHub get watchHub => _watchHub;
+
+  /// The schema registry (adapters, tables, columns, indexes) behind this
+  /// database; read by the DevTools inspector.
+  @internal
+  SchemaRegistry get registry => _registry;
+
+  /// The raw executor; used by the DevTools inspector for its read-only
+  /// SQL (`EXPLAIN QUERY PLAN`, `PRAGMA table_info`, `sqlite_master`).
+  @internal
+  CocoonExecutor get executor => _executor;
 
   // -- Engine internals ----------------------------------------------------
 

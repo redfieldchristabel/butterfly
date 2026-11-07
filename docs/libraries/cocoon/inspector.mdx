@@ -1,0 +1,101 @@
+---
+title: DevTools Inspector
+description: Browse documents, run typed queries, watch changes live and read the schema of a running debug app from a DevTools tab. Zero setup beyond depending on cocoon.
+---
+
+The Cocoon DevTools extension adds a **Cocoon tab** to Dart DevTools for a
+running debug (or profile) app. You can browse every collection and document,
+run the same typed queries your code runs and see which index served them,
+watch commits arrive live, and read the schema the engine reconciled on open.
+It is read-only end to end: nothing in the tab writes to your database.
+
+There is no setup beyond depending on `cocoon`. The inspector registers itself
+when a `Cocoon` database opens, in debug and profile builds only.
+
+## Opening the tab
+
+Run your app in debug mode with a database open, start DevTools, and pick the
+Cocoon tab. The tab lists every database the process opened (a database that
+closed stays listed, marked closed, because service extensions cannot be
+unregistered) and shows the four panels:
+
+- **Documents**: collections, then documents, then fields, with a path
+  breadcrumb (`accounts / a1 / txns / t9`). Clicking a document shows its
+  decoded fields; registered subcollections appear under it and drill down.
+- **Query runner**: pick a collection, add filters and orders from its
+  indexed fields and path params, and run read-only. The result shows the
+  rows plus a plain-words verdict about the plan: "Used index
+  cx_txn_ab12cd34" when a declared index served the query, "Full scan: add
+  Index([...])" when every row was read, and the suggested declaration when
+  the index rule refused the query. The SQL and the `EXPLAIN QUERY PLAN`
+  text are folded underneath.
+- **Changes**: the live feed of committed writes, one row per touched
+  document (`set` / `delete`, collection, path, commit time). Filter by
+  collection, pause and resume, clear.
+- **Schema**: the stored schema version, the live shape of every table
+  (columns from `PRAGMA table_info`, indexes, row counts, shape hash) and,
+  when the app passed a lock, the pinned field numbers and reserved numbers
+  per model.
+
+## Passing the schema lock
+
+The schema view shows the lock's field numbers and reserved numbers when the
+app hands the parsed `cocoon.lock.json` to `Cocoon.open`. Without it, the
+schema view shows only what the engine knows and says so:
+
+```dart
+final lock = SchemaLock.parse(File('cocoon.lock.json').readAsStringSync());
+
+final db = await Cocoon.open(
+  path,
+  collections: [accounts, txns, splits],
+  schemaVersion: cocoonSchemaVersion,
+  migrations: cocoonMigrations,
+  schemaLock: lock,
+);
+```
+
+## How it works
+
+The app side (`packages/cocoon/lib/src/inspector/service.dart`) registers
+`dart:developer` service extensions under the `ext.cocoon.` prefix when the
+first database opens, debug and profile builds only; product builds never
+register anything. The handlers are read-only and answer with JSON:
+
+| Extension | Answers |
+|---|---|
+| `ext.cocoon.listDatabases` | Every database, open or closed, in open order |
+| `ext.cocoon.listCollections` | Model, pattern, table, document count, columns, indexes, stored schema version |
+| `ext.cocoon.listDocs` | One keyset page of a collection (or subcollection path), decoded to JSON by the generated adapter |
+| `ext.cocoon.getDoc` | One document, decoded, or `exists: false` |
+| `ext.cocoon.runQuery` | Rows, the SQL, the `EXPLAIN QUERY PLAN` text and whether an index was used |
+| `ext.cocoon.schema` | Stored schema version, the lock JSON, live table info |
+
+Committed changes stream as `cocoon:changes` `dart:developer` events, one per
+commit, carrying every `(collection, path, op)` the transaction touched. The
+feed subscribes when the first inspector request arrives, so apps nobody
+inspects pay nothing.
+
+Document fields decode through the adapter's `toInspectorJson`, which the code
+generator emits for every model: dates as UTC ISO-8601 strings, enums by
+name, binary fields as `<N bytes>` placeholders, embedded classes and lists
+as nested JSON. Hand-written adapters fall back to the indexed columns unless
+they override `toInspectorJson`.
+
+## Building the extension
+
+The tab itself is the Flutter web app in `packages/cocoon_devtools` (not a
+dependency of your app; DevTools loads it from the `cocoon` package's
+`extension/devtools` directory). The compiled output (about 44 MB) is not
+committed to git: the published `cocoon` package ships it (see
+`packages/cocoon/.pubignore`), but when you depend on Cocoon through git, build
+it once so the tab appears. Same command to rebuild after changing the app:
+
+```sh
+cd packages/cocoon_devtools
+sh tool/build.sh
+```
+
+That runs `dart run devtools_extensions build_and_copy` (which builds the
+web app and copies `build/web` to `packages/cocoon/extension/devtools/build`)
+and then `devtools_extensions validate`.

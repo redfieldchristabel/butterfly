@@ -18,8 +18,8 @@ built on SQLite.
 
 > Status: the storage engine, the change log, realtime watches, the
 > `cocoon_generator` codegen (with the interactive `migrate` command that
-> maintains `cocoon.lock.json`) and the on-device migration runner are in.
-> The DevTools inspector is next. See [doc/design.md](doc/design.md).
+> maintains `cocoon.lock.json`), the on-device migration runner and the
+> DevTools inspector are in. See [doc/design.md](doc/design.md).
 
 ## The 30-second version
 
@@ -490,6 +490,28 @@ applies every pending schema migration.
 One `Cocoon` instance must own its database file: do not open the same file
 from two instances or two processes — SQLite's write lock and the hot-cache
 both assume a single writer.
+
+## Inspecting a running app (DevTools)
+
+A debug or profile app with a `Cocoon` database open gets a **Cocoon tab** in
+Dart DevTools — no extra dependency, no setup. It browses collections,
+documents and fields with a path breadcrumb, runs read-only typed queries and
+shows whether an index served each one ("Used index cx_txn_ab12cd34" /
+"Full scan: add Index([...])"), streams committed changes live, and shows the
+schema (live tables plus the lock's field numbers and reserved numbers when
+the app passed `schemaLock:` to `Cocoon.open`). Product builds never register
+the inspector. See the [DevTools Inspector](https://docs.page/butterfly/libraries/cocoon/inspector)
+guide for the panels and the `ext.cocoon.*` service extensions behind them.
+
+To hand the schema view the lock, pass the parsed `cocoon.lock.json` on open:
+
+```dart
+final db = await Cocoon.open(
+  file,
+  collections: [accounts, txns, splits],
+  schemaLock: SchemaLock.parse(File('cocoon.lock.json').readAsStringSync()),
+);
+```
 
 ## The native SQLite library
 

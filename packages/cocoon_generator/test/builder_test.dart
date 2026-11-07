@@ -133,6 +133,35 @@ void main() {
       expect(run.code, contains('return Txn('));
     });
 
+    test('emits toInspectorJson for the DevTools inspector', () async {
+      final run = await runCocoonBuilder(_head + _kindsModel, _kindsLock);
+      expect(run.succeeded, isTrue, reason: run.errors.join('\n'));
+      // One JSON key per stored field, in lock-number order: scalars pass
+      // through, dates become UTC ISO-8601, enums their name, binary fields
+      // a placeholder, lists recurse, and nullable fields are skipped when
+      // null.
+      expect(
+        run.code,
+        contains('Map<String, Object?> toInspectorJson(Txn value) => {'),
+      );
+      expect(run.code, contains("'bookedOn': value.bookedOn,"));
+      expect(run.code, contains("'rate': value.rate,"));
+      expect(run.code, contains("'active': value.active,"));
+      expect(
+        run.code,
+        contains("'bookedAt': value.bookedAt.toUtc().toIso8601String(),"),
+      );
+      expect(run.code, contains("'mood': value.mood.name,"));
+      expect(run.code, contains("if (value.blob != null)"));
+      expect(run.code, contains("'blob': '<\${value.blob!.length} bytes>',"));
+      expect(run.code, contains("if (value.memo != null)"));
+      expect(run.code, contains("'memo': value.memo!,"));
+      expect(
+        run.code,
+        contains("[for (final \$element in value.tags) \$element],"),
+      );
+    });
+
     test('only indexed fields and params become columns and handles', () async {
       final run = await runCocoonBuilder(_head + _kindsModel, _kindsLock);
       expect(run.succeeded, isTrue, reason: run.errors.join('\n'));
@@ -290,6 +319,19 @@ class Account {
         expect(run.code, contains('static GeoPoint zero() => GeoPoint('));
         // A non-nullable embedded field with no value decodes to zero().
         expect(run.code, contains('Address \$address = Address\$.zero();'));
+        // The JSON view recurses: the collection's toInspectorJson calls the
+        // embedded class's inspectorJson.
+        expect(run.code, contains('Address\$.inspectorJson(value.address)'));
+        expect(
+          run.code,
+          contains("static Map<String, Object?> inspectorJson(Address value)"),
+        );
+        expect(
+          run.code,
+          contains(
+            "if (value.geo != null) 'geo': GeoPoint\$.inspectorJson(value.geo!),",
+          ),
+        );
       },
     );
 

@@ -1,5 +1,27 @@
 ## Unreleased
 
+- A Cocoon tab in Dart DevTools for running debug apps: browse collections
+  and documents with a path breadcrumb, drill into subcollections, and read
+  decoded documents (dates as UTC ISO-8601 strings, enums by name, binary
+  fields as `<N bytes>` placeholders, embedded classes and lists as nested
+  JSON).
+- A query runner that runs typed queries read-only and explains the plan in
+  plain words: which index served the query ("Used index cx_txn_ab12cd34"),
+  when it read every row ("Full scan: add Index([...])"), and the exact
+  `Index([...])` to declare when the index rule refused the query.
+- A live change feed of every committed write, one row per touched document,
+  filterable by collection and pausable, streamed from the app as
+  `cocoon:changes` DevTools events.
+- A schema view with the live tables, columns, indexes and row counts, plus
+  the lock's pinned field numbers and reserved numbers when the app passes
+  `schemaLock:` to `Cocoon.open`.
+- Zero setup: the inspector registers its `ext.cocoon.*` service extensions
+  in debug and profile builds only; product builds are untouched. The
+  extension UI is a separate package (`cocoon_devtools`, not an app
+  dependency) whose prebuilt output ships inside the cocoon package under
+  `extension/devtools/`.
+- Docs: new "DevTools Inspector" page on the docs site and a README section.
+
 - Documentation: Cocoon now has its own tab on the Butterfly docs site
   ([docs/libraries/cocoon/](../../../docs/libraries/cocoon/)) — overview and
   why, models and code generation, collections and documents, queries and

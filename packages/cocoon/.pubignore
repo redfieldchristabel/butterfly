@@ -1,0 +1,8 @@
+# pub uses this file instead of .gitignore. Same rules, except the compiled
+# DevTools extension (extension/devtools/build), which is too big for git but
+# must ship in the published package.
+.dart_tool/
+pubspec.lock
+/build/
+*.iml
+.idea/
