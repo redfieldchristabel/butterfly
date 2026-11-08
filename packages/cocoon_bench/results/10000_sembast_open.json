@@ -1,1 +1,1 @@
-{"engine":"sembast","size":10000,"op":"open","runs":[{"engine":"sembast","size":10000,"op":"open","openMs":203,"engineOpenMs":168},{"engine":"sembast","size":10000,"op":"open","openMs":206,"engineOpenMs":173},{"engine":"sembast","size":10000,"op":"open","openMs":201,"engineOpenMs":168}]}
+{"engine":"sembast","size":10000,"op":"open","runs":[{"engine":"sembast","size":10000,"op":"open","openMs":186,"engineOpenMs":182},{"engine":"sembast","size":10000,"op":"open","openMs":187,"engineOpenMs":183},{"engine":"sembast","size":10000,"op":"open","openMs":183,"engineOpenMs":179}]}

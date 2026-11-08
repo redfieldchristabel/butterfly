@@ -17,6 +17,13 @@ const accountCount = 20;
 const firstYear = 2022;
 const lastYear = 2026;
 
+/// The deterministic account ids `a00`..`a19`, derivable from the seed
+/// without building the dataset: read-only benchmark operations use these so
+/// the harness's copy of the data never has to sit in their RAM.
+List<String> benchAccountIds() => [
+  for (var i = 0; i < accountCount; i++) 'a${i.toString().padLeft(2, '0')}',
+];
+
 /// One pending benchmark transaction with its stable id.
 final class BenchTxn {
   const BenchTxn({

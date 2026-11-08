@@ -137,3 +137,32 @@ Cocoon stores integers exactly — use that for money:
 - `SUM` over integer columns is exact and throws on overflow;
 - **never** `TOTAL()` or `AVG()` for money — they return REAL;
 - never sum across currencies; convert first, then sum.
+
+## Benchmarks
+
+The storage contract above is measured in `packages/cocoon_bench` — full
+tables in its `RESULTS.md` — against sembast on finance-shaped data
+(10k/100k/300k txns), fresh process per run, memory reported against a
+measured harness-only baseline.
+
+- **Bounded RAM, measured.** The engine's own share of RSS is flat across
+  the 30x data range: indistinguishable from the bare harness right after
+  open, +39 MB after reads at every size. The bounds are the ones this page
+  describes — the `cacheSize` LRU (decoded documents only), SQLite's
+  per-connection page cache, and a fixed pool of reader isolates. sembast
+  decodes its whole log into RAM at open: +598 MB over the same floor at
+  300k.
+- **Cold open is flat** (~80 ms at every size): opening reads nothing until
+  asked; the schema reconcile touches only metadata. sembast's open parses
+  the entire log: 0.19 → 2.36 s.
+- **Indexed reads** (the `cx_` index range scans): one account's latest-50
+  stays ~0.7 ms p50 from 10k to 300k; sembast climbs 3.7 → 215 ms.
+- **The write amplification is real**: one row per document plus one per
+  index plus change-log rows, committed with an fsync at
+  `Durability.full` — bulk import 1.6-2x slower than sembast's JSON-line
+  appends, single writes 5-7x slower. `Durability.normal` takes back 4.2x
+  of the single-write cost (fsync skipped, still crash-safe);
+  `keepChanges: false` another ~11% when nothing reads the change log;
+  `cacheSize` only charges RAM for documents actually read (a warm
+  1,000-doc working set: 113 ms cold → 2 ms warm, and `cacheSize` 20000
+  bought nothing and cost nothing over 2000).

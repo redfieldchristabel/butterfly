@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 
 import 'package:cocoon_bench/cocoon_engine.dart';
 import 'package:cocoon_bench/dataset.dart';
@@ -8,7 +9,10 @@ import 'package:test/test.dart';
 /// Correctness before speed: both engines import the same 500-txn dataset
 /// and must agree on every measured read shape — the latest-50 ids per
 /// account and one account's monthly totals — before the numbers in
-/// RESULTS.md mean anything.
+/// RESULTS.md mean anything. The dataset-free operations (`sampleDocs`,
+/// `getsById`, `writeUs`) are checked too: they are how the harness measures
+/// without the dataset in RAM, so their ids must exist and their write-backs
+/// must land.
 void main() {
   late Directory tempDir;
 
@@ -31,8 +35,8 @@ void main() {
       try {
         await cocoon.import(data, tempDir.path);
         await sembast.import(data, tempDir.path);
-        await cocoon.open(data, tempDir.path);
-        await sembast.open(data, tempDir.path);
+        await cocoon.open(tempDir.path);
+        await sembast.open(tempDir.path);
 
         // Latest-50 ids, newest first. Cocoon appends the id tiebreaker in
         // the direction of the last sort key (DESC here).
@@ -101,6 +105,99 @@ void main() {
       } finally {
         await cocoon.close();
         await sembast.close();
+      }
+    },
+  );
+
+  test('sampleDocs draws the asked-for count, deterministically, and every id '
+      'gets found', () async {
+    final data = BenchDataset.build(txnCount: 500);
+    final cocoon = CocoonBenchEngine();
+    final sembast = SembastBenchEngine();
+    try {
+      await cocoon.import(data, tempDir.path);
+      await sembast.import(data, tempDir.path);
+      await cocoon.open(tempDir.path);
+      await sembast.open(tempDir.path);
+
+      for (final engine in [cocoon, sembast]) {
+        final sample = await engine.sampleDocs(tempDir.path, 100, Random(7));
+        expect(sample, hasLength(100), reason: engine.name);
+
+        // Same seed, same sample — the harness relies on this to compare
+        // runs; re-sampling with a fresh seeded rng must agree.
+        final sameSeed = await engine.sampleDocs(tempDir.path, 100, Random(7));
+        expect(
+          [for (final doc in sameSeed) doc.id],
+          [for (final doc in sample) doc.id],
+          reason: '${engine.name}: same seed, same sample',
+        );
+
+        // Every sampled id exists: a get by id finds it.
+        final ids = [
+          for (final doc in sample) (accountId: doc.accountId, id: doc.id),
+        ];
+        final (elapsed, hits) = await engine.getsById(ids, tempDir.path);
+        expect(hits, 100, reason: '${engine.name}: sampled ids all found');
+        expect(elapsed, isNonNegative);
+      }
+    } finally {
+      await cocoon.close();
+      await sembast.close();
+    }
+  });
+
+  test(
+    'sampleDocs feeds writeUs: each write lands and the reads still hit',
+    () async {
+      final data = BenchDataset.build(txnCount: 500);
+      final cocoon = CocoonBenchEngine();
+      final sembast = SembastBenchEngine();
+      try {
+        await cocoon.import(data, tempDir.path);
+        await sembast.import(data, tempDir.path);
+        await cocoon.open(tempDir.path);
+        await sembast.open(tempDir.path);
+
+        for (final engine in [cocoon, sembast]) {
+          final docs = await engine.sampleDocs(tempDir.path, 50, Random(9));
+          final micros = await engine.writeUs(docs, tempDir.path);
+          expect(micros, hasLength(50), reason: engine.name);
+          expect(micros.every((m) => m >= 0), isTrue, reason: engine.name);
+
+          // The rewrite is a genuine write of the doc's own value, so the
+          // database still answers every id.
+          final ids = [
+            for (final doc in docs) (accountId: doc.accountId, id: doc.id),
+          ];
+          final (_, hits) = await engine.getsById(ids, tempDir.path);
+          expect(
+            hits,
+            50,
+            reason: '${engine.name}: written-back ids all found',
+          );
+        }
+      } finally {
+        await cocoon.close();
+        await sembast.close();
+      }
+    },
+  );
+
+  test(
+    'sampleDocs throws when asked for more than the database holds',
+    () async {
+      final data = BenchDataset.build(txnCount: 100);
+      final cocoon = CocoonBenchEngine();
+      try {
+        await cocoon.import(data, tempDir.path);
+        await cocoon.open(tempDir.path);
+        await expectLater(
+          cocoon.sampleDocs(tempDir.path, 101, Random(1)),
+          throwsStateError,
+        );
+      } finally {
+        await cocoon.close();
       }
     },
   );

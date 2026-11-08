@@ -1,5 +1,20 @@
 ## Unreleased
 
+- The Cocoon benchmark now measures memory without the harness's dataset in
+  RAM: only `import` builds the typed dataset, other operations take their
+  ids and values from the database itself, and a `baseline` run reports the
+  bare-harness floor. Re-measured numbers (`packages/cocoon_bench/RESULTS.md`)
+  show Cocoon's own footprint is flat — indistinguishable from the bare
+  harness after open, +39 MB after reads at every size from 10k to 300k
+  txns, cold open ~80 ms flat — while sembast grows to +598 MB over the
+  floor at open and +704 MB after reads at 300k. New tuning measurements
+  next to the defaults: single writes with `Durability.normal` (p50 2,032 →
+  483 us at 100k) and with `keepChanges: false` (~11%), and gets by id with
+  `cacheSize` 2000 vs 20000, cold then warm in one process (warm
+  1,000-doc working set: 113 → 2 ms; RSS unchanged — the cache charges RAM
+  only for documents actually read). The README and the docs site's
+  Internals page carry short Benchmarks and Tuning sections from these
+  numbers.
 - `Map<String, V>` and `Map<int, V>` fields, for every supported non-Map
   value type (primitives, `DateTime`, `Uint8List`, enums, `List<...>`,
   `@Embedded` classes; the map itself nullable or not). Stored like

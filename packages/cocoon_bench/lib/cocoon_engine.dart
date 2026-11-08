@@ -1,10 +1,12 @@
-/// The Cocoon side of the benchmark: defaults everywhere (Durability.full,
-/// the default bounded cache, change log on), batched transactions for the
-/// bulk import, the typed generated handles for queries.
+/// The Cocoon side of the benchmark: batched transactions for the bulk
+/// import, the typed generated handles for queries, and Cocoon's knobs
+/// (durability, cache size, change log) selectable per run so the tuning
+/// measurements only change one setting at a time.
 library;
 
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:math';
 
 import 'package:cocoon/cocoon.dart';
 import 'package:cocoon_bench/dataset.dart';
@@ -14,17 +16,40 @@ import 'package:cocoon_bench/models.dart';
 /// How many documents one import transaction writes.
 const importBatchSize = 1000;
 
-/// The page size the monthly-totals paging uses.
+/// The page size the monthly-totals paging and the id sampling use.
 const monthlyPageSize = 500;
 
 final class CocoonBenchEngine implements BenchEngine {
+  /// Builds the engine; every knob defaults to Cocoon's own default, so the
+  /// plain `CocoonBenchEngine()` runs `Durability.full`, `keepChanges: true`
+  /// and the 2000-document cache.
+  CocoonBenchEngine({
+    this.durability = Durability.full,
+    this.cacheSize = CocoonOptions.defaultCacheSize,
+    this.keepChanges = true,
+  });
+
+  /// The `PRAGMA synchronous` level opens and writes run at.
+  final Durability durability;
+
+  /// The hot-document cache size opens configure, in documents.
+  final int cacheSize;
+
+  /// Whether commits append their rows to the on-disk change log.
+  final bool keepChanges;
+
   Cocoon? _db;
 
-  /// Opens the database with Cocoon's defaults.
+  /// Opens the database with this engine's knobs.
   Future<Cocoon> _open(String baseDir) async {
     final db = await Cocoon.open(
       BenchDataset.cocoonPath(baseDir),
       collections: [accounts, txns],
+      options: CocoonOptions(
+        durability: durability,
+        cacheSize: cacheSize,
+        keepChanges: keepChanges,
+      ),
     );
     _db = db;
     return db;
@@ -81,12 +106,12 @@ final class CocoonBenchEngine implements BenchEngine {
   }
 
   @override
-  Future<int> coldOpen(BenchDataset data, String baseDir) async {
+  Future<int> coldOpen(String baseDir, {required String accountId}) async {
     final sw = Stopwatch()..start();
     final db = await _open(baseDir);
     final first = await db
         .collection(accounts)
-        .doc(data.txns.first.accountId)
+        .doc(accountId)
         .collection(txns)
         .orderBy(Txn$.bookedOn, descending: true)
         .limit(1)
@@ -99,13 +124,13 @@ final class CocoonBenchEngine implements BenchEngine {
   }
 
   @override
-  Future<int> rssAfterOpen(BenchDataset data, String baseDir) async {
-    await _open(baseDir);
+  Future<int> rssAfterOpen(String baseDir) async {
+    _db ??= await _open(baseDir);
     return ProcessInfo.currentRss;
   }
 
   @override
-  Future<void> open(BenchDataset data, String baseDir) async {
+  Future<void> open(String baseDir) async {
     _db ??= await _open(baseDir);
   }
 
@@ -183,6 +208,29 @@ final class CocoonBenchEngine implements BenchEngine {
   }
 
   @override
+  Future<List<SampledDoc>> sampleDocs(String baseDir, int count, Random rng) =>
+      reservoirSample(count, rng, () async* {
+        // Pages every stored document once, in scope-index order (the id
+        // tiebreaker direction), and keeps only the reservoir: the typed
+        // values of one page at a time, nothing more.
+        for (final accountId in benchAccountIds()) {
+          CocoonQuery<Txn> pageFor() =>
+              _txnsOf(accountId).query().limit(monthlyPageSize);
+          var page = await pageFor().get();
+          while (true) {
+            for (final doc in page.docs) {
+              yield (accountId: accountId, id: doc.id, value: doc.data);
+            }
+            final next = page.nextCursor;
+            if (next == null) {
+              break;
+            }
+            page = await pageFor().startAfter(next).get();
+          }
+        }
+      });
+
+  @override
   Future<(int, int)> getsById(
     List<({String accountId, String id})> ids,
     String baseDir,
@@ -200,14 +248,11 @@ final class CocoonBenchEngine implements BenchEngine {
   }
 
   @override
-  Future<List<int>> writeUs(
-    List<({String accountId, String id, BenchTxn txn})> txns,
-    String baseDir,
-  ) async {
+  Future<List<int>> writeUs(List<SampledDoc> docs, String baseDir) async {
     final micros = <int>[];
-    for (final benchTxn in txns) {
+    for (final doc in docs) {
       final sw = Stopwatch()..start();
-      await _txnsOf(benchTxn.accountId).doc(benchTxn.id).set(benchTxn.txn.txn);
+      await _txnsOf(doc.accountId).doc(doc.id).set(doc.value as Txn);
       sw.stop();
       micros.add(sw.elapsedMicroseconds);
     }

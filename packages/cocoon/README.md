@@ -498,6 +498,47 @@ One `Cocoon` instance must own its database file: do not open the same file
 from two instances or two processes — SQLite's write lock and the hot-cache
 both assume a single writer.
 
+## Benchmarks
+
+Measured against sembast on finance-shaped data (20 accounts sharing
+10k/100k/300k txns over five years, same indexes Finance Sync would
+declare), every run a fresh process, every memory number minus a measured
+harness baseline. Full tables and raw runs:
+[packages/cocoon_bench/RESULTS.md](../cocoon_bench/RESULTS.md).
+
+- Indexed reads: one account's latest-50 stays at ~0.7 ms p50 from 10k to
+  300k txns (keyset scan over the composite index); sembast, which has no
+  index, climbs 3.7 → 64 → 215 ms. Monthly totals: 2-3x faster at every
+  size.
+- Cold open: ~80 ms at every size; sembast parses its whole log into RAM:
+  0.19 → 0.86 → 2.36 s.
+- Memory: the engine's own share is flat — indistinguishable from the bare
+  harness after open, +39 MB after reading across accounts, paging a year
+  and 1,000 random gets, at every size. sembast holds every decoded record:
+  +598 MB over the same floor at 300k.
+- Where it loses: bulk import 1.6-2x slower and files 1.3-3.1x bigger (one
+  row per document plus index and change-log rows, fsynced commits); point
+  gets by id 2-24x slower than sembast's hash lookups at defaults; single
+  writes 5-7x slower at `Durability.full`.
+
+## Tuning
+
+The knobs of `CocoonOptions`, with their measured trade-offs:
+
+- `durability: Durability.normal` — skips the per-commit fsync. Single
+  writes at 100k: p50 2,032 → 483 us (4.2x). Still durable against
+  application crashes (WAL); on power loss the last commits may be lost.
+  Keep `full` for money data that must survive a power cut.
+- `keepChanges: false` — stops writing the on-disk change log. ~11% faster
+  single writes. Only for databases where nothing needs `changesSince`
+  (in-process `watch()` streams keep working).
+- `cacheSize` — the LRU of decoded documents. It is a cap, not a
+  pre-allocation: RAM follows the working set. A warm 1,000-document
+  working set reads 50x faster than cold SQLite round-trips (113 → 2 ms),
+  and raising `cacheSize` beyond the working set (2000 → 20000) measured no
+  speed gain and no RSS gain. Raise it only to keep a larger hot set cached;
+  lower it (or `0`) to shrink the ceiling.
+
 ## Inspecting a running app (DevTools)
 
 A debug or profile app with a `Cocoon` database open gets a **Cocoon tab** in

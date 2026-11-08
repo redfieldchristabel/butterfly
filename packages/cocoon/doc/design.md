@@ -138,4 +138,4 @@ executor, so it is deferred.
 | Documentation site section (`docs/libraries/cocoon/`) | done |
 | DevTools extension (`packages/cocoon_devtools`, `ext.cocoon.*` service extensions) | done |
 | `Map<String, V>` / `Map<int, V>` fields (canonical protobuf map encoding, sorted keys; generator, migrations, inspector) | done |
-| Benchmark vs sembast (`packages/cocoon_bench`, finance-shaped data, `RESULTS.md`) | done |
+| Benchmark vs sembast (`packages/cocoon_bench`, finance-shaped data, `RESULTS.md`; memory measured against a harness-only baseline, write-durability and cache-size knobs measured) | done |

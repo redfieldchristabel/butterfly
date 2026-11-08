@@ -5,6 +5,7 @@
 library;
 
 import 'dart:io';
+import 'dart:math';
 
 import 'package:sembast/sembast_io.dart';
 
@@ -82,13 +83,13 @@ final class SembastBenchEngine implements BenchEngine {
   }
 
   @override
-  Future<int> coldOpen(BenchDataset data, String baseDir) async {
+  Future<int> coldOpen(String baseDir, {required String accountId}) async {
     final sw = Stopwatch()..start();
     final db = await _open(baseDir);
     final first = await _txns.find(
       db,
       finder: Finder(
-        filter: Filter.equals('accountId', data.txns.first.accountId),
+        filter: Filter.equals('accountId', accountId),
         sortOrders: [SortOrder('bookedOn', false)],
         limit: 1,
       ),
@@ -101,13 +102,13 @@ final class SembastBenchEngine implements BenchEngine {
   }
 
   @override
-  Future<int> rssAfterOpen(BenchDataset data, String baseDir) async {
-    await _open(baseDir);
+  Future<int> rssAfterOpen(String baseDir) async {
+    _db ??= await _open(baseDir);
     return ProcessInfo.currentRss;
   }
 
   @override
-  Future<void> open(BenchDataset data, String baseDir) async {
+  Future<void> open(String baseDir) async {
     _db ??= await _open(baseDir);
   }
 
@@ -188,6 +189,23 @@ final class SembastBenchEngine implements BenchEngine {
   }
 
   @override
+  Future<List<SampledDoc>> sampleDocs(String baseDir, int count, Random rng) =>
+      reservoirSample(count, rng, () async* {
+        // Walks every stored record once, in sembast's key order, and keeps
+        // only the reservoir. sembast's decoded store is already all in RAM
+        // after open — sampling adds the reservoir itself, nothing more.
+        final db = _db!;
+        final records = await _txns.find(db);
+        for (final record in records) {
+          yield (
+            accountId: record.value['accountId']! as String,
+            id: record.key,
+            value: record.value,
+          );
+        }
+      });
+
+  @override
   Future<(int, int)> getsById(
     List<({String accountId, String id})> ids,
     String baseDir,
@@ -206,16 +224,12 @@ final class SembastBenchEngine implements BenchEngine {
   }
 
   @override
-  Future<List<int>> writeUs(
-    List<({String accountId, String id, BenchTxn txn})> txns,
-    String baseDir,
-  ) async {
+  Future<List<int>> writeUs(List<SampledDoc> docs, String baseDir) async {
     final db = _db!;
     final micros = <int>[];
-    for (final benchTxn in txns) {
+    for (final doc in docs) {
       final sw = Stopwatch()..start();
-      final map = BenchDataset.sembastMapOf(benchTxn.txn);
-      await _txns.record(benchTxn.id).put(db, map);
+      await _txns.record(doc.id).put(db, doc.value as Map<String, Object?>);
       sw.stop();
       micros.add(sw.elapsedMicroseconds);
     }
