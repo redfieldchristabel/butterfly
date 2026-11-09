@@ -1,5 +1,20 @@
 ## Unreleased
 
+- A rivals benchmark, `benchmarks/cocoon_rivals`, now measures Cocoon
+  against drift, Isar, ObjectBox, Hive CE and sembast — plus Cocoon itself
+  at `Durability.normal` — on the same finance-shaped data at up to
+  1,000,000 transactions, every rival's read results diffed against
+  Cocoon's before any timing counts. At 1M txns Cocoon's indexed reads
+  stay flat where the store-everything engines scan (latest-50 0.74 ms p50
+  vs 641 ms Hive and 769 ms sembast; the paged all-accounts month range
+  320 ms vs 2,476 ms for drift's offset paging and 99 s for sembast) and
+  its memory share stays at the bare-harness floor where Hive and sembast
+  hold ~2.2 GB; the losses stay in view: bulk import 1.3-15x slower than
+  the six rivals, the year report 3.6x behind drift's SQL aggregation,
+  restore 11x behind Hive, gets by id 6-20x behind the in-RAM engines,
+  single writes at `Durability.full` equal to drift's fsynced default
+  (`Durability.normal`: 402 µs p50, 7.3x faster than drift's default).
+  Tables and per-workload verdicts: `benchmarks/cocoon_rivals/RESULTS.md`.
 - The Cocoon benchmark now measures memory without the harness's dataset in
   RAM: only `import` builds the typed dataset, other operations take their
   ids and values from the database itself, and a `baseline` run reports the

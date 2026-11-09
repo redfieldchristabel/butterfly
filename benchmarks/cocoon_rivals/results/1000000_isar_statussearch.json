@@ -1,0 +1,1 @@
+{"engine":"isar","size":1000000,"op":"statussearch","runs":[{"engine":"isar","size":1000000,"op":"statussearch","p50Us":84397,"p95Us":95039,"queries":50},{"engine":"isar","size":1000000,"op":"statussearch","p50Us":83218,"p95Us":93838,"queries":50},{"engine":"isar","size":1000000,"op":"statussearch","p50Us":84605,"p95Us":96051,"queries":50}]}

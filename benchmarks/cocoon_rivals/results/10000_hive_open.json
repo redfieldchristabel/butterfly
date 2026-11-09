@@ -1,0 +1,1 @@
+{"engine":"hive","size":10000,"op":"open","runs":[{"engine":"hive","size":10000,"op":"open","openMs":131,"engineOpenMs":128},{"engine":"hive","size":10000,"op":"open","openMs":125,"engineOpenMs":122},{"engine":"hive","size":10000,"op":"open","openMs":133,"engineOpenMs":130}]}

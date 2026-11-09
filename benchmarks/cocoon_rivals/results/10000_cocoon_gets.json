@@ -1,0 +1,1 @@
+{"engine":"cocoon","size":10000,"op":"gets","runs":[{"engine":"cocoon","size":10000,"op":"gets","elapsedMs":130,"count":1000,"found":1000},{"engine":"cocoon","size":10000,"op":"gets","elapsedMs":129,"count":1000,"found":1000},{"engine":"cocoon","size":10000,"op":"gets","elapsedMs":124,"count":1000,"found":1000}]}

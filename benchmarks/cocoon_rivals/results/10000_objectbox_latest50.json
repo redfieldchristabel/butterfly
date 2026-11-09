@@ -1,0 +1,1 @@
+{"engine":"objectbox","size":10000,"op":"latest50","runs":[{"engine":"objectbox","size":10000,"op":"latest50","p50Us":267,"p95Us":713,"queries":200},{"engine":"objectbox","size":10000,"op":"latest50","p50Us":308,"p95Us":987,"queries":200},{"engine":"objectbox","size":10000,"op":"latest50","p50Us":265,"p95Us":704,"queries":200}]}

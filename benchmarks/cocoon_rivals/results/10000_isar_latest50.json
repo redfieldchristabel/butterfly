@@ -1,0 +1,1 @@
+{"engine":"isar","size":10000,"op":"latest50","runs":[{"engine":"isar","size":10000,"op":"latest50","p50Us":869,"p95Us":1723,"queries":200},{"engine":"isar","size":10000,"op":"latest50","p50Us":1097,"p95Us":1780,"queries":200},{"engine":"isar","size":10000,"op":"latest50","p50Us":883,"p95Us":1555,"queries":200}]}

@@ -1,0 +1,1 @@
+{"engine":"cocoon-normal","size":300000,"op":"range","runs":[{"engine":"cocoon-normal","size":300000,"op":"range","elapsedMs":143,"count":5072,"pages":51},{"engine":"cocoon-normal","size":300000,"op":"range","elapsedMs":144,"count":5072,"pages":51},{"engine":"cocoon-normal","size":300000,"op":"range","elapsedMs":146,"count":5072,"pages":51}]}

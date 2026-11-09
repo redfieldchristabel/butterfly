@@ -1,0 +1,1 @@
+{"engine":"isar","size":10000,"op":"restore","runs":[{"engine":"isar","size":10000,"op":"restore","elapsedMs":5018,"txns":300000,"fileBytes":89128960},{"engine":"isar","size":10000,"op":"restore","elapsedMs":5346,"txns":300000,"fileBytes":89128960},{"engine":"isar","size":10000,"op":"restore","elapsedMs":5780,"txns":300000,"fileBytes":89128960}]}

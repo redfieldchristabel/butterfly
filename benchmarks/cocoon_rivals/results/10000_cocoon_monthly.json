@@ -1,0 +1,1 @@
+{"engine":"cocoon","size":10000,"op":"monthly","runs":[{"engine":"cocoon","size":10000,"op":"monthly","elapsedMs":18,"docsScanned":100,"grandTotalMinor":3560437},{"engine":"cocoon","size":10000,"op":"monthly","elapsedMs":17,"docsScanned":100,"grandTotalMinor":3560437},{"engine":"cocoon","size":10000,"op":"monthly","elapsedMs":17,"docsScanned":100,"grandTotalMinor":3560437}]}

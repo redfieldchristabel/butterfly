@@ -1,0 +1,7 @@
+# UTC windows when the server was busy (Android emulator + Gradle build), timings inside are unfair
+2026-11-08T02:00:00Z open
+2026-11-08T02:49:55Z close
+2026-11-08T03:41:14Z open (fs_dev up)
+2026-11-08T03:42:15Z open (fs_dev up)
+2026-11-08T04:21:11Z open (fs_dev install)
+2026-11-08T07:45:49Z close (box cleared; matrix killed mid-run, resume with tool/run_all.sh)

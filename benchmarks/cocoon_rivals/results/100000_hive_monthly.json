@@ -1,0 +1,1 @@
+{"engine":"hive","size":100000,"op":"monthly","runs":[{"engine":"hive","size":100000,"op":"monthly","elapsedMs":26,"docsScanned":980,"grandTotalMinor":86214003},{"engine":"hive","size":100000,"op":"monthly","elapsedMs":27,"docsScanned":980,"grandTotalMinor":86214003},{"engine":"hive","size":100000,"op":"monthly","elapsedMs":26,"docsScanned":980,"grandTotalMinor":86214003}]}

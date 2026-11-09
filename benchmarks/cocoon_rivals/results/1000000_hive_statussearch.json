@@ -1,0 +1,1 @@
+{"engine":"hive","size":1000000,"op":"statussearch","runs":[{"engine":"hive","size":1000000,"op":"statussearch","p50Us":597755,"p95Us":606243,"queries":50},{"engine":"hive","size":1000000,"op":"statussearch","p50Us":614368,"p95Us":632380,"queries":50},{"engine":"hive","size":1000000,"op":"statussearch","p50Us":607740,"p95Us":619037,"queries":50}]}

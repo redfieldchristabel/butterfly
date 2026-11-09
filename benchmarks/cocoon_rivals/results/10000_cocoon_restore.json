@@ -1,0 +1,1 @@
+{"engine":"cocoon","size":10000,"op":"restore","runs":[{"engine":"cocoon","size":10000,"op":"restore","elapsedMs":28058,"txns":300000,"fileBytes":112783360},{"engine":"cocoon","size":10000,"op":"restore","elapsedMs":27688,"txns":300000,"fileBytes":112783360},{"engine":"cocoon","size":10000,"op":"restore","elapsedMs":27934,"txns":300000,"fileBytes":112783360}]}

@@ -1,0 +1,1 @@
+{"engine":"sembast","size":100000,"op":"import","runs":[{"engine":"sembast","size":100000,"op":"import","elapsedMs":4558,"fileBytes":28132628,"txns":100000},{"engine":"sembast","size":100000,"op":"import","elapsedMs":4676,"fileBytes":28132628,"txns":100000},{"engine":"sembast","size":100000,"op":"import","elapsedMs":4651,"fileBytes":28132628,"txns":100000}]}

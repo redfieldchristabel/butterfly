@@ -1,0 +1,1 @@
+{"engine":"sembast","size":10000,"op":"latest50","runs":[{"engine":"sembast","size":10000,"op":"latest50","p50Us":5088,"p95Us":5791,"queries":200},{"engine":"sembast","size":10000,"op":"latest50","p50Us":4822,"p95Us":5598,"queries":200},{"engine":"sembast","size":10000,"op":"latest50","p50Us":5169,"p95Us":5827,"queries":200}]}

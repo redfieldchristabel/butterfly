@@ -1,0 +1,1 @@
+{"engine":"sembast","size":10000,"op":"gets","runs":[{"engine":"sembast","size":10000,"op":"gets","elapsedMs":5,"count":1000,"found":1000},{"engine":"sembast","size":10000,"op":"gets","elapsedMs":5,"count":1000,"found":1000},{"engine":"sembast","size":10000,"op":"gets","elapsedMs":4,"count":1000,"found":1000}]}

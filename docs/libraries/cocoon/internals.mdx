@@ -166,3 +166,30 @@ measured harness-only baseline.
   `cacheSize` only charges RAM for documents actually read (a warm
   1,000-doc working set: 113 ms cold → 2 ms warm, and `cacheSize` 20000
   bought nothing and cost nothing over 2000).
+
+### Against other engines
+
+`benchmarks/cocoon_rivals` repeats the measurement against drift (plain
+SQLite), Isar, ObjectBox, Hive CE and sembast — and against Cocoon itself
+at `Durability.normal` — on the same finance-shaped data up to 1,000,000
+transactions, with per-workload verdicts in its
+[RESULTS.md][rivals-results]. The claims above survive contact with
+engines that have real indexes, not just sembast:
+
+- **Bounded RAM holds at 1M txns.** Cocoon's after-reads RSS sits at the
+  bare-harness floor (431 MB); sembast is +2,242 MB over that floor,
+  Hive +2,214 MB, Isar +262 MB.
+- **The composite indexes win beyond latest-50.** The paged all-accounts
+  month range is 320 ms at 1M vs 2,476 ms for drift's LIMIT/OFFSET paging
+  (keyset cursors, not offsets) and 98,982 ms for sembast; the
+  `(status, bookedOn)` search is 1.42 ms flat vs 608 ms (Hive) at 1M.
+- **WAL readers keep their promise under writes.** With one committed txn
+  every 10 ms, latest-50 p95 is 3.53 ms; drift serializes every statement
+  through one background isolate and pays 4.96 ms.
+- **The write amplification is still the tax.** Bulk import 123.6 s vs
+  Isar's 24.9 s and drift's 95.5 s at 1M; the NDJSON restore 33.0 s vs
+  Hive's 3.0 s; files 375.4 MB vs drift's 224.2 MB; and SQL aggregation is
+  3.6x faster on the year report — the one workload a document API
+  structurally cannot match.
+
+[rivals-results]: https://github.com/redfieldchristabel/butterfly/blob/master/benchmarks/cocoon_rivals/RESULTS.md

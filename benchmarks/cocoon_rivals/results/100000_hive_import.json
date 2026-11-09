@@ -1,0 +1,1 @@
+{"engine":"hive","size":100000,"op":"import","runs":[{"engine":"hive","size":100000,"op":"import","elapsedMs":689,"fileBytes":32019048,"txns":100000},{"engine":"hive","size":100000,"op":"import","elapsedMs":681,"fileBytes":32019048,"txns":100000},{"engine":"hive","size":100000,"op":"import","elapsedMs":678,"fileBytes":32019048,"txns":100000}]}

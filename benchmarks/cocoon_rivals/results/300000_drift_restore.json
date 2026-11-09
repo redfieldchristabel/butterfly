@@ -1,0 +1,1 @@
+{"engine":"drift","size":300000,"op":"restore","runs":[{"engine":"drift","size":300000,"op":"restore","elapsedMs":13840,"txns":300000,"fileBytes":70434816},{"engine":"drift","size":300000,"op":"restore","elapsedMs":27395,"txns":300000,"fileBytes":70434816},{"engine":"drift","size":300000,"op":"restore","elapsedMs":13276,"txns":300000,"fileBytes":70434816}]}

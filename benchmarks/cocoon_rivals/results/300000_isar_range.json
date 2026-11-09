@@ -1,0 +1,1 @@
+{"engine":"isar","size":300000,"op":"range","runs":[{"engine":"isar","size":300000,"op":"range","elapsedMs":615,"count":5072,"pages":51},{"engine":"isar","size":300000,"op":"range","elapsedMs":614,"count":5072,"pages":51},{"engine":"isar","size":300000,"op":"range","elapsedMs":658,"count":5072,"pages":51}]}

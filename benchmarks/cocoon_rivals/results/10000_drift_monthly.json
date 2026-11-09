@@ -1,0 +1,1 @@
+{"engine":"drift","size":10000,"op":"monthly","runs":[{"engine":"drift","size":10000,"op":"monthly","elapsedMs":15,"docsScanned":100,"grandTotalMinor":3560437},{"engine":"drift","size":10000,"op":"monthly","elapsedMs":29,"docsScanned":100,"grandTotalMinor":3560437},{"engine":"drift","size":10000,"op":"monthly","elapsedMs":20,"docsScanned":100,"grandTotalMinor":3560437}]}

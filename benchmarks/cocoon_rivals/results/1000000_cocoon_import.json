@@ -1,0 +1,1 @@
+{"engine":"cocoon","size":1000000,"op":"import","runs":[{"engine":"cocoon","size":1000000,"op":"import","elapsedMs":119056,"fileBytes":393675664,"txns":1000000},{"engine":"cocoon","size":1000000,"op":"import","elapsedMs":123562,"fileBytes":393675664,"txns":1000000},{"engine":"cocoon","size":1000000,"op":"import","elapsedMs":128999,"fileBytes":393675664,"txns":1000000}]}

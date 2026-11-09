@@ -1,0 +1,1 @@
+{"engine":"drift","size":10000,"op":"latest50","runs":[{"engine":"drift","size":10000,"op":"latest50","p50Us":485,"p95Us":1152,"queries":200},{"engine":"drift","size":10000,"op":"latest50","p50Us":479,"p95Us":1469,"queries":200},{"engine":"drift","size":10000,"op":"latest50","p50Us":757,"p95Us":2972,"queries":200}]}

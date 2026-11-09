@@ -1,0 +1,1 @@
+{"engine":"isar","size":100000,"op":"monthly","runs":[{"engine":"isar","size":100000,"op":"monthly","elapsedMs":34,"docsScanned":980,"grandTotalMinor":86214003},{"engine":"isar","size":100000,"op":"monthly","elapsedMs":34,"docsScanned":980,"grandTotalMinor":86214003},{"engine":"isar","size":100000,"op":"monthly","elapsedMs":35,"docsScanned":980,"grandTotalMinor":86214003}]}

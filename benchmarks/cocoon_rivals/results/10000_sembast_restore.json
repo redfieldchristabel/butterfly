@@ -1,0 +1,1 @@
+{"engine":"sembast","size":10000,"op":"restore","runs":[{"engine":"sembast","size":10000,"op":"restore","elapsedMs":16567,"txns":300000,"fileBytes":84397476},{"engine":"sembast","size":10000,"op":"restore","elapsedMs":16244,"txns":300000,"fileBytes":84397476},{"engine":"sembast","size":10000,"op":"restore","elapsedMs":16190,"txns":300000,"fileBytes":84397476}]}

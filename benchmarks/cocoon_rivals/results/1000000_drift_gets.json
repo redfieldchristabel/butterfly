@@ -1,0 +1,1 @@
+{"engine":"drift","size":1000000,"op":"gets","runs":[{"engine":"drift","size":1000000,"op":"gets","elapsedMs":69,"count":1000,"found":1000},{"engine":"drift","size":1000000,"op":"gets","elapsedMs":69,"count":1000,"found":1000},{"engine":"drift","size":1000000,"op":"gets","elapsedMs":66,"count":1000,"found":1000}]}

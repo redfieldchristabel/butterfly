@@ -139,3 +139,4 @@ executor, so it is deferred.
 | DevTools extension (`packages/cocoon_devtools`, `ext.cocoon.*` service extensions) | done |
 | `Map<String, V>` / `Map<int, V>` fields (canonical protobuf map encoding, sorted keys; generator, migrations, inspector) | done |
 | Benchmark vs sembast (`packages/cocoon_bench`, finance-shaped data, `RESULTS.md`; memory measured against a harness-only baseline, write-durability and cache-size knobs measured) | done |
+| Rivals benchmark (`benchmarks/cocoon_rivals`, 7 engines incl. cocoon at `Durability.normal`, drift, Isar, ObjectBox, Hive CE, sembast; 10k-1M txns, 13 ops, `RESULTS.md` with per-workload verdicts) | done |

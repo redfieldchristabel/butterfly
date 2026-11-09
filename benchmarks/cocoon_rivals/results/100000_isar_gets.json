@@ -1,0 +1,1 @@
+{"engine":"isar","size":100000,"op":"gets","runs":[{"engine":"isar","size":100000,"op":"gets","elapsedMs":994,"count":1000,"found":1000},{"engine":"isar","size":100000,"op":"gets","elapsedMs":978,"count":1000,"found":1000},{"engine":"isar","size":100000,"op":"gets","elapsedMs":982,"count":1000,"found":1000}]}

@@ -1,0 +1,1 @@
+{"engine":"objectbox","size":100000,"op":"import","runs":[{"engine":"objectbox","size":100000,"op":"import","elapsedMs":1010,"fileBytes":67534848,"txns":100000},{"engine":"objectbox","size":100000,"op":"import","elapsedMs":973,"fileBytes":67534848,"txns":100000},{"engine":"objectbox","size":100000,"op":"import","elapsedMs":1018,"fileBytes":67534848,"txns":100000}]}

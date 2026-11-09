@@ -1,0 +1,1 @@
+{"engine":"isar","size":300000,"op":"import","runs":[{"engine":"isar","size":300000,"op":"import","elapsedMs":3766,"fileBytes":89133056,"txns":300000},{"engine":"isar","size":300000,"op":"import","elapsedMs":4647,"fileBytes":89133056,"txns":300000},{"engine":"isar","size":300000,"op":"import","elapsedMs":5547,"fileBytes":89133056,"txns":300000}]}

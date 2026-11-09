@@ -1,0 +1,1 @@
+{"engine":"hive","size":10000,"op":"rww","runs":[{"engine":"hive","size":10000,"op":"rww","p50Us":4778,"p95Us":5512,"queries":200,"writes":1,"intervalMs":10},{"engine":"hive","size":10000,"op":"rww","p50Us":4710,"p95Us":5607,"queries":200,"writes":1,"intervalMs":10},{"engine":"hive","size":10000,"op":"rww","p50Us":4464,"p95Us":5631,"queries":200,"writes":1,"intervalMs":10}]}

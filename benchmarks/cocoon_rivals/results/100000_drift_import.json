@@ -1,0 +1,1 @@
+{"engine":"drift","size":100000,"op":"import","runs":[{"engine":"drift","size":100000,"op":"import","elapsedMs":2659,"fileBytes":23379968,"txns":100000},{"engine":"drift","size":100000,"op":"import","elapsedMs":2716,"fileBytes":23379968,"txns":100000},{"engine":"drift","size":100000,"op":"import","elapsedMs":2692,"fileBytes":23379968,"txns":100000}]}

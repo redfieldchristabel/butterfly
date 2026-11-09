@@ -1,0 +1,1 @@
+{"engine":"objectbox","size":300000,"op":"restore","runs":[{"engine":"objectbox","size":300000,"op":"restore","elapsedMs":4694,"txns":300000,"fileBytes":194646016},{"engine":"objectbox","size":300000,"op":"restore","elapsedMs":4964,"txns":300000,"fileBytes":194646016},{"engine":"objectbox","size":300000,"op":"restore","elapsedMs":13970,"txns":300000,"fileBytes":194646016}]}

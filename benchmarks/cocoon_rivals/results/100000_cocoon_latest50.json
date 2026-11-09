@@ -1,0 +1,1 @@
+{"engine":"cocoon","size":100000,"op":"latest50","runs":[{"engine":"cocoon","size":100000,"op":"latest50","p50Us":784,"p95Us":2851,"queries":200},{"engine":"cocoon","size":100000,"op":"latest50","p50Us":741,"p95Us":2803,"queries":200},{"engine":"cocoon","size":100000,"op":"latest50","p50Us":777,"p95Us":2683,"queries":200}]}
