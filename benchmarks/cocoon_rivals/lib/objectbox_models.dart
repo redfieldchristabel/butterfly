@@ -38,7 +38,10 @@ class ObTxn {
   @Index()
   late int bookedOn;
 
-  /// Minor units; negative for debits.
+  /// Minor units; negative for debits. Its own index serves the amount
+  /// workloads (top debits, amount bands) the way a documented ObjectBox
+  /// app declares it.
+  @Index()
   int amountMinor = 0;
 
   /// The ISO 4217 code.

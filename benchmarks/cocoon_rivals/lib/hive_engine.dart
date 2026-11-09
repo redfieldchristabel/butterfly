@@ -74,9 +74,8 @@ final class HiveBenchEngine implements BenchEngine {
             : start + importBatchSize,
       );
       await box.putAll({
-        for (final benchTxn in batch) benchTxn.id: BenchDataset.sembastMapOf(
-          benchTxn,
-        ),
+        for (final benchTxn in batch)
+          benchTxn.id: BenchDataset.sembastMapOf(benchTxn),
       });
     }
     sw.stop();
@@ -129,9 +128,7 @@ final class HiveBenchEngine implements BenchEngine {
       }
       return b.key.compareTo(a.key);
     });
-    return [
-      for (final entry in top.take(50)) entry.key,
-    ];
+    return [for (final entry in top.take(50)) entry.key];
   }
 
   @override
@@ -330,9 +327,216 @@ final class HiveBenchEngine implements BenchEngine {
       }
       return b.key.compareTo(a.key);
     });
-    return [
-      for (final entry in top.take(50)) entry.key,
+    return [for (final entry in top.take(50)) entry.key];
+  }
+
+  /// The contract comparator over (amountMinor, id): smallest amount — the
+  /// largest debit — first, ties by string id ASC.
+  static int _amountThenKey(MapEntry<String, int> a, MapEntry<String, int> b) {
+    final byAmount = a.value.compareTo(b.value);
+    if (byAmount != 0) {
+      return byAmount;
+    }
+    return a.key.compareTo(b.key);
+  }
+
+  @override
+  Future<List<int>> bigspendUs(String baseDir) async {
+    final micros = <int>[];
+    for (var i = 0; i < bigspendRuns; i++) {
+      final sw = Stopwatch()..start();
+      final ids = await bigspendIds(baseDir);
+      sw.stop();
+      if (ids.isEmpty) {
+        throw StateError('bigspend answered with nothing');
+      }
+      micros.add(sw.elapsedMicroseconds);
+    }
+    return micros;
+  }
+
+  @override
+  Future<List<String>> bigspendIds(String baseDir) async {
+    // No query engine: scan the box, keep the smallest amounts (the largest
+    // debits) by the contract order. A bounded top-50, like
+    // `statusSearchIds`.
+    final top = <MapEntry<String, int>>[];
+    for (final key in _txns!.keys.cast<String>()) {
+      final value = _txns!.get(key)!['amountMinor']! as int;
+      top.add(MapEntry(key, value));
+      if (top.length > 400) {
+        top.sort(_amountThenKey);
+        top.removeRange(200, top.length);
+      }
+    }
+    top.sort(_amountThenKey);
+    return [for (final entry in top.take(50)) entry.key];
+  }
+
+  @override
+  Future<List<String>> amountRangeIds(String baseDir) async {
+    // One Dart-side pass collects the band's (id, amountMinor) pairs in
+    // contract order; paging by 100 slices that list (Hive has no
+    // server-side pagination to model), the way `rangeMonthIds` does it.
+    final sw = Stopwatch()..start();
+    final band = <MapEntry<String, int>>[];
+    for (final key in _txns!.keys.cast<String>()) {
+      final amountMinor = _txns!.get(key)!['amountMinor']! as int;
+      if (amountMinor >= amountBandLo && amountMinor < amountBandHi) {
+        band.add(MapEntry(key, amountMinor));
+      }
+    }
+    band.sort(_amountThenKey);
+    final ordered = [for (final entry in band) entry.key];
+    final ids = [
+      for (var p = 0; p * amountRangePageSize < ordered.length; p++)
+        ...ordered.sublist(
+          p * amountRangePageSize,
+          (p + 1) * amountRangePageSize > ordered.length
+              ? ordered.length
+              : (p + 1) * amountRangePageSize,
+        ),
     ];
+    sw.stop();
+    // An empty band is a legal answer (the smoke test runs at 500 txns,
+    // where it is often empty); the verify dump diffs emptiness loudly.
+    return ids;
+  }
+
+  @override
+  Future<List<String>> pendingMonthIds(String baseDir) async {
+    // One Dart-side pass collects the month's pending (id, bookedOn) pairs
+    // in contract order; paging by 100 slices that list.
+    final firstDay = rangeMonthKey * 100 + 1;
+    final lastDay = rangeMonthKey * 100 + 31;
+    final month = <MapEntry<String, int>>[];
+    for (final key in _txns!.keys.cast<String>()) {
+      final value = _txns!.get(key)!;
+      if (value['status'] != m.TxnStatus.pending.name) {
+        continue;
+      }
+      final bookedOn = value['bookedOn']! as int;
+      if (bookedOn >= firstDay && bookedOn <= lastDay) {
+        month.add(MapEntry(key, bookedOn));
+      }
+    }
+    month.sort((a, b) {
+      final byDay = a.value.compareTo(b.value);
+      if (byDay != 0) {
+        return byDay;
+      }
+      return a.key.compareTo(b.key);
+    });
+    final ordered = [for (final entry in month) entry.key];
+    final ids = [
+      for (var p = 0; p * rangePageSize < ordered.length; p++)
+        ...ordered.sublist(
+          p * rangePageSize,
+          (p + 1) * rangePageSize > ordered.length
+              ? ordered.length
+              : (p + 1) * rangePageSize,
+        ),
+    ];
+    // An empty month is a legal answer at the smoke test's 500 txns.
+    return ids;
+  }
+
+  @override
+  Future<({List<List<String>> pageIds, List<int> pageUs})> deeppagePages(
+    String accountId,
+    String baseDir,
+  ) async {
+    // The whole history is already in RAM after open: page 1 does the scan
+    // + sort (the real work), later pages slice the ordered list — Hive's
+    // honest shape for "paging" (there is no server-side cursor to model).
+    final pageIds = <List<String>>[];
+    final pageUs = <int>[];
+    final box = _txns!;
+    final sw = Stopwatch()..start();
+    final account = <MapEntry<String, Map<dynamic, dynamic>>>[];
+    for (final key in box.keys.cast<String>()) {
+      final value = box.get(key)!;
+      if (value['accountId'] == accountId) {
+        account.add(MapEntry(key, value));
+      }
+    }
+    account.sort((a, b) {
+      final byDay = (b.value['bookedOn']! as int).compareTo(
+        a.value['bookedOn']! as int,
+      );
+      if (byDay != 0) {
+        return byDay;
+      }
+      return b.key.compareTo(a.key);
+    });
+    final ordered = [for (final entry in account) entry.key];
+    sw.stop();
+    for (var page = 0; page < deeppagePageCount; page++) {
+      final start = page * deeppagePageSize;
+      final swPage = Stopwatch()..start();
+      if (start >= ordered.length) {
+        break;
+      }
+      final slice = ordered.sublist(
+        start,
+        start + deeppagePageSize > ordered.length
+            ? ordered.length
+            : start + deeppagePageSize,
+      );
+      swPage.stop();
+      pageIds.add(slice);
+      // Page 1 is what the app waits for: the scan + sort plus its slice.
+      pageUs.add(
+        page == 0
+            ? sw.elapsedMicroseconds + swPage.elapsedMicroseconds
+            : swPage.elapsedMicroseconds,
+      );
+    }
+    return (pageIds: pageIds, pageUs: pageUs);
+  }
+
+  @override
+  Future<({List<int> us, int count})> pendingCountUs(String baseDir) async {
+    final micros = <int>[];
+    var count = 0;
+    for (var i = 0; i < countRuns; i++) {
+      final sw = Stopwatch()..start();
+      count = 0;
+      for (final value in _txns!.values) {
+        if (value['status'] == m.TxnStatus.pending.name) {
+          count++;
+        }
+      }
+      sw.stop();
+      micros.add(sw.elapsedMicroseconds);
+    }
+    return (us: micros, count: count);
+  }
+
+  @override
+  Future<({List<int> us, int count})> yearCountUs(
+    String accountId,
+    String baseDir,
+  ) async {
+    final firstDay = reportYear * 10000 + 101;
+    final lastDay = reportYear * 10000 + 1231;
+    final micros = <int>[];
+    var count = 0;
+    for (var i = 0; i < countRuns; i++) {
+      final sw = Stopwatch()..start();
+      count = 0;
+      for (final value in _txns!.values) {
+        if (value['accountId'] == accountId) {
+          final bookedOn = value['bookedOn']! as int;
+          if (bookedOn >= firstDay && bookedOn <= lastDay) {
+            count++;
+          }
+        }
+      }
+      sw.stop();
+      micros.add(sw.elapsedMicroseconds);
+    }
+    return (us: micros, count: count);
   }
 
   @override
@@ -352,6 +556,11 @@ final class HiveBenchEngine implements BenchEngine {
 
   @override
   Future<(int, int)> restore(String baseDir) async {
+    // A fresh process has nothing open; sequential in-process ops (the
+    // smoke test) close the live box first — box names are process-global
+    // in Hive, and the restore directory must not alias the open one.
+    await _txns?.close();
+    _txns = null;
     wipe(baseDir);
     Directory(baseDir).createSync(recursive: true);
     final box = await _open(baseDir);

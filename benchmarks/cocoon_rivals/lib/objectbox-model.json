@@ -38,7 +38,9 @@
         {
           "id": "5:4086311906209109327",
           "name": "amountMinor",
-          "type": 6
+          "indexId": "5:8025806017936254434",
+          "type": 6,
+          "flags": 8
         },
         {
           "id": "6:5705487674402612955",
@@ -77,7 +79,7 @@
     }
   ],
   "lastEntityId": "1:8931152880289513371",
-  "lastIndexId": "4:1433269922282394023",
+  "lastIndexId": "5:8025806017936254434",
   "lastRelationId": "0:0",
   "lastSequenceId": "0:0",
   "modelVersion": 5,

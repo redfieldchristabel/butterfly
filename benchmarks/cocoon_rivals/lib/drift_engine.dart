@@ -381,6 +381,184 @@ final class DriftBenchEngine implements BenchEngine {
   }
 
   @override
+  Future<List<int>> bigspendUs(String baseDir) async {
+    final micros = <int>[];
+    for (var i = 0; i < bigspendRuns; i++) {
+      final sw = Stopwatch()..start();
+      final ids = await bigspendIds(baseDir);
+      sw.stop();
+      if (ids.isEmpty) {
+        throw StateError('bigspend answered with nothing');
+      }
+      micros.add(sw.elapsedMicroseconds);
+    }
+    return micros;
+  }
+
+  @override
+  Future<List<String>> bigspendIds(String baseDir) async {
+    // One ordered index scan, limit 50 — drift's documented select API.
+    final rows = await (_db!.select(_db!.txnRows)
+          ..orderBy([
+            (t) => OrderingTerm.asc(t.amountMinor),
+            (t) => OrderingTerm.asc(t.id),
+          ])
+          ..limit(50))
+        .get();
+    return [for (final row in rows) row.id];
+  }
+
+  @override
+  Future<List<String>> amountRangeIds(String baseDir) async {
+    // Amount-band pages through drift's idiomatic LIMIT/OFFSET paging (the
+    // same idiom `rangeMonthIds` uses — drift has no cursor API).
+    final db = _db!;
+    final ids = <String>[];
+    var pages = 0;
+    while (true) {
+      final page = await (db.select(db.txnRows)
+            ..where(
+              (t) =>
+                  t.amountMinor.isBiggerOrEqualValue(amountBandLo) &
+                  t.amountMinor.isSmallerThanValue(amountBandHi),
+            )
+            ..orderBy([
+              (t) => OrderingTerm.asc(t.amountMinor),
+              (t) => OrderingTerm.asc(t.id),
+            ])
+            ..limit(amountRangePageSize, offset: pages * amountRangePageSize))
+          .get();
+      if (page.isEmpty) {
+        break;
+      }
+      ids.addAll([for (final row in page) row.id]);
+      if (page.length < amountRangePageSize) {
+        break;
+      }
+      pages++;
+    }
+    // An empty band is a legal answer (the smoke test runs at 500 txns,
+    // where it is often empty); the verify dump diffs emptiness loudly.
+    return ids;
+  }
+
+  @override
+  Future<List<String>> pendingMonthIds(String baseDir) async {
+    // The compound filter through the `(status, booked_on)` index, offset
+    // paging (drift's idiom, as in `rangeMonthIds`).
+    final db = _db!;
+    final firstDay = rangeMonthKey * 100 + 1;
+    final lastDay = rangeMonthKey * 100 + 31;
+    final ids = <String>[];
+    var pages = 0;
+    while (true) {
+      final page = await (db.select(db.txnRows)
+            ..where(
+              (t) =>
+                  t.status.equals(m.TxnStatus.pending.name) &
+                  t.bookedOn.isBiggerOrEqualValue(firstDay) &
+                  t.bookedOn.isSmallerOrEqualValue(lastDay),
+            )
+            ..orderBy([
+              (t) => OrderingTerm.asc(t.bookedOn),
+              (t) => OrderingTerm.asc(t.id),
+            ])
+            ..limit(rangePageSize, offset: pages * rangePageSize))
+          .get();
+      if (page.isEmpty) {
+        break;
+      }
+      ids.addAll([for (final row in page) row.id]);
+      if (page.length < rangePageSize) {
+        break;
+      }
+      pages++;
+    }
+    // An empty month is a legal answer at the smoke test's 500 txns.
+    return ids;
+  }
+
+  @override
+  Future<({List<List<String>> pageIds, List<int> pageUs})> deeppagePages(
+    String accountId,
+    String baseDir,
+  ) async {
+    // drift has no cursor API; its idiom is LIMIT/OFFSET, so page N re-reads
+    // the index from the top — exactly what the deep-page op is here to
+    // measure.
+    final db = _db!;
+    final pageIds = <List<String>>[];
+    final pageUs = <int>[];
+    for (var page = 0; page < deeppagePageCount; page++) {
+      final sw = Stopwatch()..start();
+      final rows = await (db.select(db.txnRows)
+            ..where((t) => t.accountId.equals(accountId))
+            ..orderBy([
+              (t) => OrderingTerm.desc(t.bookedOn),
+              (t) => OrderingTerm.desc(t.id),
+            ])
+            ..limit(deeppagePageSize, offset: page * deeppagePageSize))
+          .get();
+      sw.stop();
+      if (rows.isEmpty) {
+        break;
+      }
+      pageIds.add([for (final row in rows) row.id]);
+      pageUs.add(sw.elapsedMicroseconds);
+    }
+    return (pageIds: pageIds, pageUs: pageUs);
+  }
+
+  @override
+  Future<({List<int> us, int count})> pendingCountUs(String baseDir) async {
+    // The aggregate a SQL engine exists for: one `SELECT count(*)`.
+    final micros = <int>[];
+    var count = 0;
+    for (var i = 0; i < countRuns; i++) {
+      final sw = Stopwatch()..start();
+      final rows = await _db!
+          .customSelect(
+            'SELECT count(*) AS c FROM txn_rows WHERE status = ?',
+            variables: [Variable(m.TxnStatus.pending.name)],
+          )
+          .get();
+      sw.stop();
+      count = rows.first.read<int>('c');
+      micros.add(sw.elapsedMicroseconds);
+    }
+    return (us: micros, count: count);
+  }
+
+  @override
+  Future<({List<int> us, int count})> yearCountUs(
+    String accountId,
+    String baseDir,
+  ) async {
+    final firstDay = reportYear * 10000 + 101;
+    final lastDay = reportYear * 10000 + 1231;
+    final micros = <int>[];
+    var count = 0;
+    for (var i = 0; i < countRuns; i++) {
+      final sw = Stopwatch()..start();
+      final rows = await _db!
+          .customSelect(
+            'SELECT count(*) AS c FROM txn_rows '
+            'WHERE account_id = ? AND booked_on >= ? AND booked_on <= ?',
+            variables: [
+              Variable(accountId),
+              Variable(firstDay),
+              Variable(lastDay),
+            ],
+          )
+          .get();
+      sw.stop();
+      count = rows.first.read<int>('c');
+      micros.add(sw.elapsedMicroseconds);
+    }
+    return (us: micros, count: count);
+  }
+
+  @override
   Future<void> writeOneTxn(String accountId, String id, int seq) async {
     final db = _db!;
     await db

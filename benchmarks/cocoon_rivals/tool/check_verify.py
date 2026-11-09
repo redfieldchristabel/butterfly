@@ -3,13 +3,26 @@
 
 usage: check_verify.py <cocoon.json> <rival.json>  — exit 0 when every read
 shape's contract output matches: latest-50 ids per account, one account's
-monthly totals, the year-report sums, the all-accounts month range, and the
-status search. Timing and scan counts are ignored.
+monthly totals, the year-report sums, the all-accounts month range, the
+status search, the bigspend ids, the amount-range ids, the pending-month
+ids, the two counts, and the deep-page ids. Timing and scan counts are
+ignored.
 """
 import json
 import sys
 
-SHAPES = ["latest50", "monthly", "yearreport", "range", "status"]
+SHAPES = [
+    "latest50",
+    "monthly",
+    "yearreport",
+    "range",
+    "status",
+    "bigspend",
+    "amountrange",
+    "pendingmonth",
+    "deeppage",
+    "count",
+]
 
 
 def main() -> int:

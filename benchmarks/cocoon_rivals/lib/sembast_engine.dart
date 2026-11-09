@@ -341,6 +341,186 @@ final class SembastBenchEngine implements BenchEngine {
   }
 
   @override
+  Future<List<int>> bigspendUs(String baseDir) async {
+    final micros = <int>[];
+    for (var i = 0; i < bigspendRuns; i++) {
+      final sw = Stopwatch()..start();
+      final ids = await bigspendIds(baseDir);
+      sw.stop();
+      if (ids.isEmpty) {
+        throw StateError('bigspend answered with nothing');
+      }
+      micros.add(sw.elapsedMicroseconds);
+    }
+    return micros;
+  }
+
+  @override
+  Future<List<String>> bigspendIds(String baseDir) async {
+    // No indexes: sembast sorts the (in-RAM) store for the contract order —
+    // smallest amount (the largest debit) first, key order for ties.
+    final records = await _txns.find(
+      _db!,
+      finder: Finder(
+        sortOrders: [SortOrder('amountMinor'), SortOrder(Field.key)],
+        limit: 50,
+      ),
+    );
+    return [for (final record in records) record.key];
+  }
+
+  @override
+  Future<List<String>> amountRangeIds(String baseDir) async {
+    // Paged by [amountRangePageSize] with an offset (the idiom this engine's
+    // `rangeMonthIds` uses): sembast has no indexes, so every page scans and
+    // re-sorts the (in-RAM) store — that is the point of this engine.
+    final ids = <String>[];
+    var pages = 0;
+    while (true) {
+      final page = await _txns.find(
+        _db!,
+        finder: Finder(
+          filter: Filter.and([
+            Filter.greaterThanOrEquals('amountMinor', amountBandLo),
+            Filter.lessThan('amountMinor', amountBandHi),
+          ]),
+          sortOrders: [SortOrder('amountMinor'), SortOrder(Field.key)],
+          offset: pages * amountRangePageSize,
+          limit: amountRangePageSize,
+        ),
+      );
+      if (page.isEmpty) {
+        break;
+      }
+      ids.addAll([for (final record in page) record.key]);
+      if (page.length < amountRangePageSize) {
+        break;
+      }
+      pages++;
+    }
+    // An empty band is a legal answer (the smoke test runs at 500 txns,
+    // where it is often empty); the verify dump diffs emptiness loudly.
+    return ids;
+  }
+
+  @override
+  Future<List<String>> pendingMonthIds(String baseDir) async {
+    // The compound filter + sort + offset paging, the shape `rangeMonthIds`
+    // models for this engine.
+    final firstDay = rangeMonthKey * 100 + 1;
+    final lastDay = rangeMonthKey * 100 + 31;
+    final ids = <String>[];
+    var pages = 0;
+    while (true) {
+      final page = await _txns.find(
+        _db!,
+        finder: Finder(
+          filter: Filter.and([
+            Filter.equals('status', m.TxnStatus.pending.name),
+            Filter.greaterThanOrEquals('bookedOn', firstDay),
+            Filter.lessThanOrEquals('bookedOn', lastDay),
+          ]),
+          sortOrders: [SortOrder('bookedOn'), SortOrder(Field.key)],
+          offset: pages * rangePageSize,
+          limit: rangePageSize,
+        ),
+      );
+      if (page.isEmpty) {
+        break;
+      }
+      ids.addAll([for (final record in page) record.key]);
+      if (page.length < rangePageSize) {
+        break;
+      }
+      pages++;
+    }
+    // An empty month is a legal answer at the smoke test's 500 txns.
+    return ids;
+  }
+
+  @override
+  Future<({List<List<String>> pageIds, List<int> pageUs})> deeppagePages(
+    String accountId,
+    String baseDir,
+  ) async {
+    // sembast's idiom is Finder offset/limit: page N re-scans and re-sorts
+    // the (in-RAM) store from the top — what the op is here to measure.
+    final pageIds = <List<String>>[];
+    final pageUs = <int>[];
+    for (var page = 0; page < deeppagePageCount; page++) {
+      final sw = Stopwatch()..start();
+      final records = await _txns.find(
+        _db!,
+        finder: Finder(
+          filter: Filter.equals('accountId', accountId),
+          sortOrders: [
+            SortOrder('bookedOn', false),
+            SortOrder(Field.key, false),
+          ],
+          offset: page * deeppagePageSize,
+          limit: deeppagePageSize,
+        ),
+      );
+      sw.stop();
+      if (records.isEmpty) {
+        break;
+      }
+      pageIds.add([for (final record in records) record.key]);
+      pageUs.add(sw.elapsedMicroseconds);
+    }
+    return (pageIds: pageIds, pageUs: pageUs);
+  }
+
+  @override
+  Future<({List<int> us, int count})> pendingCountUs(String baseDir) async {
+    // sembast's own query count over a filter — still a scan underneath,
+    // which is the honest comparison.
+    final micros = <int>[];
+    var count = 0;
+    for (var i = 0; i < countRuns; i++) {
+      final sw = Stopwatch()..start();
+      count = await _txns
+          .query(
+            finder: Finder(
+              filter: Filter.equals('status', m.TxnStatus.pending.name),
+            ),
+          )
+          .count(_db!);
+      sw.stop();
+      micros.add(sw.elapsedMicroseconds);
+    }
+    return (us: micros, count: count);
+  }
+
+  @override
+  Future<({List<int> us, int count})> yearCountUs(
+    String accountId,
+    String baseDir,
+  ) async {
+    final firstDay = reportYear * 10000 + 101;
+    final lastDay = reportYear * 10000 + 1231;
+    final micros = <int>[];
+    var count = 0;
+    for (var i = 0; i < countRuns; i++) {
+      final sw = Stopwatch()..start();
+      count = await _txns
+          .query(
+            finder: Finder(
+              filter: Filter.and([
+                Filter.equals('accountId', accountId),
+                Filter.greaterThanOrEquals('bookedOn', firstDay),
+                Filter.lessThanOrEquals('bookedOn', lastDay),
+              ]),
+            ),
+          )
+          .count(_db!);
+      sw.stop();
+      micros.add(sw.elapsedMicroseconds);
+    }
+    return (us: micros, count: count);
+  }
+
+  @override
   Future<void> writeOneTxn(String accountId, String id, int seq) {
     return _txns.record(id).put(_db!, {
       'accountId': accountId,

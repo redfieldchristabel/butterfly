@@ -53,7 +53,10 @@ class IsarTxn {
   /// Booking day as `yyyymmdd`.
   late int bookedOn;
 
-  /// Minor units; negative for debits.
+  /// Minor units; negative for debits. Its own index serves the amount
+  /// workloads (top debits, amount bands) the way a documented Isar app
+  /// declares it.
+  @Index()
   late int amountMinor;
 
   /// The ISO 4217 code.

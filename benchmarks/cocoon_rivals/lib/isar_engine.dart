@@ -111,7 +111,10 @@ final class IsarBenchEngine implements BenchEngine {
   @override
   Future<int> coldOpen(String baseDir, {required String accountId}) async {
     final sw = Stopwatch()..start();
-    final isar = await _open(baseDir);
+    // A fresh process opens here; an already-open instance (the smoke
+    // test's sequential ops) reuses its database, like the other engines'
+    // `_db ??=` pattern.
+    final isar = _isar ?? await _open(baseDir);
     final first = await isar.isarTxns
         .where(sort: Sort.desc)
         .accountIdEqualToAnyBookedOn(accountId)
@@ -375,6 +378,174 @@ final class IsarBenchEngine implements BenchEngine {
   }
 
   @override
+  Future<List<int>> bigspendUs(String baseDir) async {
+    final micros = <int>[];
+    for (var i = 0; i < bigspendRuns; i++) {
+      final sw = Stopwatch()..start();
+      final ids = await bigspendIds(baseDir);
+      sw.stop();
+      if (ids.isEmpty) {
+        throw StateError('bigspend answered with nothing');
+      }
+      micros.add(sw.elapsedMicroseconds);
+    }
+    return micros;
+  }
+
+  /// The full int range: a where clause over the amount index walks it in
+  /// its own ascending order (amountMinor, then the internal id — assigned
+  /// from the string id, so ties break in the contract's id ASC order).
+  static const _intMin = -9223372036854775808;
+  static const _intMax = 9223372036854775807;
+
+  @override
+  Future<List<String>> bigspendIds(String baseDir) async {
+    // No amount filter (the dataset's 50 smallest amounts are always
+    // debits); the where clause walks the amount index, most negative
+    // first.
+    final records = await _isar!.isarTxns
+        .where()
+        .amountMinorBetween(_intMin, _intMax)
+        .limit(50)
+        .findAll();
+    return [for (final record in records) record.code];
+  }
+
+  @override
+  Future<List<String>> amountRangeIds(String baseDir) async {
+    // The amount index serves the band and the contract order directly;
+    // Isar's idiom is offset/limit pagination (as in `rangeMonthIds`).
+    final isar = _isar!;
+    final ids = <String>[];
+    var pages = 0;
+    while (true) {
+      final page = await isar.isarTxns
+          .where()
+          // Isar's between is inclusive on both ends; [lo, hi-1] == [lo, hi)
+          // for integers.
+          .amountMinorBetween(amountBandLo, amountBandHi - 1)
+          .offset(pages * amountRangePageSize)
+          .limit(amountRangePageSize)
+          .findAll();
+      if (page.isEmpty) {
+        break;
+      }
+      ids.addAll([for (final record in page) record.code]);
+      if (page.length < amountRangePageSize) {
+        break;
+      }
+      pages++;
+    }
+    // An empty band is a legal answer (the smoke test runs at 500 txns,
+    // where it is often empty); the verify dump diffs emptiness loudly.
+    return ids;
+  }
+
+  @override
+  Future<List<String>> pendingMonthIds(String baseDir) async {
+    // The status index selects the pending records, the filter trims the
+    // month, the native sort applies the contract order, offset paging (the
+    // idiom, as in `rangeMonthIds`).
+    final isar = _isar!;
+    final firstDay = rangeMonthKey * 100 + 1;
+    final lastDay = rangeMonthKey * 100 + 31;
+    final ids = <String>[];
+    var pages = 0;
+    while (true) {
+      final page = await isar.isarTxns
+          .where()
+          .statusEqualTo(m.TxnStatus.pending)
+          .filter()
+          .bookedOnBetween(firstDay, lastDay)
+          .sortByBookedOn()
+          .thenByCode()
+          .offset(pages * rangePageSize)
+          .limit(rangePageSize)
+          .findAll();
+      if (page.isEmpty) {
+        break;
+      }
+      ids.addAll([for (final record in page) record.code]);
+      if (page.length < rangePageSize) {
+        break;
+      }
+      pages++;
+    }
+    // An empty month is a legal answer at the smoke test's 500 txns.
+    return ids;
+  }
+
+  @override
+  Future<({List<List<String>> pageIds, List<int> pageUs})> deeppagePages(
+    String accountId,
+    String baseDir,
+  ) async {
+    // Isar's idiom is offset/limit pagination: page N re-reads the
+    // account's index selection from the top — what the op is here to
+    // measure.
+    final isar = _isar!;
+    final pageIds = <List<String>>[];
+    final pageUs = <int>[];
+    for (var page = 0; page < deeppagePageCount; page++) {
+      final sw = Stopwatch()..start();
+      final records = await isar.isarTxns
+          .where()
+          .accountIdEqualToAnyBookedOn(accountId)
+          .sortByBookedOnDesc()
+          .thenByCodeDesc()
+          .offset(page * deeppagePageSize)
+          .limit(deeppagePageSize)
+          .findAll();
+      sw.stop();
+      if (records.isEmpty) {
+        break;
+      }
+      pageIds.add([for (final record in records) record.code]);
+      pageUs.add(sw.elapsedMicroseconds);
+    }
+    return (pageIds: pageIds, pageUs: pageUs);
+  }
+
+  @override
+  Future<({List<int> us, int count})> pendingCountUs(String baseDir) async {
+    final micros = <int>[];
+    var count = 0;
+    for (var i = 0; i < countRuns; i++) {
+      final sw = Stopwatch()..start();
+      count = await _isar!.isarTxns
+          .where()
+          .statusEqualTo(m.TxnStatus.pending)
+          .count();
+      sw.stop();
+      micros.add(sw.elapsedMicroseconds);
+    }
+    return (us: micros, count: count);
+  }
+
+  @override
+  Future<({List<int> us, int count})> yearCountUs(
+    String accountId,
+    String baseDir,
+  ) async {
+    final firstDay = reportYear * 10000 + 101;
+    final lastDay = reportYear * 10000 + 1231;
+    final micros = <int>[];
+    var count = 0;
+    for (var i = 0; i < countRuns; i++) {
+      final sw = Stopwatch()..start();
+      count = await _isar!.isarTxns
+          .where()
+          .accountIdEqualToAnyBookedOn(accountId)
+          .filter()
+          .bookedOnBetween(firstDay, lastDay)
+          .count();
+      sw.stop();
+      micros.add(sw.elapsedMicroseconds);
+    }
+    return (us: micros, count: count);
+  }
+
+  @override
   Future<void> writeOneTxn(String accountId, String id, int seq) {
     final record = _recordOf(
       id: id,
@@ -388,6 +559,11 @@ final class IsarBenchEngine implements BenchEngine {
 
   @override
   Future<(int, int)> restore(String baseDir) async {
+    // A fresh process has nothing open; sequential in-process ops (the
+    // smoke test) must close the live instance first — Isar names are
+    // process-global.
+    await _isar?.close();
+    _isar = null;
     wipe(baseDir);
     Directory(baseDir).createSync(recursive: true);
     final isar = await _open(baseDir);

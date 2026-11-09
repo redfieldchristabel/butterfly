@@ -45,12 +45,18 @@ class Account {
 /// harness adds to the sembast benchmark: the month range and the per-month
 /// report run across every account, which a collection-group query can only
 /// serve from a param-less index.
+///
+/// The fourth index `['amountMinor']` serves the amount workloads the
+/// harness adds: the top-50 debits and the amount-band page run across all
+/// accounts, so they need the param-less amount index (ascending — the most
+/// negative debit first).
 @Collection(
   'accounts/{accountId}/txns',
   indexes: [
     Index(['accountId', '-bookedOn']),
     Index(['status', 'bookedOn']),
     Index(['bookedOn']),
+    Index(['amountMinor']),
   ],
 )
 class Txn {

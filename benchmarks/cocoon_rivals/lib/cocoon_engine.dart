@@ -321,6 +321,163 @@ final class CocoonBenchEngine implements BenchEngine {
   }
 
   @override
+  Future<List<int>> bigspendUs(String baseDir) async {
+    final micros = <int>[];
+    for (var i = 0; i < bigspendRuns; i++) {
+      final sw = Stopwatch()..start();
+      final ids = await bigspendIds(baseDir);
+      sw.stop();
+      if (ids.isEmpty) {
+        throw StateError('bigspend answered with nothing');
+      }
+      micros.add(sw.elapsedMicroseconds);
+    }
+    return micros;
+  }
+
+  @override
+  Future<List<String>> bigspendIds(String baseDir) async {
+    // The `['amountMinor']` index walk across the collection group, most
+    // negative first; the engine appends the id as the final (ascending)
+    // tiebreaker. Ordering alone, no filter: the dataset's 50 smallest
+    // amounts are always debits.
+    final page = await _db!
+        .collectionGroup(txns)
+        .orderBy(Txn$.amountMinor)
+        .limit(50)
+        .get();
+    return [for (final doc in page.docs) doc.id];
+  }
+
+  @override
+  Future<List<String>> amountRangeIds(String baseDir) async {
+    // The amount index serves the range + its own ascending order; pages
+    // continue by Cocoon's keyset cursor (this engine's idiom).
+    CocoonQuery<Txn> pageFor() => _db!
+        .collectionGroup(txns)
+        .where(Txn$.amountMinor.isGreaterThanOrEqualTo(amountBandLo))
+        .where(Txn$.amountMinor.isLessThan(amountBandHi))
+        .orderBy(Txn$.amountMinor)
+        .limit(amountRangePageSize);
+    final ids = <String>[];
+    var cursor = await pageFor().get();
+    while (true) {
+      ids.addAll([for (final doc in cursor.docs) doc.id]);
+      final next = cursor.nextCursor;
+      if (next == null) {
+        break;
+      }
+      cursor = await pageFor().startAfter(next).get();
+    }
+    // An empty band is a legal answer (the smoke test runs at 500 txns,
+    // where it is often empty); the verify dump diffs emptiness loudly.
+    return ids;
+  }
+
+  @override
+  Future<List<String>> pendingMonthIds(String baseDir) async {
+    // Equality (status) + range (bookedOn) + its own ascending order: the
+    // `(status, bookedOn)` index serves the whole shape; keyset cursors
+    // page it.
+    final firstDay = rangeMonthKey * 100 + 1;
+    final lastDay = rangeMonthKey * 100 + 31;
+    CocoonQuery<Txn> pageFor() => _db!
+        .collectionGroup(txns)
+        .where(Txn$.status.isEqualTo(TxnStatus.pending))
+        .where(Txn$.bookedOn.isGreaterThanOrEqualTo(firstDay))
+        .where(Txn$.bookedOn.isLessThanOrEqualTo(lastDay))
+        .orderBy(Txn$.bookedOn)
+        .limit(rangePageSize);
+    final ids = <String>[];
+    var cursor = await pageFor().get();
+    while (true) {
+      ids.addAll([for (final doc in cursor.docs) doc.id]);
+      final next = cursor.nextCursor;
+      if (next == null) {
+        break;
+      }
+      cursor = await pageFor().startAfter(next).get();
+    }
+    // An empty month is a legal answer at the smoke test's 500 txns.
+    return ids;
+  }
+
+  @override
+  Future<({List<List<String>> pageIds, List<int> pageUs})> deeppagePages(
+    String accountId,
+    String baseDir,
+  ) async {
+    // Cursor paging (this engine's idiom): page 1 is the latest-50 query,
+    // every next page starts after the previous page's cursor.
+    final pageIds = <List<String>>[];
+    final pageUs = <int>[];
+    CocoonQuery<Txn> pageFor() => _txnsOf(accountId)
+        .orderBy(Txn$.bookedOn, descending: true)
+        .limit(deeppagePageSize);
+    var sw = Stopwatch()..start();
+    var page = await pageFor().get();
+    sw.stop();
+    while (true) {
+      pageIds.add([for (final doc in page.docs) doc.id]);
+      pageUs.add(sw.elapsedMicroseconds);
+      final next = page.nextCursor;
+      if (next == null || pageIds.length >= deeppagePageCount) {
+        break;
+      }
+      sw = Stopwatch()..start();
+      page = await pageFor().startAfter(next).get();
+      sw.stop();
+    }
+    return (pageIds: pageIds, pageUs: pageUs);
+  }
+
+  @override
+  Future<({List<int> us, int count})> pendingCountUs(String baseDir) async {
+    // Cocoon's index rule requires a sort key to serve an equality-only
+    // shape, so the count declares the `(status, bookedOn)` index's own
+    // order; `count()` runs a `SELECT count(*)` whose SQL ignores the
+    // order (see `planQuery`'s countSql).
+    final micros = <int>[];
+    var count = 0;
+    for (var i = 0; i < countRuns; i++) {
+      final sw = Stopwatch()..start();
+      count = await _db!
+          .collectionGroup(txns)
+          .where(Txn$.status.isEqualTo(TxnStatus.pending))
+          .orderBy(Txn$.bookedOn)
+          .count();
+      sw.stop();
+      micros.add(sw.elapsedMicroseconds);
+    }
+    return (us: micros, count: count);
+  }
+
+  @override
+  Future<({List<int> us, int count})> yearCountUs(
+    String accountId,
+    String baseDir,
+  ) async {
+    // Same rule as [pendingCountUs]: the range count needs a sort key, and
+    // the `(accountId, -bookedOn)` index's own descending order is the one
+    // that serves scope + range + order together.
+    final firstDay = reportYear * 10000 + 101;
+    final lastDay = reportYear * 10000 + 1231;
+    final micros = <int>[];
+    var count = 0;
+    for (var i = 0; i < countRuns; i++) {
+      final sw = Stopwatch()..start();
+      count = await _txnsOf(accountId)
+          .where(Txn$.bookedOn.isGreaterThanOrEqualTo(firstDay))
+          .where(Txn$.bookedOn.isLessThanOrEqualTo(lastDay))
+          .orderBy(Txn$.bookedOn, descending: true)
+          .count();
+      sw.stop();
+      micros.add(sw.elapsedMicroseconds);
+    }
+    return (us: micros, count: count);
+  }
+
+  @override
   Future<void> writeOneTxn(String accountId, String id, int seq) {
     return _txnsOf(accountId).doc(id).set(syncTxnOf(seq));
   }

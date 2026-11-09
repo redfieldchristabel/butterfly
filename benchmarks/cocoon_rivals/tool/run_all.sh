@@ -25,7 +25,7 @@ SIZES=("$@")
 # read ops run against; `verify` (once, untimed output dump) checks the read
 # contracts at scale BEFORE any timing counts; `rww` adds writer txns, so it
 # runs after the pure reads; `restore` rebuilds its own directory.
-OPS="verify open rss latest50 monthly gets write range yearreport statussearch rww restore"
+OPS="verify open rss latest50 monthly gets write range yearreport statussearch bigspend amountrange pendingmonth deeppage count rww restore"
 
 echo "== machine ==" >&2
 dart run bin/bench.dart --engine cocoon --size 1 --op env | tail -1 \

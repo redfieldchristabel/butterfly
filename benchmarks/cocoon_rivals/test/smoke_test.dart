@@ -8,6 +8,7 @@ import 'package:cocoon_rivals/dataset.dart';
 import 'package:cocoon_rivals/drift_engine.dart';
 import 'package:cocoon_rivals/engine.dart';
 import 'package:cocoon_rivals/hive_engine.dart';
+import 'package:cocoon_rivals/harness.dart';
 import 'package:cocoon_rivals/isar_engine.dart';
 import 'package:cocoon_rivals/models.dart' as m;
 import 'package:cocoon_rivals/objectbox_engine.dart';
@@ -83,6 +84,48 @@ Map<String, int> canonicalYearSums(BenchDataset data, int year) {
     sums[key] = (sums[key] ?? 0) + benchTxn.txn.amountMinor;
   }
   return sums;
+}
+
+/// The contract order of the 50 largest debits: amountMinor ASC, ties by
+/// the string id ASC, limit [limit].
+List<String> canonicalBigspend(BenchDataset data, int limit) {
+  final txns = [...data.txns]..sort((a, b) {
+    final byAmount = a.txn.amountMinor.compareTo(b.txn.amountMinor);
+    return byAmount != 0 ? byAmount : a.id.compareTo(b.id);
+  });
+  return [for (final benchTxn in txns.take(limit)) benchTxn.id];
+}
+
+/// The txns with amountMinor in [lo, hi), amountMinor ASC, ties by id ASC.
+List<String> canonicalAmountRange(BenchDataset data, int lo, int hi) {
+  final txns = data.txns
+      .where((t) => t.txn.amountMinor >= lo && t.txn.amountMinor < hi)
+      .toList()
+    ..sort((a, b) {
+      final byAmount = a.txn.amountMinor.compareTo(b.txn.amountMinor);
+      return byAmount != 0 ? byAmount : a.id.compareTo(b.id);
+    });
+  return [for (final benchTxn in txns) benchTxn.id];
+}
+
+/// The pending txns of one month, all accounts, bookedOn ASC, ties by id
+/// ASC.
+List<String> canonicalPendingMonth(BenchDataset data, int month) {
+  final firstDay = month * 100 + 1;
+  final lastDay = month * 100 + 31;
+  final txns = data.txns
+      .where(
+        (t) =>
+            t.txn.status == m.TxnStatus.pending &&
+            t.txn.bookedOn >= firstDay &&
+            t.txn.bookedOn <= lastDay,
+      )
+      .toList()
+    ..sort((a, b) {
+      final byDay = a.txn.bookedOn.compareTo(b.txn.bookedOn);
+      return byDay != 0 ? byDay : a.id.compareTo(b.id);
+    });
+  return [for (final benchTxn in txns) benchTxn.id];
 }
 
 /// Imports [data] into [engine] under [tempDir] and opens it.
@@ -166,6 +209,68 @@ void main() {
             reason: '$reason: status ids',
           );
 
+          // The 50 largest debits, against the dataset's canonical order
+          // (amountMinor ASC, id ASC).
+          expect(
+            await engine.bigspendIds(baseDir),
+            canonicalBigspend(data, 50),
+            reason: '$reason: bigspend ids',
+          );
+
+          // The amount band, against the dataset's canonical order.
+          expect(
+            await engine.amountRangeIds(baseDir),
+            canonicalAmountRange(data, amountBandLo, amountBandHi),
+            reason: '$reason: amount-range ids',
+          );
+
+          // The pending month, against the dataset's canonical order.
+          expect(
+            await engine.pendingMonthIds(baseDir),
+            canonicalPendingMonth(data, rangeMonthKey),
+            reason: '$reason: pending-month ids',
+          );
+
+          // Deep paging: every page of the account's history, newest first,
+          // each page at most [deeppagePageSize] documents.
+          final (:pageIds, :pageUs) = await engine.deeppagePages(
+            'a05',
+            baseDir,
+          );
+          expect(
+            [for (final page in pageIds) ...page],
+            canonicalLatest(data, 'a05', 1 << 30),
+            reason: '$reason: deep-paged history of a05',
+          );
+          expect(pageIds, isNotEmpty, reason: reason);
+          expect(pageUs, hasLength(pageIds.length), reason: reason);
+          expect(
+            pageIds.every((page) => page.length <= deeppagePageSize),
+            isTrue,
+            reason: '$reason: deep-page size',
+          );
+
+          // The two counts, against the dataset.
+          final pending = await engine.pendingCountUs(baseDir);
+          expect(
+            pending.count,
+            data.txns
+                .where((t) => t.txn.status == m.TxnStatus.pending)
+                .length,
+            reason: '$reason: pending count',
+          );
+          expect(pending.us, hasLength(countRuns), reason: reason);
+          final yearCount = await engine.yearCountUs('a05', baseDir);
+          expect(
+            yearCount.count,
+            data
+                .txnsOf('a05')
+                .where((t) => t.txn.bookedOn ~/ 10000 == reportYear)
+                .length,
+            reason: '$reason: year count of a05',
+          );
+          expect(yearCount.us, hasLength(countRuns), reason: reason);
+
           // The dataset-free paths the memory measurements rely on: a
           // deterministic sample, every id found, every write-back landed,
           // and the sync writer's doc readable.
@@ -221,6 +326,44 @@ void main() {
             await engine.statusSearchIds(baseDir),
             await cocoon.statusSearchIds(cocoonDir),
             reason: '${engine.name} vs ${cocoon.name}: status ids',
+          );
+          expect(
+            await engine.bigspendIds(baseDir),
+            await cocoon.bigspendIds(cocoonDir),
+            reason: '${engine.name} vs ${cocoon.name}: bigspend ids',
+          );
+          expect(
+            await engine.amountRangeIds(baseDir),
+            await cocoon.amountRangeIds(cocoonDir),
+            reason: '${engine.name} vs ${cocoon.name}: amount-range ids',
+          );
+          expect(
+            await engine.pendingMonthIds(baseDir),
+            await cocoon.pendingMonthIds(cocoonDir),
+            reason: '${engine.name} vs ${cocoon.name}: pending-month ids',
+          );
+          expect(
+            [
+              for (final page
+                  in (await engine.deeppagePages('a05', baseDir)).pageIds)
+                ...page,
+            ],
+            [
+              for (final page
+                  in (await cocoon.deeppagePages('a05', cocoonDir)).pageIds)
+                ...page,
+            ],
+            reason: '${engine.name} vs ${cocoon.name}: deep page a05',
+          );
+          expect(
+            (await engine.pendingCountUs(baseDir)).count,
+            (await cocoon.pendingCountUs(cocoonDir)).count,
+            reason: '${engine.name} vs ${cocoon.name}: pending count',
+          );
+          expect(
+            (await engine.yearCountUs('a05', baseDir)).count,
+            (await cocoon.yearCountUs('a05', cocoonDir)).count,
+            reason: '${engine.name} vs ${cocoon.name}: year count',
           );
         }
       } finally {
@@ -327,5 +470,88 @@ void main() {
       }
     },
     timeout: const Timeout(Duration(minutes: 10)),
+  );
+
+  test(
+    'every op of the real CLI path reports the cost metrics '
+    '(peakRssBytes, cpuMs, diskWriteBytes)',
+    () async {
+      // 5000 txns so the 1,000-doc samples of `gets`/`rss` fit.
+      const txnCount = 5000;
+      final data = BenchDataset.build(txnCount: txnCount);
+      final backupFile = '${tempDir.path}/backup_$txnCount.ndjson';
+      final sink = File(backupFile).openWrite();
+      for (final benchTxn in data.txns) {
+        sink.writeln(jsonEncode(backupLineOf(benchTxn)));
+      }
+      await sink.close();
+
+      final list = engines(backupFile);
+      try {
+        for (final engine in list) {
+          final baseDir = baseDirFor(engine, tempDir);
+          final metrics = <String, Object?>{};
+          await runOp(
+            engine: engine,
+            op: 'import',
+            size: txnCount,
+            baseDir: baseDir,
+            metrics: metrics,
+            rng: Random(1337),
+            accountIds: benchAccountIds(),
+          );
+          var opRan = 0;
+          for (final op in benchOps) {
+            metrics.clear();
+            await runOp(
+              engine: engine,
+              op: op,
+              size: txnCount,
+              baseDir: baseDir,
+              metrics: metrics,
+              rng: Random(1337),
+              accountIds: benchAccountIds(),
+            );
+            final reason = '${engine.name}: op $op';
+            expect(
+              metrics,
+              containsPair(Metrics.peakRssBytes, greaterThan(0)),
+              reason: reason,
+            );
+            expect(
+              metrics,
+              containsPair(Metrics.cpuMs, greaterThanOrEqualTo(0)),
+              reason: reason,
+            );
+            // Kernels without io accounting (WSL2) have no per-process
+            // disk numbers; the key is omitted there rather than faked
+            // with a zero.
+            if (OpCost.ioAccountingAvailable) {
+              expect(
+                metrics,
+                containsPair(
+                  Metrics.diskWriteBytes,
+                  greaterThanOrEqualTo(0),
+                ),
+                reason: reason,
+              );
+            } else {
+              expect(
+                metrics.containsKey(Metrics.diskWriteBytes),
+                isFalse,
+                reason: '$reason (no io accounting: key omitted)',
+              );
+            }
+            opRan++;
+          }
+          expect(opRan, benchOps.length, reason: engine.name);
+        }
+      } finally {
+        for (final engine in list) {
+          await engine.close();
+        }
+      }
+    },
+    timeout: const Timeout(Duration(minutes: 20)),
   );
 }

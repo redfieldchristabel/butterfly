@@ -251,3 +251,10 @@ Still open: the raw SQLite ceiling is 19-24 s at 1M, so the document layer
 costs roughly 40 s over plain SQLite at that size. The profile points at the
 remaining per-document Dart work and the index-table rows; that is the next
 place to look.
+
+**Correction (step 12):** that 19-24 s floor came from the knob probe's
+synthetic rows, whose booking days all fell inside one 28-day window, so the
+indexes filled nearly in order. `CEILING.md` re-measures the floor with the
+real value shape and Cocoon's real DDL: 70.9 s at 1000 rows per commit. Cocoon
+is already at the ceiling for that commit pattern; the remaining lever is the
+commit pattern itself (indexes built after a bulk load: 9.5 s).

@@ -103,7 +103,10 @@ final class ObjectBoxBenchEngine implements BenchEngine {
   @override
   Future<int> coldOpen(String baseDir, {required String accountId}) async {
     final sw = Stopwatch()..start();
-    final store = await _open(baseDir);
+    // A fresh process opens here; an already-open instance (the smoke
+    // test's sequential ops) reuses its store — ObjectBox allows one Store
+    // per directory per isolate.
+    final store = _store ?? await _open(baseDir);
     final box = store.box<ObTxn>();
     final first = box
         .query(
@@ -380,6 +383,191 @@ final class ObjectBoxBenchEngine implements BenchEngine {
   }
 
   @override
+  Future<List<int>> bigspendUs(String baseDir) async {
+    final micros = <int>[];
+    for (var i = 0; i < bigspendRuns; i++) {
+      final sw = Stopwatch()..start();
+      final ids = await bigspendIds(baseDir);
+      sw.stop();
+      if (ids.isEmpty) {
+        throw StateError('bigspend answered with nothing');
+      }
+      micros.add(sw.elapsedMicroseconds);
+    }
+    return micros;
+  }
+
+  @override
+  Future<List<String>> bigspendIds(String baseDir) async {
+    // No amount filter (the dataset's 50 smallest amounts are always
+    // debits); the amount index backs the first order, the id order
+    // breaks the ties.
+    final query = _box
+        .query()
+        .order(ObTxn_.amountMinor)
+        .order(ObTxn_.id)
+        .build();
+    try {
+      query.limit = 50;
+      final records = query.find();
+      return [for (final record in records) record.code];
+    } finally {
+      query.close();
+    }
+  }
+
+  @override
+  Future<List<String>> amountRangeIds(String baseDir) async {
+    // The amount index serves the band and the first order; ObjectBox's
+    // idiom is offset/limit pagination (as in `rangeMonthIds`).
+    final query = _box
+        .query(ObTxn_.amountMinor.between(amountBandLo, amountBandHi - 1))
+        .order(ObTxn_.amountMinor)
+        .order(ObTxn_.id)
+        .build();
+    try {
+      final ids = <String>[];
+      var pages = 0;
+      query.limit = amountRangePageSize;
+      while (true) {
+        query.offset = pages * amountRangePageSize;
+        final page = query.find();
+        if (page.isEmpty) {
+          break;
+        }
+        ids.addAll([for (final record in page) record.code]);
+        if (page.length < amountRangePageSize) {
+          break;
+        }
+        pages++;
+      }
+      // An empty band is a legal answer (the smoke test runs at 500 txns,
+      // where it is often empty); the verify dump diffs emptiness loudly.
+      return ids;
+    } finally {
+      query.close();
+    }
+  }
+
+  @override
+  Future<List<String>> pendingMonthIds(String baseDir) async {
+    // The compound filter through the status + bookedOn indexes, offset
+    // paging (the idiom, as in `rangeMonthIds`).
+    final firstDay = rangeMonthKey * 100 + 1;
+    final lastDay = rangeMonthKey * 100 + 31;
+    final query = _box
+        .query(
+          ObTxn_.status.equals(m.TxnStatus.pending.name) &
+              ObTxn_.bookedOn.between(firstDay, lastDay),
+        )
+        .order(ObTxn_.bookedOn)
+        .order(ObTxn_.id)
+        .build();
+    try {
+      final ids = <String>[];
+      var pages = 0;
+      query.limit = rangePageSize;
+      while (true) {
+        query.offset = pages * rangePageSize;
+        final page = query.find();
+        if (page.isEmpty) {
+          break;
+        }
+        ids.addAll([for (final record in page) record.code]);
+        if (page.length < rangePageSize) {
+          break;
+        }
+        pages++;
+      }
+      // An empty month is a legal answer at the smoke test's 500 txns.
+      return ids;
+    } finally {
+      query.close();
+    }
+  }
+
+  @override
+  Future<({List<List<String>> pageIds, List<int> pageUs})> deeppagePages(
+    String accountId,
+    String baseDir,
+  ) async {
+    // ObjectBox's idiom is offset/limit pagination: page N re-reads the
+    // account's query from the top — what the op is here to measure.
+    final query = _box
+        .query(ObTxn_.accountId.equals(accountId))
+        .order(ObTxn_.bookedOn, flags: Order.descending)
+        .order(ObTxn_.id, flags: Order.descending)
+        .build();
+    try {
+      final pageIds = <List<String>>[];
+      final pageUs = <int>[];
+      query.limit = deeppagePageSize;
+      for (var page = 0; page < deeppagePageCount; page++) {
+        query.offset = page * deeppagePageSize;
+        final sw = Stopwatch()..start();
+        final records = query.find();
+        sw.stop();
+        if (records.isEmpty) {
+          break;
+        }
+        pageIds.add([for (final record in records) record.code]);
+        pageUs.add(sw.elapsedMicroseconds);
+      }
+      return (pageIds: pageIds, pageUs: pageUs);
+    } finally {
+      query.close();
+    }
+  }
+
+  @override
+  Future<({List<int> us, int count})> pendingCountUs(String baseDir) async {
+    final micros = <int>[];
+    var count = 0;
+    for (var i = 0; i < countRuns; i++) {
+      final query = _box
+          .query(ObTxn_.status.equals(m.TxnStatus.pending.name))
+          .build();
+      try {
+        final sw = Stopwatch()..start();
+        count = query.count();
+        sw.stop();
+        micros.add(sw.elapsedMicroseconds);
+      } finally {
+        query.close();
+      }
+    }
+    return (us: micros, count: count);
+  }
+
+  @override
+  Future<({List<int> us, int count})> yearCountUs(
+    String accountId,
+    String baseDir,
+  ) async {
+    final firstDay = reportYear * 10000 + 101;
+    final lastDay = reportYear * 10000 + 1231;
+    final micros = <int>[];
+    var count = 0;
+    for (var i = 0; i < countRuns; i++) {
+      final query = _box
+          .query(
+            ObTxn_.accountId.equals(accountId) &
+                ObTxn_.bookedOn.between(firstDay, lastDay),
+          )
+          .build();
+      try {
+        final sw = Stopwatch()..start();
+        count = query.count();
+        sw.stop();
+        micros.add(sw.elapsedMicroseconds);
+      } finally {
+        query.close();
+      }
+    }
+    return (us: micros, count: count);
+  }
+
+  @override
   Future<void> writeOneTxn(String accountId, String id, int seq) {
     _box.put(_recordOf(id: id, accountId: accountId, txn: syncTxnOf(seq)));
     return Future.value();
@@ -387,6 +575,11 @@ final class ObjectBoxBenchEngine implements BenchEngine {
 
   @override
   Future<(int, int)> restore(String baseDir) async {
+    // A fresh process has nothing open; sequential in-process ops (the
+    // smoke test) close the live store first so the restore directory gets
+    // its own store.
+    _store?.close();
+    _store = null;
     wipe(baseDir);
     Directory(baseDir).createSync(recursive: true);
     final store = await _open(baseDir);

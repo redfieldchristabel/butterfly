@@ -74,6 +74,9 @@ class AppDb extends _$AppDb {
       await customStatement(
         'CREATE INDEX IF NOT EXISTS idx_txn_booked ON txn_rows (booked_on)',
       );
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS idx_txn_amount ON txn_rows (amount_minor)',
+      );
     },
   );
 }
