@@ -74,19 +74,19 @@ final class CocoonBenchEngine implements BenchEngine {
           .set(data.accounts[i]);
     }
     final sw = Stopwatch()..start();
+    // The bulk path: `db.batch()` queues every set synchronously and commits
+    // them all inside one write transaction per 1000 rows — the same shape
+    // as drift's `db.batch` in this benchmark.
     for (var start = 0; start < data.txns.length; start += importBatchSize) {
       final batch = data.txns.sublist(
         start,
         math.min(start + importBatchSize, data.txns.length),
       );
-      await db.runTransaction((tx) async {
-        for (final benchTxn in batch) {
-          await tx.set(
-            _txnsOf(benchTxn.accountId).doc(benchTxn.id),
-            benchTxn.txn,
-          );
-        }
-      });
+      final write = db.batch();
+      for (final benchTxn in batch) {
+        write.set(_txnsOf(benchTxn.accountId).doc(benchTxn.id), benchTxn.txn);
+      }
+      await write.commit();
     }
     sw.stop();
     return sw.elapsedMilliseconds;

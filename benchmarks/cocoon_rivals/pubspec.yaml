@@ -16,6 +16,9 @@ dependencies:
   objectbox: 6.0.0-preview.6
   sembast: ^3.9.0
   sqlite3: ^3.5.2
+  # The import profiler (tool/profile_import.dart) instruments the engine's
+  # executor and measures a SQLite ceiling directly.
+  sqlite_async: ^0.14.8
 
 dev_dependencies:
   build_runner: ^2.4.13
