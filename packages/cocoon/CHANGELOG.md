@@ -1,5 +1,26 @@
 ## Unreleased
 
+- Bulk writes: `db.batch()` queues `set`/`update`/`delete` synchronously and
+  `await batch.commit()` runs them in call order inside one write
+  transaction — consecutive same-SQL operations batch into one round trip
+  per ~2,000 documents, every change-log row lands in one batch, the cache
+  is updated once and watches receive exactly one commit event. Semantics
+  per operation are the standalone ones (`update` fails the whole batch
+  when the document is missing; any failure rolls everything back), and a
+  failed batch leaves no cache or watch effects. This is the path for
+  import-shaped work; it mirrors drift's `db.batch`.
+- Writes are much faster at scale. Document writes inside
+  `runTransaction` now buffer and flush as batched statements (before the
+  commit, before any read or delete in the same transaction, every 2,000
+  rows), each collection's write SQL is built once instead of per document,
+  and a write caches the document's bytes so the first read decodes them
+  once. Measured on the rivals benchmark: the 100k import dropped from
+  7.9 s to ~2.9 s (was 2.9x drift's time, now on par), and the 1M import
+  from ~119 s to ~37 s. New `CocoonOptions` knobs back this:
+  `pageCacheMiB` (a 64 MiB SQLite page cache by default, was 2 MB) and
+  `tempStoreInMemory` (temp B-trees in RAM), plus sqlite_async's dev-mode
+  query timeline tracing is now off (it cost ~5 s of a 100k import and
+  nothing in Cocoon reads it).
 - A rivals benchmark, `benchmarks/cocoon_rivals`, now measures Cocoon
   against drift, Isar, ObjectBox, Hive CE and sembast — plus Cocoon itself
   at `Durability.normal` — on the same finance-shaped data at up to

@@ -116,6 +116,46 @@ String createIndexSql(String table, IndexDdl index) {
       '${index.name} ON $table ($parts)';
 }
 
+/// The one-document upsert statement for a table: every write binds
+/// `path, id, params..., data, f_columns...` in exactly this order. Built
+/// once per collection (see [RegistryEntry.upsertSql]), not per document.
+String writeUpsertSql(
+  String table,
+  List<String> paramSqlNames,
+  List<ColumnDdl> columns,
+) {
+  final columnNames = [
+    'path',
+    'id',
+    ...paramSqlNames,
+    'data',
+    for (final column in columns) column.name,
+  ];
+  final placeholders = List.filled(columnNames.length, '?').join(', ');
+  final updates = [
+    for (final name in columnNames.skip(1)) '$name = excluded.$name',
+  ].join(', ');
+  return 'INSERT INTO $table (${columnNames.join(', ')}) '
+      'VALUES ($placeholders) '
+      'ON CONFLICT(path) DO UPDATE SET $updates';
+}
+
+/// The one-document replace-if-exists statement behind batch `update`s: the
+/// same bind order as [writeUpsertSql], keyed by `path`.
+String writeUpdateSql(
+  String table,
+  List<String> paramSqlNames,
+  List<ColumnDdl> columns,
+) {
+  final updates = [
+    'id = ?',
+    for (final name in paramSqlNames) '$name = ?',
+    'data = ?',
+    for (final column in columns) '${column.name} = ?',
+  ].join(', ');
+  return 'UPDATE $table SET $updates WHERE path = ?';
+}
+
 /// The `ALTER TABLE ADD COLUMN` for a backfilled `f_` column.
 ///
 /// SQLite cannot add a `NOT NULL` column to a table with rows, so backfilled
@@ -184,7 +224,8 @@ final class IndexPlan {
 }
 
 /// A validated adapter together with everything derived from it: table name,
-/// SQL column names, DDL declarations and the shape hash.
+/// SQL column names, DDL declarations, the shape hash and the write
+/// statements (built once, not per document).
 final class RegistryEntry {
   RegistryEntry._({
     required this.adapter,
@@ -197,6 +238,8 @@ final class RegistryEntry {
     required this.indexPlans,
     required this.scopeIndex,
     required this.shapeHash,
+    required this.upsertSql,
+    required this.updateSql,
   });
 
   /// The registered adapter.
@@ -229,6 +272,14 @@ final class RegistryEntry {
 
   /// Fingerprint of the table shape, stored in `_cocoon_meta`.
   final String shapeHash;
+
+  /// The one-document upsert statement, built once per table: every write
+  /// binds `path, id, params..., data, f_columns...` in exactly this order.
+  final String upsertSql;
+
+  /// The one-document replace-if-exists statement behind batch `update`s:
+  /// the same bind order as [upsertSql], keyed by `path`.
+  final String updateSql;
 
   /// The SQL name of a model field or path param of this collection.
   String sqlNameOf(String name) {
@@ -493,6 +544,8 @@ final class SchemaRegistry {
       indexPlans: List.unmodifiable(indexPlans),
       scopeIndex: scopeIndex,
       shapeHash: shapeHash,
+      upsertSql: writeUpsertSql(table, paramSqlNames, columnDdls),
+      updateSql: writeUpdateSql(table, paramSqlNames, columnDdls),
     );
   }
 

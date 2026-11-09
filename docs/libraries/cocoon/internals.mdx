@@ -184,11 +184,16 @@ engines that have real indexes, not just sembast:
   (keyset cursors, not offsets) and 98,982 ms for sembast; the
   `(status, bookedOn)` search is 1.42 ms flat vs 608 ms (Hive) at 1M.
 - **WAL readers keep their promise under writes.** With one committed txn
-  every 10 ms, latest-50 p95 is 3.53 ms; drift serializes every statement
+  every 10 ms, latest-50 p95 is 3.0 ms; drift serializes every statement
   through one background isolate and pays 4.96 ms.
-- **The write amplification is still the tax.** Bulk import 123.6 s vs
-  Isar's 24.9 s and drift's 95.5 s at 1M; the NDJSON restore 33.0 s vs
-  Hive's 3.0 s; files 375.4 MB vs drift's 224.2 MB; and SQL aggregation is
+- **Bulk writes no longer pay a round trip per document.** Writes are
+  buffered and sent as one batched statement, the writer connection gets
+  a bigger page cache and checkpoint interval: 1M txns import in 64.7 s
+  (was 123.6 s; drift 95.5 s) and the 300k NDJSON restore takes 11.2 s
+  (was 33.0 s; drift 13.9 s).
+- **The write amplification is still the tax.** Isar imports 1M in
+  24.9 s and Hive in 8.0 s; Hive restores 300k in 3.0 s; files are
+  388 MB vs drift's 224 MB; and SQL aggregation is
   3.6x faster on the year report — the one workload a document API
   structurally cannot match.
 

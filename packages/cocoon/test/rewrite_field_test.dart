@@ -288,19 +288,14 @@ void main() {
   group('map fields', () {
     /// Builds a document with a map at field [number]: each (key, value)
     /// pair is written as one entry message, in the order given.
-    Uint8List mapDoc(
-      int number,
-      List<(String, int)> entries,
-    ) => doc(
-      (w) {
-        for (final (key, value) in entries) {
-          w.writeMessage(number, (entry) {
-            entry.writeString(1, key);
-            entry.writeSint64(2, value);
-          });
-        }
-      },
-    );
+    Uint8List mapDoc(int number, List<(String, int)> entries) => doc((w) {
+      for (final (key, value) in entries) {
+        w.writeMessage(number, (entry) {
+          entry.writeString(1, key);
+          entry.writeSint64(2, value);
+        });
+      }
+    });
 
     /// Reads the entries of the map at field [number] out of [bytes];
     /// [intKeys] picks how entry keys are decoded.
@@ -397,16 +392,14 @@ void main() {
         key: MigrationWireType.sint64,
         value: MigrationWireType.sint64,
       );
-      Uint8List intMapDoc(List<(int, int)> entries) => doc(
-        (w) {
-          for (final (key, value) in entries) {
-            w.writeMessage(2, (entry) {
-              entry.writeSint64(1, key);
-              entry.writeSint64(2, value);
-            });
-          }
-        },
-      );
+      Uint8List intMapDoc(List<(int, int)> entries) => doc((w) {
+        for (final (key, value) in entries) {
+          w.writeMessage(2, (entry) {
+            entry.writeSint64(1, key);
+            entry.writeSint64(2, value);
+          });
+        }
+      });
       final out = rewriteField(
         intMapDoc([(5, 1), (-7, 2), (0, 3)]),
         from: 2,

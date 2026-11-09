@@ -74,7 +74,35 @@ on the docs site under **Cocoon**:
 - **Transactions** wrap sqlite_async's write transaction; reads see the
   transaction's own writes (never the cache); cache updates are staged and
   applied only after the commit succeeds. Standalone writes each open their
-  own transaction.
+  own transaction. Document writes buffer inside the transaction and flush
+  as batched statements before the commit (and before any read or delete in
+  the same transaction, and every 2,000 queued rows), so a large
+  transaction costs two isolate round trips per ~1,000 documents instead of
+  two per document.
+- **Bulk writes** go through `db.batch()` (`WriteBatch`): queue
+  `set`/`update`/`delete` synchronously, commit as one write transaction
+  with the same batched flush, one cache stage and one commit event.
+  Per-operation validation and semantics match the standalone calls;
+  `update` (replace-if-exists) is checked against the transaction's own
+  state so a `set` earlier in the batch satisfies it.
+- **The write hot path builds no SQL strings per document**: each
+  collection's upsert and update statements are built once at registry
+  time, and a write caches the document's encoded bytes (`EncodedDoc`) —
+  the first cache read decodes them once, which is exactly what the stored
+  bytes decode to (for example `DateTime` fields come back normalized to
+  UTC) without paying a decode per write.
+- **Connection setup is the engine's**: `Cocoon.open` builds every
+  connection through `CocoonSqliteOpenFactory` (a `NativeSqliteOpenFactory`),
+  applying `PRAGMA cache_size` (default 64 MiB, `pageCacheMiB`), `PRAGMA
+  temp_store = MEMORY` (`tempStoreInMemory`), `PRAGMA wal_autocheckpoint`
+  (default 8000 pages, `walAutoCheckpointPages` — SQLite's 1000-page default
+  checkpoints after nearly every bulk-import commit and dominated the 1M
+  import) on writer and readers alike, and opening with sqlite_async's
+  `profileQueries` off — its per-statement timeline tracing cost ~5 s of a
+  100k import in dev builds and nothing in Cocoon reads those events.
+  Measured in `benchmarks/cocoon_rivals/IMPORT.md`; `WITHOUT ROWID` was
+  considered and rejected there (the long `path` key would bloat every
+  secondary index), as was `wal_autocheckpoint = 0` (unbounded WAL).
 - **Realtime:** one commit event (the distinct (table, path, op) set) is
   delivered to the watch hub after the cache is updated — never for a
   rolled-back transaction. Doc watches re-read only their exact path; query
@@ -140,3 +168,5 @@ executor, so it is deferred.
 | `Map<String, V>` / `Map<int, V>` fields (canonical protobuf map encoding, sorted keys; generator, migrations, inspector) | done |
 | Benchmark vs sembast (`packages/cocoon_bench`, finance-shaped data, `RESULTS.md`; memory measured against a harness-only baseline, write-durability and cache-size knobs measured) | done |
 | Rivals benchmark (`benchmarks/cocoon_rivals`, 7 engines incl. cocoon at `Durability.normal`, drift, Isar, ObjectBox, Hive CE, sembast; 10k-1M txns, 13 ops, `RESULTS.md` with per-workload verdicts) | done |
+| Bulk-write path: `WriteBatch` (`db.batch()`), buffered transaction writes, per-collection prebuilt write SQL, byte-caching hot entries | done |
+| Import-performance knobs: `pageCacheMiB` (64 MiB page cache), `tempStoreInMemory`, sqlite_async `profileQueries` off; measurements in `benchmarks/cocoon_rivals/IMPORT.md` | done |

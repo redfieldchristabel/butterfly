@@ -412,6 +412,38 @@ Reads inside the transaction see its own writes; an exception rolls back
 everything. `set`/`add`/`delete` outside a transaction each run in their own
 transaction.
 
+## Bulk writes: WriteBatch
+
+For import-shaped work — hundreds to thousands of documents in one go —
+queue the writes synchronously and commit them as one transaction. This is
+Cocoon's bulk-write path, the counterpart of drift's `db.batch`:
+
+```dart
+final batch = db.batch();
+batch.set(a1.collection(txns).doc('t1'), txn); // upsert
+batch.update(a1.collection(txns).doc('t2'), edited); // must already exist
+batch.delete(staleRef); // removes the document and its subtree
+await batch.commit();
+```
+
+`set`, `update` and `delete` only validate and queue — they are synchronous
+and touch nothing on disk. `commit()` runs every queued operation, in call
+order, inside ONE write transaction: consecutive same-SQL operations group
+into one batched statement (one round trip per ~2,000 documents instead of
+one per document), every touched document's change-log row lands in one
+batch, the hot-document cache is updated once after the commit, and the
+watches receive exactly one commit event. Semantics per operation are the
+standalone ones: `update` fails the whole batch when the document is
+missing — a `set` earlier in the same batch satisfies a later `update` of
+the same document, and a `delete` in between fails it. Any failure rolls
+everything back: no rows, no cache updates, no watch event. A batch is
+single-use (`commit` twice throws); committing an empty batch is a no-op.
+
+Document writes inside `runTransaction` buffer the same way: they flush as
+batched statements before the commit (and before any read or delete in the
+same transaction, and every 2,000 queued rows), so large transactions cost
+batched round trips too, with no change in semantics.
+
 ## Realtime: watches and the change log
 
 Every committed write appends one row per touched document to an internal
@@ -482,6 +514,9 @@ final db = await Cocoon.open(
     durability: Durability.full, // PRAGMA synchronous; `normal` for speed
     cacheSize: 2000, // bounded LRU of decoded hot documents; 0 disables
     keepChanges: true, // write the change log the watches and sync read
+    pageCacheMiB: 64, // PRAGMA cache_size on the writer; readers keep the default; <= 0 = default
+    tempStoreInMemory: true, // PRAGMA temp_store = MEMORY
+    walAutoCheckpointPages: 8000, // PRAGMA wal_autocheckpoint; <= 0 = default
   ),
 );
 ```
@@ -547,18 +582,23 @@ What holds at 1,000,000 transactions:
   bare-harness floor at every size; at 1M sembast is +2,242 MB over the
   same floor, Hive +2,214 MB, Isar +262 MB, ObjectBox +539 MB.
 - Under concurrent writes (one committed txn every 10 ms) Cocoon's
-  latest-50 p95 is 3.53 ms; drift, which serializes every statement
+  latest-50 p95 is 3.0 ms; drift, which serializes every statement
   through one background isolate, pays 4.96 ms.
-- Where it loses, and by how much: bulk import 123.6 s vs drift 95.5 s
-  (1.3x), sembast 44.8 s, Isar 24.9 s (5.0x); files 375.4 MB vs drift's
-  224.2 MB (1.7x); the year report is 3.6x behind drift's SQL GROUP BY (a
+- Bulk writes (since the `db.batch()` / buffered-transaction write path):
+  importing 1M txns takes 64.7 s vs drift's 95.5 s (1.5x faster; it was
+  123.6 s), single writes at `Durability.full` are 1,787 µs p50 vs drift's
+  2,918 µs, and restoring 300k txns from NDJSON takes 11.2 s vs drift's
+  13.9 s. See `benchmarks/cocoon_rivals/IMPORT.md` for where the time
+  went and what each change bought.
+- Where it loses, and by how much: bulk import is still 1.4x behind
+  sembast (44.8 s), 2.6x behind Isar (24.9 s) and 8x behind Hive (8.0 s);
+  files 388 MB vs drift's 224 MB (1.7x, measured with up to ~32 MiB of
+  un-checkpointed WAL); the year report is 3.6x behind drift's SQL GROUP BY (a
   document API has no aggregate pushdown) at 1,377 ms vs 383 ms; gets by
   id are 6x behind ObjectBox and 20x behind Hive's in-RAM lookups;
-  restoring 300k txns from NDJSON takes 33.0 s vs Hive's 3.0 s (10.9x) and
-  drift's 13.9 s; single writes at `Durability.full` (2,978 µs p50) equal
-  drift's fsynced default (2,918 µs) and trail Hive's fsync-less appends
-  (112 µs) — `Durability.normal` (402 µs) is 7.3x faster than drift's
-  default while staying crash-safe.
+  the NDJSON restore is 3.7x behind Hive's 3.0 s; single writes trail
+  Hive's fsync-less appends (112 µs) — `Durability.normal` (377 µs) is
+  7.7x faster than drift's default while staying crash-safe.
 
 ## Tuning
 
@@ -577,6 +617,26 @@ The knobs of `CocoonOptions`, with their measured trade-offs:
   and raising `cacheSize` beyond the working set (2000 → 20000) measured no
   speed gain and no RSS gain. Raise it only to keep a larger hot set cached;
   lower it (or `0`) to shrink the ceiling.
+- `pageCacheMiB` (default 64) — the SQLite page-cache budget on every
+  connection (`PRAGMA cache_size = -<MiB KiB>`). SQLite's own 2 MB default
+  cannot hold the hot upper levels of a six-B-tree table once the file
+  outgrows it, and bulk imports pay for the re-reads: the raw-SQLite probe
+  put the 1M per-1000-row commit cost at 63.2 s with the default and
+  43.5 s with 64 MB. `<= 0` keeps SQLite's default.
+- `tempStoreInMemory` (default on) — temp B-trees (sorts, spilling index
+  maintenance) stay in RAM (`PRAGMA temp_store = MEMORY`): 43.5 → 35.6 s on
+  top of the 64 MB page cache at 1M. Together these two knobs are what keep
+  a 1M import near SQLite's own speed; measured in
+  `benchmarks/cocoon_rivals/IMPORT.md` (which also records the rejected
+  `wal_autocheckpoint = 0` — fast, but the WAL grows to 4.2 GB).
+- `walAutoCheckpointPages` (default 8000 = 32 MiB) — how much WAL
+  accumulates before SQLite checkpoints it into the database file
+  (`PRAGMA wal_autocheckpoint`). SQLite's own 1000 pages (~4 MiB)
+  checkpoints after nearly every commit of a bulk import, and the
+  checkpoint cost grows with the database: at 1M txns the raw probe halved
+  the import (45.6 s → ~19-24 s) by raising the interval, with the WAL
+  bounded at ~36 MB. Disabling checkpoints outright was measured and
+  rejected (unbounded 4.2 GB WAL). `<= 0` keeps SQLite's default.
 
 ## Inspecting a running app (DevTools)
 

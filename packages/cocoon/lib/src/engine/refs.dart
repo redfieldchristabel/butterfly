@@ -2,10 +2,9 @@ import 'package:meta/meta.dart';
 
 import '../path.dart';
 import 'adapter.dart';
-import 'cache.dart';
 import 'cocoon.dart';
-import 'executor.dart';
 import 'query.dart';
+import 'write_buffer.dart';
 
 /// A document as read from the database: its [ref], its [id] and its decoded
 /// [data].
@@ -189,7 +188,9 @@ final class CollectionGroupRef<T extends Object> {
 ///
 /// Cache updates are staged and applied only after the transaction commits,
 /// so a rollback leaves both the database and the hot-document cache
-/// untouched.
+/// untouched. Document writes buffer and flush as batched statements before
+/// the commit (and before any read or delete in the same transaction), so
+/// large transactions cost batched round trips instead of one per document.
 ///
 /// ```dart
 /// await db.runTransaction((tx) async {
@@ -199,25 +200,22 @@ final class CollectionGroupRef<T extends Object> {
 /// ```
 final class CocoonTransaction {
   @internal
-  const CocoonTransaction(this._db, this._tx, this._stage);
+  const CocoonTransaction(this._wtx);
 
-  final Cocoon _db;
-  final CocoonTx _tx;
-  final CacheStage _stage;
+  final WriteTx _wtx;
 
   /// Reads a document inside the transaction, seeing its own writes.
   Future<DocSnapshot<T>?> get<T extends Object>(DocRef<T> ref) =>
-      _db.readDocInTx<T>(_tx, ref);
+      _wtx.get<T>(ref);
 
   /// Upserts a document inside the transaction.
   Future<void> set<T extends Object>(DocRef<T> ref, T value) =>
-      _db.putDocInTx(_tx, _stage, ref, value);
+      _wtx.put(ref, value);
 
   /// Adds a document with a fresh time-ordered id inside the transaction.
   Future<DocRef<T>> add<T extends Object>(CollectionRef<T> ref, T value) =>
-      _db.addDocInTx<T>(_tx, _stage, ref, value);
+      _wtx.add<T>(ref, value);
 
   /// Deletes a document and its whole subtree inside the transaction.
-  Future<void> delete(DocRef<Object> ref) =>
-      _db.deleteDocInTx(_tx, _stage, ref);
+  Future<void> delete(DocRef<Object> ref) => _wtx.delete(ref);
 }

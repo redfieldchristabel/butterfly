@@ -3,14 +3,13 @@ import 'dart:typed_data';
 import 'package:meta/meta.dart';
 import 'package:sqlite_async/sqlite_async.dart'
     show SqliteDatabase, SqliteOptions, SqliteSynchronous;
-
 import '../cursor.dart';
-import '../id.dart';
 import '../inspector/service.dart';
 import '../migration.dart';
 import '../path.dart';
 import '../schema.dart';
 import 'adapter.dart';
+import 'batch.dart';
 import 'cache.dart';
 import 'changes.dart';
 import 'executor.dart';
@@ -21,6 +20,7 @@ import 'refs.dart';
 import 'schema_sql.dart';
 import 'sqlite_executor.dart';
 import 'watch.dart';
+import 'write_buffer.dart';
 
 /// How eagerly commits hit the disk.
 enum Durability {
@@ -41,10 +41,19 @@ final class CocoonOptions {
     this.durability = Durability.full,
     this.cacheSize = defaultCacheSize,
     this.keepChanges = true,
+    this.pageCacheMiB = defaultPageCacheMiB,
+    this.tempStoreInMemory = true,
+    this.walAutoCheckpointPages = defaultWalAutoCheckpointPages,
   });
 
   /// The default hot-document cache size.
   static const int defaultCacheSize = 2000;
+
+  /// The default SQLite page-cache budget ([pageCacheMiB]).
+  static const int defaultPageCacheMiB = 64;
+
+  /// The default WAL auto-checkpoint interval ([walAutoCheckpointPages]).
+  static const int defaultWalAutoCheckpointPages = 8000;
 
   /// The `PRAGMA synchronous` level commits run at.
   final Durability durability;
@@ -60,6 +69,46 @@ final class CocoonOptions {
   /// the log stays empty — while in-process watch notifications are
   /// unaffected; pick it when only `watch()` streams are needed.
   final bool keepChanges;
+
+  /// The SQLite page-cache budget in MiB, applied as
+  /// `PRAGMA cache_size = -<MiB * 1024>` on the write connection. Reader
+  /// connections keep SQLite's default (2 MiB each), so the extra memory is
+  /// paid once, not once per pooled reader.
+  ///
+  /// SQLite's own 2 MiB default keeps only the hottest B-tree pages resident
+  /// once a database outgrows it; a bigger cache is what keeps bulk imports
+  /// into a multi-index table from degrading superlinearly (measured: 63 s
+  /// -> 36 s for a 1M-document import with this default and
+  /// [tempStoreInMemory], see `benchmarks/cocoon_rivals/IMPORT.md`). Values
+  /// `<= 0` leave SQLite's default in place.
+  final int pageCacheMiB;
+
+  /// Whether temp B-trees (sorting, spilling index builds) stay in memory
+  /// (`PRAGMA temp_store = MEMORY`) instead of spilling through temp
+  /// storage, on the write connection (readers keep the default).
+  ///
+  /// Measured together with [pageCacheMiB] for the 1M import above. Turn it
+  /// off only on devices where the extra resident memory hurts more than
+  /// write throughput.
+  final bool tempStoreInMemory;
+
+  /// How many WAL pages accumulate before SQLite checkpoints them back into
+  /// the database file (`PRAGMA wal_autocheckpoint`), applied on every
+  /// writable connection the database opens.
+  ///
+  /// SQLite's default, 1000 pages (~4 MiB), checkpoints after nearly every
+  /// commit of a bulk import into a multi-index table — the checkpoint cost
+  /// grows with the database size and dominates a 1M-document import.
+  /// Raising the interval to 8000 pages (32 MiB) halved that import (measured:
+  /// 45.6 s -> ~19-24 s through the raw probe, see
+  /// `benchmarks/cocoon_rivals/IMPORT.md`) while keeping the WAL bounded —
+  /// unlike disabling checkpointing altogether, which grows the WAL without
+  /// bound (4.2 GB measured) and was rejected. The WAL file therefore
+  /// transiently holds up to ~32 MiB during heavy writes; crash safety is
+  /// unchanged (the WAL is durable; checkpointing only moves pages into the
+  /// database file, and a larger interval only costs some of that work at
+  /// open after a crash). Values `<= 0` keep SQLite's default.
+  final int walAutoCheckpointPages;
 }
 
 /// A typed, disk-backed, Firestore-style local database on SQLite.
@@ -135,9 +184,25 @@ final class Cocoon {
     SchemaLock? schemaLock,
   }) async {
     final executor = SqliteExecutor(
-      SqliteDatabase(
-        path: path,
-        options: SqliteOptions(synchronous: _synchronousOf(options.durability)),
+      SqliteDatabase.withFactory(
+        CocoonSqliteOpenFactory(
+          path: path,
+          sqliteOptions: SqliteOptions(
+            synchronous: _synchronousOf(options.durability),
+            // sqlite_async's dev-mode timeline tracing costs a TimelineTask
+            // plus an arguments map per executed statement (measured: ~5 s
+            // of a 100k-document import, see
+            // benchmarks/cocoon_rivals/IMPORT.md). Cocoon's DevTools
+            // integration does not use those events, so the engine opens
+            // its connections with them off.
+            profileQueries: false,
+          ),
+          pageCacheKib: options.pageCacheMiB <= 0
+              ? 0
+              : options.pageCacheMiB * 1024,
+          tempStoreInMemory: options.tempStoreInMemory,
+          walAutoCheckpointPages: options.walAutoCheckpointPages,
+        ),
       ),
     );
     try {
@@ -225,6 +290,11 @@ final class Cocoon {
     return CollectionRef<V>(this, adapter, pattern.resolve(const {}));
   }
 
+  /// Starts a Firestore-style batch: queue `set`/`update`/`delete` calls
+  /// synchronously, then `await batch.commit()` to run them all inside one
+  /// write transaction. See [WriteBatch] — this is the bulk-write path.
+  WriteBatch batch() => WriteBatch(this);
+
   /// Every document of [adapter]'s pattern, whatever parent it belongs to.
   CollectionGroupRef<V> collectionGroup<V extends Object>(
     CollectionAdapter<V> adapter,
@@ -237,7 +307,7 @@ final class Cocoon {
   /// own writes, and an exception rolls everything back — including the
   /// hot-document cache, which is only updated after a successful commit.
   Future<R> runTransaction<R>(Future<R> Function(CocoonTransaction tx) body) =>
-      writeTx<R>((tx, stage) => body(CocoonTransaction(this, tx, stage)));
+      writeTx<R>((wtx) => body(CocoonTransaction(wtx)));
 
   /// How many documents the hot-document cache currently holds.
   @visibleForTesting
@@ -266,12 +336,19 @@ final class Cocoon {
   /// Runs [body] in one write transaction, applying its staged cache updates
   /// only after the commit succeeds, then delivers one commit event with the
   /// touched paths to the watch hub. Rolled-back transactions report nothing.
+  ///
+  /// Document writes buffer in the transaction's [WriteTx] and flush as
+  /// batched statements before the COMMIT (and before any read or delete in
+  /// the same transaction, and every [writeFlushThreshold] rows).
   @internal
-  Future<R> writeTx<R>(
-    Future<R> Function(CocoonTx tx, CacheStage stage) body,
-  ) async {
+  Future<R> writeTx<R>(Future<R> Function(WriteTx wtx) body) async {
     final stage = CacheStage();
-    final result = await _executor.writeTransaction((tx) => body(tx, stage));
+    final result = await _executor.writeTransaction((tx) async {
+      final wtx = WriteTx(this, tx, stage);
+      final out = await body(wtx);
+      await wtx.flush();
+      return out;
+    });
     stage.applyTo(_cache);
     final touched = stage.takeTouched();
     if (touched.isNotEmpty) {
@@ -297,8 +374,17 @@ final class Cocoon {
 
   @internal
   Future<DocSnapshot<T>?> getDoc<T extends Object>(DocRef<T> ref) async {
+    final entry = _registry.entryFor(ref.adapter);
     final cached = _cache.get(ref.path.path);
     if (cached != null) {
+      // A write cached the encoded bytes; decode once and promote the value,
+      // so the decoded object a later read sees is exactly what the stored
+      // bytes decode to.
+      if (cached is EncodedDoc) {
+        final value = entry.adapter.decode(cached.bytes) as T;
+        _cache.put(ref.path.path, value);
+        return DocSnapshot<T>(ref, value);
+      }
       return DocSnapshot<T>(ref, cached as T);
     }
     return _readDoc<T>(_executor, ref, cachePut: true);
@@ -312,101 +398,20 @@ final class Cocoon {
 
   @internal
   Future<void> putDoc<T extends Object>(DocRef<T> ref, T value) =>
-      writeTx<void>((tx, stage) => putDocInTx(tx, stage, ref, value));
-
-  @internal
-  Future<void> putDocInTx<T extends Object>(
-    CocoonTx tx,
-    CacheStage stage,
-    DocRef<T> ref,
-    T value,
-  ) async {
-    final entry = _registry.entryFor(ref.adapter);
-    final bytes = entry.adapter.encode(value);
-    // Normalize through the wire codec so the cached value is exactly what a
-    // later read decodes (for example, DateTime fields come back in UTC).
-    final stored = entry.adapter.decode(bytes) as T;
-    final paramValues = _paramValuesInOrder(entry, ref.path.collection);
-    final columnNames = [for (final column in entry.columnDdls) column.name];
-    final columnValues = [
-      for (final column in entry.fieldColumns) column.sqlOf(value),
-    ];
-    final columns = [
-      'path',
-      'id',
-      ...entry.paramSqlNames,
-      'data',
-      ...columnNames,
-    ];
-    final placeholders = List.filled(columns.length, '?').join(', ');
-    final updates = [
-      'id',
-      ...entry.paramSqlNames,
-      'data',
-      ...columnNames,
-    ].map((name) => '$name = excluded.$name').join(', ');
-    await tx.execute(
-      'INSERT INTO ${entry.table} (${columns.join(', ')}) '
-      'VALUES ($placeholders) '
-      'ON CONFLICT(path) DO UPDATE SET $updates',
-      [ref.path.path, ref.path.id, ...paramValues, bytes, ...columnValues],
-    );
-    await _recordChanges(tx, stage, [
-      (entry.table, ref.path.path, ChangeOp.set),
-    ]);
-    stage.put(ref.path.path, stored);
-  }
+      writeTx<void>((wtx) => wtx.put(ref, value));
 
   @internal
   Future<DocRef<T>> addDoc<T extends Object>(CollectionRef<T> ref, T value) =>
-      writeTx<DocRef<T>>((tx, stage) => addDocInTx(tx, stage, ref, value));
-
-  @internal
-  Future<DocRef<T>> addDocInTx<T extends Object>(
-    CocoonTx tx,
-    CacheStage stage,
-    CollectionRef<T> ref,
-    T value,
-  ) async {
-    final docRef = ref.doc(newDocId());
-    await putDocInTx(tx, stage, docRef, value);
-    return docRef;
-  }
+      writeTx<DocRef<T>>((wtx) => wtx.add(ref, value));
 
   @internal
   Future<void> deleteDoc(DocRef<Object> ref) =>
-      writeTx<void>((tx, stage) => deleteDocInTx(tx, stage, ref));
-
-  @internal
-  Future<void> deleteDocInTx(
-    CocoonTx tx,
-    CacheStage stage,
-    DocRef<Object> ref,
-  ) async {
-    final entry = _registry.entryFor(ref.adapter);
-    // One change row per deleted document, including every cascaded one:
-    // DELETE ... RETURNING keeps reading the paths and deleting atomic.
-    final deleted = <(String table, String path)>[
-      ...await _deleteReturning(tx, entry.table, ref.path.path),
-    ];
-    final (:from, :to) = ref.path.descendants;
-    for (final candidate in _registry.entries) {
-      if (SchemaRegistry.descendsFrom(
-        candidate.adapter.pattern,
-        ref.adapter.pattern,
-      )) {
-        deleted.addAll(await _deleteSubtree(tx, candidate.table, from, to));
-      }
-    }
-    await _recordChanges(tx, stage, [
-      for (final (table, path) in deleted) (table, path, ChangeOp.delete),
-    ]);
-    stage.evictSubtree(ref.path.path);
-  }
+      writeTx<void>((wtx) => wtx.delete(ref));
 
   /// Deletes the document at [path] from [table], returning its `(table,
   /// path)` pair only when a row was actually removed.
-  Future<List<(String, String)>> _deleteReturning(
+  @internal
+  Future<List<(String, String)>> deleteReturning(
     CocoonTx tx,
     String table,
     String path,
@@ -420,7 +425,8 @@ final class Cocoon {
 
   /// Deletes the half-open subtree range from [table], returning one
   /// `(table, path)` pair per removed document.
-  Future<List<(String, String)>> _deleteSubtree(
+  @internal
+  Future<List<(String, String)>> deleteSubtree(
     CocoonTx tx,
     String table,
     String from,
@@ -433,30 +439,9 @@ final class Cocoon {
     return [for (final row in rows) (table, row['path']! as String)];
   }
 
-  /// Appends one change-log row per touched document (when the log is on)
-  /// and records the touched set for the post-commit notification.
-  Future<void> _recordChanges(
-    CocoonTx tx,
-    CacheStage stage,
-    List<(String table, String path, ChangeOp op)> changes,
-  ) async {
-    if (changes.isEmpty) {
-      return;
-    }
-    for (final (table, path, op) in changes) {
-      stage.touched(table, path, op);
-    }
-    if (!_keepChanges) {
-      return;
-    }
-    final at = DateTime.now().toUtc().microsecondsSinceEpoch;
-    await tx.executeBatch(
-      'INSERT INTO $changesTableName (tbl, path, op, at) VALUES (?, ?, ?, ?)',
-      [
-        for (final (table, path, op) in changes) [table, path, op.name, at],
-      ],
-    );
-  }
+  /// Whether every commit appends its change rows to the on-disk log.
+  @internal
+  bool get keepsChanges => _keepChanges;
 
   @internal
   Future<QueryPage<T>> runQuery<T extends Object>(CocoonQuery<T> query) async =>
@@ -632,7 +617,8 @@ final class Cocoon {
     return DocSnapshot<T>(ref, value);
   }
 
-  List<String> _paramValuesInOrder(RegistryEntry entry, CollectionPath path) {
+  @internal
+  List<String> paramValuesInOrder(RegistryEntry entry, CollectionPath path) {
     final patternSegments = entry.adapter.pattern.pattern.split('/');
     final pathSegments = path.path.split('/');
     return [

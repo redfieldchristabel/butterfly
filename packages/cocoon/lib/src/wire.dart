@@ -484,8 +484,9 @@ Map<Object?, Object?> _decodeMapValue(
           reader.skip(tag.type);
       }
     }
-    map[hasKey ? key : _wireZero(wire.key)] =
-        hasValue ? value : _wireZero(wire.value);
+    map[hasKey ? key : _wireZero(wire.key)] = hasValue
+        ? value
+        : _wireZero(wire.value);
   }
   return map;
 }
@@ -493,14 +494,14 @@ Map<Object?, Object?> _decodeMapValue(
 /// The zero value of one [MigrationWireType], for map entries that lack
 /// their key or value part.
 Object _wireZero(MigrationWireType kind) => switch (kind) {
-  MigrationWireType.int64 ||
-  MigrationWireType.sint64 => 0,
+  MigrationWireType.int64 || MigrationWireType.sint64 => 0,
   MigrationWireType.boolean => false,
   MigrationWireType.float64 => 0.0,
   MigrationWireType.text => '',
   MigrationWireType.bytes => Uint8List(0),
-  MigrationWireType.map =>
-    throw ArgumentError('Nested map values are not supported'),
+  MigrationWireType.map => throw ArgumentError(
+    'Nested map values are not supported',
+  ),
 };
 
 /// Writes [map] at [field] as one entry message per entry, sorted by key

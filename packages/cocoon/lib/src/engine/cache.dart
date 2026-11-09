@@ -1,4 +1,5 @@
 import 'dart:collection';
+import 'dart:typed_data';
 
 import 'changes.dart' show ChangeOp, TouchedChange;
 
@@ -12,6 +13,11 @@ import 'changes.dart' show ChangeOp, TouchedChange;
 /// database file (no multi-process writers), so cached values can never go
 /// stale behind the engine's back: every write and delete (including cascade
 /// deletes) updates or evicts the affected paths.
+///
+/// Entries may hold a decoded value or an [EncodedDoc]: writes cache the
+/// document's encoded bytes and the first cache read decodes them once (the
+/// read-your-writes guarantee is then byte-exact — the cached bytes are the
+/// stored bytes). [DocumentCache] itself never interprets entries.
 final class DocumentCache {
   /// Builds a cache holding at most [capacity] documents.
   DocumentCache(this.capacity) : _entries = LinkedHashMap();
@@ -60,6 +66,18 @@ final class DocumentCache {
     final prefix = '$path/';
     _entries.removeWhere((key, _) => key.startsWith(prefix));
   }
+}
+
+/// Encoded document bytes held by a [DocumentCache] entry, pending the first
+/// read that decodes them.
+///
+/// The wrapper (rather than a bare `Uint8List`) keeps entries unambiguous: a
+/// decoded value may itself be a `Uint8List`.
+final class EncodedDoc {
+  const EncodedDoc(this.bytes);
+
+  /// The document's canonical wire bytes, exactly as stored.
+  final Uint8List bytes;
 }
 
 /// Cache updates collected while a write transaction runs, applied only
