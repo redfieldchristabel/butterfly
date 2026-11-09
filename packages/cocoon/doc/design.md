@@ -85,6 +85,25 @@ on the docs site under **Cocoon**:
   Per-operation validation and semantics match the standalone calls;
   `update` (replace-if-exists) is checked against the transaction's own
   state so a `set` earlier in the batch satisfies it.
+- **Bulk loads** go through `db.bulkWriter()` (`BulkWriter`), Firestore's
+  BulkWriter shape: queue writes synchronously, commit every
+  `chunkSize` rows (default 10,000, the measured knee of the commit-size
+  curve) as one write transaction — atomic per chunk, never as a whole —
+  with one cache stage and one watch event per chunk. On the first chunk
+  per table, when deferral pays (the table is empty or the writer has
+  buffered more rows than the table holds), the same transaction records
+  the table's secondary-index DDL in `_cocoon_bulk` and drops the indexes;
+  `close()` rebuilds them and deletes the rows in one transaction, and an
+  open that finds rows left behind (a crash mid-load) rebuilds the indexes
+  before handing the database to the app. The scope index and the unique
+  `path` constraint are never dropped. A query whose plan needs a deferred
+  index waits until the writer closes (`PlannedQuery.servingIndex`); `get()`
+  by id is unaffected. Measured on the 1M rivals dataset
+  (`benchmarks/cocoon_rivals/IMPORT.md`, step 13): 103 s through
+  `db.batch()` per 1000 rows, ~13 s through the default `bulkWriter()`
+  (raw SQLite's deferred-index ceiling: 9.5 s). Inserting in path order was
+  measured and kept out — it cost ~1 s and won nothing at the engine's
+  chunk granularity.
 - **The write hot path builds no SQL strings per document**: each
   collection's upsert and update statements are built once at registry
   time, and a write caches the document's encoded bytes (`EncodedDoc`) —
@@ -169,4 +188,5 @@ executor, so it is deferred.
 | Benchmark vs sembast (`packages/cocoon_bench`, finance-shaped data, `RESULTS.md`; memory measured against a harness-only baseline, write-durability and cache-size knobs measured) | done |
 | Rivals benchmark (`benchmarks/cocoon_rivals`, 7 engines incl. cocoon at `Durability.normal`, drift, Isar, ObjectBox, Hive CE, sembast; 10k-1M txns, 13 ops, `RESULTS.md` with per-workload verdicts) | done |
 | Bulk-write path: `WriteBatch` (`db.batch()`), buffered transaction writes, per-collection prebuilt write SQL, byte-caching hot entries | done |
+| Bulk-load path: `BulkWriter` (`db.bulkWriter()`), chunked commits, deferred secondary indexes + crash recovery via `_cocoon_bulk` | done |
 | Import-performance knobs: `pageCacheMiB` (64 MiB page cache), `tempStoreInMemory`, sqlite_async `profileQueries` off; measurements in `benchmarks/cocoon_rivals/IMPORT.md` | done |

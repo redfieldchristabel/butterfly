@@ -24,13 +24,29 @@
 /// pressure skews in-process ceilings at 100k+ rows, so the two modes never
 /// share a process.
 ///
+/// The storage engine's bulk path, measured with the real `BulkWriter`:
+/// `--mode bulk` runs `db.bulkWriter()` over the benchmark dataset with the
+/// requested knobs and reports wall, CPU, peak RSS, file size and peak WAL.
+/// `--prefill N` imports the first N rows untimed first, so the measured
+/// phase loads `size - prefill` rows into a pre-filled table (the deferral
+/// cross-over experiment).
+///
 /// usage:
 /// ```sh
 /// dart run tool/profile_import.dart --size 100000 [--durability full|normal]
 /// dart run tool/profile_import.dart --size 100000 --mode ceiling
+/// dart run tool/profile_import.dart --size 1000000 --mode bulk --chunk 10000
+/// dart run tool/profile_import.dart --size 1100000 --mode bulk --prefill 1000000 \
+///     --defer-indexes false
 /// ```
 library;
 
+// The profiler deliberately reaches into the engine's internals: the
+// instrumented executor, the prebuilt SQL and the internal executor getters
+// are package-private by design.
+// ignore_for_file: invalid_use_of_internal_member
+
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -41,7 +57,7 @@ import 'package:cocoon/src/engine/executor.dart'; // ignore: implementation_impo
 import 'package:cocoon/src/engine/schema_sql.dart'; // ignore: implementation_imports
 import 'package:cocoon/src/engine/sqlite_executor.dart'; // ignore: implementation_imports
 import 'package:cocoon_rivals/dataset.dart';
-import 'package:cocoon_rivals/engine.dart' show importBatchSize;
+import 'package:cocoon_rivals/engine.dart' show OpCost, importBatchSize;
 import 'package:cocoon_rivals/models.dart';
 import 'package:sqlite_async/sqlite_async.dart';
 
@@ -50,8 +66,12 @@ Future<void> main(List<String> args) async {
   var durability = Durability.full;
   // 'profile' runs the instrumented import; 'ceiling' measures the SQLite
   // ceiling in its own process — the retained dataset's GC pressure skews
-  // in-process ceilings at 100k+ rows, so the two never share a process.
+  // in-process ceilings at 100k+ rows, so the two never share a process;
+  // 'bulk' runs the real BulkWriter with the requested knobs.
   var mode = 'profile';
+  var chunk = BulkWriterOptions.defaultChunkSize;
+  var deferIndexes = true;
+  var prefill = 0;
   for (var i = 0; i < args.length; i++) {
     switch (args[i]) {
       case '--size':
@@ -63,6 +83,12 @@ Future<void> main(List<String> args) async {
         };
       case '--mode':
         mode = args[++i];
+      case '--chunk':
+        chunk = int.parse(args[++i]);
+      case '--defer-indexes':
+        deferIndexes = args[++i] != 'false';
+      case '--prefill':
+        prefill = int.parse(args[++i]);
       default:
         stderr.writeln('Unknown argument ${args[i]}');
         exit(2);
@@ -74,8 +100,16 @@ Future<void> main(List<String> args) async {
       await _runProfile(size, durability);
     case 'ceiling':
       await _runCeiling(size, durability);
+    case 'bulk':
+      await _runBulk(
+        size,
+        durability,
+        chunk: chunk,
+        deferIndexes: deferIndexes,
+        prefill: prefill,
+      );
     default:
-      stderr.writeln('Unknown mode $mode (use profile or ceiling)');
+      stderr.writeln('Unknown mode $mode (use profile, ceiling or bulk)');
       exit(2);
   }
 }
@@ -117,8 +151,7 @@ Future<void> _runProfile(int size, Durability durability) async {
             ),
             pageCacheKib: CocoonOptions.defaultPageCacheMiB * 1024,
             tempStoreInMemory: true,
-            walAutoCheckpointPages:
-                CocoonOptions.defaultWalAutoCheckpointPages,
+            walAutoCheckpointPages: CocoonOptions.defaultWalAutoCheckpointPages,
           ),
         ),
       ),
@@ -234,6 +267,119 @@ Future<void> _runCeiling(int size, Durability durability) async {
       '(${perChunk.toStringAsFixed(1)} ms per 1000-row chunk)',
     );
     stdout.writeln('  one txn for all rows:  $swB ms');
+  } finally {
+    dir.deleteSync(recursive: true);
+  }
+}
+
+/// Runs the real BulkWriter over the dataset: [prefill] rows untimed first,
+/// then `size - prefill` rows in the measured phase.
+Future<void> _runBulk(
+  int size,
+  Durability durability, {
+  required int chunk,
+  required bool deferIndexes,
+  required int prefill,
+}) async {
+  final dir = Directory.systemTemp.createTempSync('cocoon_bulk_');
+  try {
+    final data = BenchDataset.build(txnCount: size);
+    final dbPath = '${dir.path}${Platform.pathSeparator}bulk.db';
+    final db = await Cocoon.open(
+      dbPath,
+      collections: [accounts, txns],
+      options: CocoonOptions(durability: durability),
+    );
+
+    BulkWriter bulkFor() => db.bulkWriter(
+      BulkWriterOptions(chunkSize: chunk, deferIndexes: deferIndexes),
+    );
+
+    DocRef<Txn> refOf(BenchTxn t) =>
+        db.collection(accounts).doc(t.accountId).collection(txns).doc(t.id);
+
+    // Accounts first, untimed — the harness import does the same.
+    for (var i = 0; i < data.accounts.length; i++) {
+      await db
+          .collection(accounts)
+          .doc('a${i.toString().padLeft(2, '0')}')
+          .set(data.accounts[i]);
+    }
+
+    // The untimed prefill: its own bulk load into the fresh database.
+    if (prefill > 0) {
+      final pre = bulkFor();
+      for (final benchTxn in data.txns.take(prefill)) {
+        pre.set(refOf(benchTxn), benchTxn.txn);
+      }
+      await pre.close();
+    }
+
+    final timed = data.txns.skip(prefill).toList();
+    // The WAL file's peak size while the measured phase runs (5 ms samples).
+    final walFile = File('$dbPath-wal');
+    var peakWal = 0;
+    final sampler = Timer.periodic(const Duration(milliseconds: 5), (_) {
+      try {
+        if (walFile.existsSync() && walFile.lengthSync() > peakWal) {
+          peakWal = walFile.lengthSync();
+        }
+      } on Object {
+        // The WAL file may not exist yet; the next tick retries.
+      }
+    });
+
+    final cost = OpCost.start();
+    final sw = Stopwatch()..start();
+    final bulk = bulkFor();
+    for (final benchTxn in timed) {
+      bulk.set(refOf(benchTxn), benchTxn.txn);
+    }
+    await bulk.close();
+    sw.stop();
+    sampler.cancel();
+    final (:cpuMs, :diskWriteBytes) = cost.stop();
+
+    // Sanity: the rows the writer reported must be in the table.
+    final stored =
+        ((await db.executor.getAll(
+              'SELECT count(*) AS c FROM txn',
+            )).first)['c']!
+            as int;
+    await db.close();
+
+    final usPerDoc = timed.isEmpty
+        ? 0.0
+        : sw.elapsedMicroseconds / timed.length;
+    stdout.writeln(
+      '== Cocoon BulkWriter import: ${timed.length} timed rows after '
+      '$prefill prefilled (total dataset $size, Durability.${durability.name}) ==',
+    );
+    stdout.writeln('  chunk: $chunk rows/commit, deferIndexes: $deferIndexes');
+    stdout.writeln(
+      '  wall: ${sw.elapsedMilliseconds} ms (${usPerDoc.toStringAsFixed(2)} '
+      'us/doc)',
+    );
+    stdout.writeln('  cpu: $cpuMs ms');
+    if (diskWriteBytes != null) {
+      stdout.writeln(
+        '  disk written: ${(diskWriteBytes / 1024 / 1024).toStringAsFixed(1)} MB',
+      );
+    }
+    stdout.writeln(
+      '  peak RSS: ${(ProcessInfo.maxRss / 1024 / 1024).toStringAsFixed(0)} MB',
+    );
+    stdout.writeln(
+      '  file: ${(File(dbPath).lengthSync() / 1024 / 1024).toStringAsFixed(1)} MB'
+      ', peak WAL: ${(peakWal / 1024 / 1024).toStringAsFixed(1)} MB',
+    );
+    stdout.writeln(
+      '  rows in txn table: $stored (expected ${data.txns.length})',
+    );
+    if (stored != data.txns.length) {
+      stderr.writeln('MISMATCH: writer left $stored rows behind');
+      exit(1);
+    }
   } finally {
     dir.deleteSync(recursive: true);
   }

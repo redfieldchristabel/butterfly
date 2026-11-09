@@ -28,9 +28,12 @@ import 'dart:math';
 import 'package:cocoon_rivals/dataset.dart';
 import 'package:cocoon_rivals/engine.dart';
 
-/// The ops `runOp` executes, in the order `tool/run_all.sh` runs them.
+/// The ops `runOp` executes, in the order `tool/run_all.sh` runs them
+/// (`bulkimport` runs right after `import`; it wipes and rebuilds its own
+/// `${baseDir}_bulk` database, so the read ops keep measuring `import`'s).
 const benchOps = [
   'verify',
+  'bulkimport',
   'open',
   'rss',
   'latest50',
@@ -103,6 +106,27 @@ Future<void> runOp({
         if (diskWriteBytes > 0) {
           metrics[Metrics.writeAmplification] = diskWriteBytes / fileBytes;
         }
+      }
+
+    case 'bulkimport':
+      // The same dataset through each engine's best documented bulk API,
+      // into a wiped database under its own directory — the read ops keep
+      // measuring the 1000-per-commit `import` database. Like `import`, the
+      // bracket covers the engine's whole call.
+      final data = BenchDataset.build(txnCount: size);
+      final bulkDir = '${baseDir}_bulk';
+      engine.wipe(bulkDir);
+      Directory(bulkDir).createSync(recursive: true);
+      final cost = OpCost.start();
+      final elapsed = await engine.bulkimport(data, bulkDir);
+      final (:cpuMs, :diskWriteBytes) = cost.stop();
+      metrics
+        ..[Metrics.elapsedMs] = elapsed
+        ..[Metrics.fileBytes] = engine.fileSize(bulkDir)
+        ..[Metrics.txns] = data.txns.length
+        ..[Metrics.cpuMs] = cpuMs;
+      if (diskWriteBytes != null) {
+        metrics[Metrics.diskWriteBytes] = diskWriteBytes;
       }
 
     case 'open':

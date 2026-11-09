@@ -47,7 +47,8 @@ final class CocoonBenchEngine implements BenchEngine {
       _db!.collection(accounts).doc(accountId).collection(txns);
 
   @override
-  String get name => durability == Durability.normal ? 'cocoon-normal' : 'cocoon';
+  String get name =>
+      durability == Durability.normal ? 'cocoon-normal' : 'cocoon';
 
   @override
   String dbPath(String baseDir) => BenchDataset.cocoonPath(baseDir);
@@ -89,6 +90,37 @@ final class CocoonBenchEngine implements BenchEngine {
       await write.commit();
     }
     sw.stop();
+    return sw.elapsedMilliseconds;
+  }
+
+  @override
+  Future<int> bulkimport(BenchDataset data, String baseDir) async {
+    // Sequential in-process ops (the smoke test's metrics loop) close the
+    // live instance first, and the bulk load leaves nothing open, like
+    // `restore`: the read ops keep measuring `import`'s database.
+    await _db?.close();
+    _db = null;
+    final db = await _open(baseDir);
+    // Accounts first, untimed: 20 rows, as `import` does.
+    for (var i = 0; i < data.accounts.length; i++) {
+      await db
+          .collection(accounts)
+          .doc('a${i.toString().padLeft(2, '0')}')
+          .set(data.accounts[i]);
+    }
+    final sw = Stopwatch()..start();
+    // Cocoon's best documented bulk API: the BulkWriter queues every set
+    // synchronously, commits in chunks (its measured default), defers the
+    // secondary indexes until close, and resolves when everything is
+    // durable — one atomic chunk at a time, not one transaction overall.
+    final bulk = db.bulkWriter();
+    for (final benchTxn in data.txns) {
+      bulk.set(_txnsOf(benchTxn.accountId).doc(benchTxn.id), benchTxn.txn);
+    }
+    await bulk.close();
+    sw.stop();
+    await db.close();
+    _db = null;
     return sw.elapsedMilliseconds;
   }
 
@@ -411,9 +443,9 @@ final class CocoonBenchEngine implements BenchEngine {
     // every next page starts after the previous page's cursor.
     final pageIds = <List<String>>[];
     final pageUs = <int>[];
-    CocoonQuery<Txn> pageFor() => _txnsOf(accountId)
-        .orderBy(Txn$.bookedOn, descending: true)
-        .limit(deeppagePageSize);
+    CocoonQuery<Txn> pageFor() => _txnsOf(
+      accountId,
+    ).orderBy(Txn$.bookedOn, descending: true).limit(deeppagePageSize);
     var sw = Stopwatch()..start();
     var page = await pageFor().get();
     sw.stop();

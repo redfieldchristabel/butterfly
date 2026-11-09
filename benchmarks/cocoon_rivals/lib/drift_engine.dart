@@ -50,9 +50,7 @@ final class DriftBenchEngine implements BenchEngine {
 
   Future<AppDb> _open(String baseDir) async {
     final db = AppDb(
-      NativeDatabase.createInBackground(
-        File(BenchDataset.driftPath(baseDir)),
-      ),
+      NativeDatabase.createInBackground(File(BenchDataset.driftPath(baseDir))),
     );
     await db.customSelect('SELECT 1').getSingle();
     _db = db;
@@ -90,21 +88,43 @@ final class DriftBenchEngine implements BenchEngine {
             : start + importBatchSize,
       );
       await db.batch((b) {
-        b.insertAll(
-          db.txnRows,
-          [
-            for (final benchTxn in batch)
-              _rowOf(
-                id: benchTxn.id,
-                accountId: benchTxn.accountId,
-                txn: benchTxn.txn,
-              ),
-          ],
-          mode: InsertMode.insertOrReplace,
-        );
+        b.insertAll(db.txnRows, [
+          for (final benchTxn in batch)
+            _rowOf(
+              id: benchTxn.id,
+              accountId: benchTxn.accountId,
+              txn: benchTxn.txn,
+            ),
+        ], mode: InsertMode.insertOrReplace);
       });
     }
     sw.stop();
+    return sw.elapsedMilliseconds;
+  }
+
+  @override
+  Future<int> bulkimport(BenchDataset data, String baseDir) async {
+    // Sequential in-process ops (the smoke test's metrics loop) close the
+    // live instance first, and the bulk load leaves nothing open, like
+    // `restore`: the read ops keep measuring `import`'s database.
+    await _db?.close();
+    _db = null;
+    final db = await _open(baseDir);
+    final sw = Stopwatch()..start();
+    // drift's best documented bulk API: one batch, which is one transaction.
+    await db.batch((b) {
+      b.insertAll(db.txnRows, [
+        for (final benchTxn in data.txns)
+          _rowOf(
+            id: benchTxn.id,
+            accountId: benchTxn.accountId,
+            txn: benchTxn.txn,
+          ),
+      ], mode: InsertMode.insertOrReplace);
+    });
+    sw.stop();
+    await db.close();
+    _db = null;
     return sw.elapsedMilliseconds;
   }
 
@@ -219,20 +239,17 @@ final class DriftBenchEngine implements BenchEngine {
         final db = _db!;
         var lastId = '';
         while (true) {
-          final page = await (db.select(db.txnRows)
-                ..where((t) => t.id.isBiggerThanValue(lastId))
-                ..orderBy([(t) => OrderingTerm.asc(t.id)])
-                ..limit(monthlyPageSize))
-              .get();
+          final page =
+              await (db.select(db.txnRows)
+                    ..where((t) => t.id.isBiggerThanValue(lastId))
+                    ..orderBy([(t) => OrderingTerm.asc(t.id)])
+                    ..limit(monthlyPageSize))
+                  .get();
           if (page.isEmpty) {
             break;
           }
           for (final row in page) {
-            yield (
-              accountId: row.accountId,
-              id: row.id,
-              value: row,
-            );
+            yield (accountId: row.accountId, id: row.id, value: row);
           }
           lastId = page.last.id;
         }
@@ -295,18 +312,19 @@ final class DriftBenchEngine implements BenchEngine {
     final ids = <String>[];
     var pages = 0;
     while (true) {
-      final page = await (db.select(db.txnRows)
-            ..where(
-              (t) =>
-                  t.bookedOn.isBiggerOrEqualValue(firstDay) &
-                  t.bookedOn.isSmallerOrEqualValue(lastDay),
-            )
-            ..orderBy([
-              (t) => OrderingTerm.asc(t.bookedOn),
-              (t) => OrderingTerm.asc(t.id),
-            ])
-            ..limit(rangePageSize, offset: pages * rangePageSize))
-          .get();
+      final page =
+          await (db.select(db.txnRows)
+                ..where(
+                  (t) =>
+                      t.bookedOn.isBiggerOrEqualValue(firstDay) &
+                      t.bookedOn.isSmallerOrEqualValue(lastDay),
+                )
+                ..orderBy([
+                  (t) => OrderingTerm.asc(t.bookedOn),
+                  (t) => OrderingTerm.asc(t.id),
+                ])
+                ..limit(rangePageSize, offset: pages * rangePageSize))
+              .get();
       if (page.isEmpty) {
         break;
       }
@@ -369,14 +387,15 @@ final class DriftBenchEngine implements BenchEngine {
   @override
   Future<List<String>> statusSearchIds(String baseDir) async {
     final db = _db!;
-    final rows = await (db.select(db.txnRows)
-          ..where((t) => t.status.equals(m.TxnStatus.pending.name))
-          ..orderBy([
-            (t) => OrderingTerm.desc(t.bookedOn),
-            (t) => OrderingTerm.desc(t.id),
-          ])
-          ..limit(50))
-        .get();
+    final rows =
+        await (db.select(db.txnRows)
+              ..where((t) => t.status.equals(m.TxnStatus.pending.name))
+              ..orderBy([
+                (t) => OrderingTerm.desc(t.bookedOn),
+                (t) => OrderingTerm.desc(t.id),
+              ])
+              ..limit(50))
+            .get();
     return [for (final row in rows) row.id];
   }
 
@@ -398,13 +417,14 @@ final class DriftBenchEngine implements BenchEngine {
   @override
   Future<List<String>> bigspendIds(String baseDir) async {
     // One ordered index scan, limit 50 — drift's documented select API.
-    final rows = await (_db!.select(_db!.txnRows)
-          ..orderBy([
-            (t) => OrderingTerm.asc(t.amountMinor),
-            (t) => OrderingTerm.asc(t.id),
-          ])
-          ..limit(50))
-        .get();
+    final rows =
+        await (_db!.select(_db!.txnRows)
+              ..orderBy([
+                (t) => OrderingTerm.asc(t.amountMinor),
+                (t) => OrderingTerm.asc(t.id),
+              ])
+              ..limit(50))
+            .get();
     return [for (final row in rows) row.id];
   }
 
@@ -416,18 +436,22 @@ final class DriftBenchEngine implements BenchEngine {
     final ids = <String>[];
     var pages = 0;
     while (true) {
-      final page = await (db.select(db.txnRows)
-            ..where(
-              (t) =>
-                  t.amountMinor.isBiggerOrEqualValue(amountBandLo) &
-                  t.amountMinor.isSmallerThanValue(amountBandHi),
-            )
-            ..orderBy([
-              (t) => OrderingTerm.asc(t.amountMinor),
-              (t) => OrderingTerm.asc(t.id),
-            ])
-            ..limit(amountRangePageSize, offset: pages * amountRangePageSize))
-          .get();
+      final page =
+          await (db.select(db.txnRows)
+                ..where(
+                  (t) =>
+                      t.amountMinor.isBiggerOrEqualValue(amountBandLo) &
+                      t.amountMinor.isSmallerThanValue(amountBandHi),
+                )
+                ..orderBy([
+                  (t) => OrderingTerm.asc(t.amountMinor),
+                  (t) => OrderingTerm.asc(t.id),
+                ])
+                ..limit(
+                  amountRangePageSize,
+                  offset: pages * amountRangePageSize,
+                ))
+              .get();
       if (page.isEmpty) {
         break;
       }
@@ -452,19 +476,20 @@ final class DriftBenchEngine implements BenchEngine {
     final ids = <String>[];
     var pages = 0;
     while (true) {
-      final page = await (db.select(db.txnRows)
-            ..where(
-              (t) =>
-                  t.status.equals(m.TxnStatus.pending.name) &
-                  t.bookedOn.isBiggerOrEqualValue(firstDay) &
-                  t.bookedOn.isSmallerOrEqualValue(lastDay),
-            )
-            ..orderBy([
-              (t) => OrderingTerm.asc(t.bookedOn),
-              (t) => OrderingTerm.asc(t.id),
-            ])
-            ..limit(rangePageSize, offset: pages * rangePageSize))
-          .get();
+      final page =
+          await (db.select(db.txnRows)
+                ..where(
+                  (t) =>
+                      t.status.equals(m.TxnStatus.pending.name) &
+                      t.bookedOn.isBiggerOrEqualValue(firstDay) &
+                      t.bookedOn.isSmallerOrEqualValue(lastDay),
+                )
+                ..orderBy([
+                  (t) => OrderingTerm.asc(t.bookedOn),
+                  (t) => OrderingTerm.asc(t.id),
+                ])
+                ..limit(rangePageSize, offset: pages * rangePageSize))
+              .get();
       if (page.isEmpty) {
         break;
       }
@@ -491,14 +516,15 @@ final class DriftBenchEngine implements BenchEngine {
     final pageUs = <int>[];
     for (var page = 0; page < deeppagePageCount; page++) {
       final sw = Stopwatch()..start();
-      final rows = await (db.select(db.txnRows)
-            ..where((t) => t.accountId.equals(accountId))
-            ..orderBy([
-              (t) => OrderingTerm.desc(t.bookedOn),
-              (t) => OrderingTerm.desc(t.id),
-            ])
-            ..limit(deeppagePageSize, offset: page * deeppagePageSize))
-          .get();
+      final rows =
+          await (db.select(db.txnRows)
+                ..where((t) => t.accountId.equals(accountId))
+                ..orderBy([
+                  (t) => OrderingTerm.desc(t.bookedOn),
+                  (t) => OrderingTerm.desc(t.id),
+                ])
+                ..limit(deeppagePageSize, offset: page * deeppagePageSize))
+              .get();
       sw.stop();
       if (rows.isEmpty) {
         break;
@@ -586,11 +612,7 @@ final class DriftBenchEngine implements BenchEngine {
         return;
       }
       await db.batch(
-        (b) => b.insertAll(
-          db.txnRows,
-          batch,
-          mode: InsertMode.insertOrReplace,
-        ),
+        (b) => b.insertAll(db.txnRows, batch, mode: InsertMode.insertOrReplace),
       );
       restored += batch.length;
       batch = <TxnRowsCompanion>[];

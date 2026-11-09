@@ -14,6 +14,12 @@ const String metaTableName = '_cocoon_meta';
 /// committed write.
 const String changesTableName = '_cocoon_changes';
 
+/// Name of the internal bulk-load meta table: while a [BulkWriter] runs with
+/// deferred indexes it holds one row per dropped secondary index, with the
+/// DDL that recreates it. The writer's `close()` and the open-time crash
+/// recovery both read it; an empty or absent table means nothing is deferred.
+const String bulkTableName = '_cocoon_bulk';
+
 /// Key under which `_cocoon_meta` stores the database's schema version: the
 /// lock version the running app last migrated the file to.
 const String schemaVersionMetaKey = 'schema_version';

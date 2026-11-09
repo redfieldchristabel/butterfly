@@ -184,6 +184,17 @@ String createChangesTableSql() =>
     '  at INTEGER NOT NULL\n'
     ')';
 
+/// The `CREATE TABLE` statement for the internal bulk-load meta table: one
+/// row per secondary index a running bulk writer has dropped, with the DDL
+/// that recreates it. The writer records a row (and drops the index) in the
+/// same transaction as its first chunk for the table; `close()` rebuilds the
+/// indexes and deletes the rows in one transaction, and a database opened
+/// with rows still present (a crash mid-load) rebuilds them before the app
+/// sees it.
+String createBulkTableSql() =>
+    'CREATE TABLE IF NOT EXISTS $bulkTableName '
+    '(tbl TEXT NOT NULL, index_name TEXT NOT NULL, sql TEXT NOT NULL)';
+
 /// A stable fingerprint of one table's physical shape (params, columns,
 /// declared indexes). Stored in `_cocoon_meta`; when it matches on open, the
 /// reconciler does no DDL at all.

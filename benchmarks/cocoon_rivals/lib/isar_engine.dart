@@ -109,6 +109,33 @@ final class IsarBenchEngine implements BenchEngine {
   }
 
   @override
+  Future<int> bulkimport(BenchDataset data, String baseDir) async {
+    // Sequential in-process ops (the smoke test's metrics loop) must close
+    // the live instance first — Isar names are process-global — and the
+    // bulk load leaves nothing open, like `restore`: the read ops keep
+    // measuring `import`'s database.
+    await _isar?.close();
+    _isar = null;
+    final isar = await _open(baseDir);
+    final sw = Stopwatch()..start();
+    // Isar's best documented bulk API: one writeTxn around one putAll.
+    await isar.writeTxn(() async {
+      await isar.isarTxns.putAll([
+        for (final benchTxn in data.txns)
+          _recordOf(
+            id: benchTxn.id,
+            accountId: benchTxn.accountId,
+            txn: benchTxn.txn,
+          ),
+      ]);
+    });
+    sw.stop();
+    await isar.close();
+    _isar = null;
+    return sw.elapsedMilliseconds;
+  }
+
+  @override
   Future<int> coldOpen(String baseDir, {required String accountId}) async {
     final sw = Stopwatch()..start();
     // A fresh process opens here; an already-open instance (the smoke
@@ -229,11 +256,7 @@ final class IsarBenchEngine implements BenchEngine {
             break;
           }
           for (final record in page) {
-            yield (
-              accountId: record.accountId,
-              id: record.code,
-              value: record,
-            );
+            yield (accountId: record.accountId, id: record.code, value: record);
           }
           if (page.length < monthlyPageSize) {
             break;
@@ -547,11 +570,7 @@ final class IsarBenchEngine implements BenchEngine {
 
   @override
   Future<void> writeOneTxn(String accountId, String id, int seq) {
-    final record = _recordOf(
-      id: id,
-      accountId: accountId,
-      txn: syncTxnOf(seq),
-    );
+    final record = _recordOf(id: id, accountId: accountId, txn: syncTxnOf(seq));
     return _isar!.writeTxn(() async {
       await _isar!.isarTxns.put(record);
     });

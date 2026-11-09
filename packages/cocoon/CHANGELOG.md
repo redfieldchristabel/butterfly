@@ -1,5 +1,20 @@
 ## Unreleased
 
+- Bulk loads: `db.bulkWriter()` — a Firestore-style BulkWriter for
+  import-shaped work too big for one transaction. Queue
+  `set`/`update`/`delete` synchronously; the writer commits every 10,000
+  rows (tunable `chunkSize`) as one write transaction — atomic per chunk,
+  never as a whole — and `await bulk.close()` flushes the rest, rebuilds
+  the deferred indexes and resolves when everything is durable. While a
+  load runs it drops the touched tables' secondary indexes (when the table
+  is empty or the load outgrows it) and rebuilds them at close; a query
+  needing one of them waits until then, `get()` by id never waits, and a
+  crash mid-load is recovered on the next open. Importing 1,000,000
+  transactions takes ~13 s at `Durability.full` (was 103 s through
+  `db.batch()` per 1,000 rows on the same dataset — ~8x faster, within ~1.4x of raw SQLite's
+  own deferred-index ceiling). Not atomic as a whole, atomic per chunk;
+  `db.batch()` stays the tool when everything must commit or roll back as
+  one. See the README's "Bulk loads" section.
 - Bulk writes: `db.batch()` queues `set`/`update`/`delete` synchronously and
   `await batch.commit()` runs them in call order inside one write
   transaction — consecutive same-SQL operations batch into one round trip

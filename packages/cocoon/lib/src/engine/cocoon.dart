@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:meta/meta.dart';
@@ -10,6 +11,7 @@ import '../path.dart';
 import '../schema.dart';
 import 'adapter.dart';
 import 'batch.dart';
+import 'bulk_writer.dart';
 import 'cache.dart';
 import 'changes.dart';
 import 'executor.dart';
@@ -144,6 +146,18 @@ final class Cocoon {
   final bool _keepChanges;
   final WatchHub _watchHub = WatchHub();
 
+  /// Secondary indexes currently dropped by running bulk writers, as
+  /// name -> active-writer count; queries whose plan needs one of them wait
+  /// until the count reaches zero.
+  final Map<String, int> _deferredIndexCounts = {};
+
+  /// Live bulk writers (for the deferred-index accounting).
+  var _bulkWriters = 0;
+
+  /// Queries waiting for deferred indexes to come back.
+  final List<({Set<String> needed, Completer<void> completer})> _bulkWaiters =
+      [];
+
   /// The file path the database was opened from, or `null` when it was
   /// opened over a custom executor via [openWith]. Surfaced by the DevTools
   /// inspector's database list.
@@ -251,6 +265,9 @@ final class Cocoon {
         onMigrationProgress: onMigrationProgress,
       );
       await _reconcile(tx, registry, forceTables: migratedTables);
+      // A crashed bulk writer leaves its deferred indexes recorded in
+      // `_cocoon_bulk`; rebuild them before the app sees the database.
+      await _recoverBulkIndexes(tx, registry);
     });
     final db = Cocoon._(
       executor,
@@ -265,12 +282,35 @@ final class Cocoon {
   }
 
   /// Closes the database. Every watch stream this instance created
-  /// completes; using references of a closed database throws.
+  /// completes; using references of a closed database throws. A query still
+  /// waiting for a bulk writer's deferred indexes fails with a [StateError].
   Future<void> close() {
     CocoonInspectorService.detach(this);
     _watchHub.close();
+    for (final waiter in _bulkWaiters) {
+      if (!waiter.completer.isCompleted) {
+        waiter.completer.completeError(
+          StateError(
+            'The database was closed while this query waited for a '
+            'BulkWriter to finish',
+          ),
+        );
+      }
+    }
+    _bulkWaiters.clear();
     return _executor.close();
   }
+
+  /// Starts a Firestore-style BulkWriter: queue `set`/`update`/`delete`
+  /// synchronously, and the writer commits them in chunks of
+  /// [BulkWriterOptions.chunkSize] rows — one write transaction per chunk,
+  /// atomic per chunk, not atomic as a whole. `await bulk.close()` flushes
+  /// the rest, rebuilds the deferred secondary indexes and resolves when
+  /// everything is durable. See [BulkWriter] — this is the bulk-load path
+  /// for imports far larger than [batch].
+  BulkWriter bulkWriter([
+    BulkWriterOptions options = const BulkWriterOptions(),
+  ]) => BulkWriter(this, options);
 
   /// The root collection backed by a top-level [adapter].
   ///
@@ -449,6 +489,9 @@ final class Cocoon {
 
   /// Runs [query], also returning each document's stored wire bytes in page
   /// order — the signature query watches deduplicate pages by.
+  ///
+  /// A query whose plan needs an index a bulk writer currently has deferred
+  /// waits until the writer rebuilds it, then runs.
   @internal
   Future<(QueryPage<T>, List<Uint8List>)> runQueryWithBytes<T extends Object>(
     CocoonQuery<T> query,
@@ -464,6 +507,7 @@ final class Cocoon {
       cursor: spec.startAfter,
       fullScan: spec.fullScan,
     );
+    await waitForBulkIndexes(plan.servingIndex);
     final rows = await _executor.getAll(plan.sql, plan.args);
     final limit = spec.limit;
     var pageRows = rows;
@@ -501,8 +545,79 @@ final class Cocoon {
       cursor: null,
       fullScan: spec.fullScan,
     );
+    await waitForBulkIndexes(plan.servingIndex);
     final rows = await _executor.getAll(plan.countSql, plan.countArgs);
     return rows.first['c']! as int;
+  }
+
+  // -- Bulk-writer deferred indexes ----------------------------------------
+
+  /// Registers a live bulk writer (for the deferred-index accounting).
+  @internal
+  void noteBulkWriterActive() => _bulkWriters++;
+
+  /// Unregisters a finished bulk writer.
+  @internal
+  void noteBulkWriterClosed() => _bulkWriters--;
+
+  /// Marks [indexNames] as dropped by a bulk writer: queries whose plan
+  /// needs one of them wait until they are rebuilt.
+  @internal
+  void noteIndexesDeferred(Iterable<String> indexNames) {
+    for (final name in indexNames) {
+      _deferredIndexCounts[name] = (_deferredIndexCounts[name] ?? 0) + 1;
+    }
+  }
+
+  /// Marks [indexNames] as rebuilt by a bulk writer's close, releasing the
+  /// queries that waited for them.
+  @internal
+  void noteIndexesRestored(Iterable<String> indexNames) {
+    for (final name in indexNames) {
+      final count = _deferredIndexCounts[name];
+      if (count == null) {
+        continue;
+      }
+      if (count <= 1) {
+        _deferredIndexCounts.remove(name);
+      } else {
+        _deferredIndexCounts[name] = count - 1;
+      }
+    }
+    _serveBulkWaiters();
+  }
+
+  /// Resolves when [servingIndex] is no longer deferred by a bulk writer
+  /// (immediately when it never was). Queries call this between planning
+  /// and execution.
+  @internal
+  Future<void> waitForBulkIndexes(String? servingIndex) {
+    if (servingIndex == null ||
+        !_deferredIndexCounts.containsKey(servingIndex)) {
+      return Future.value();
+    }
+    final needed = {servingIndex};
+    final completer = Completer<void>();
+    _bulkWaiters.add((needed: needed, completer: completer));
+    // The last writer may have restored between the check and the add.
+    if (!_deferredIndexCounts.containsKey(servingIndex)) {
+      _serveBulkWaiters();
+    }
+    return completer.future;
+  }
+
+  void _serveBulkWaiters() {
+    if (_bulkWaiters.isEmpty) {
+      return;
+    }
+    for (final waiter in List.of(_bulkWaiters)) {
+      if (!waiter.needed.any(_deferredIndexCounts.containsKey)) {
+        _bulkWaiters.remove(waiter);
+        if (!waiter.completer.isCompleted) {
+          waiter.completer.complete();
+        }
+      }
+    }
   }
 
   // -- Change log -----------------------------------------------------------
@@ -737,6 +852,61 @@ final class Cocoon {
     if (exists == null) {
       await tx.execute(createChangesTableSql());
     }
+  }
+
+  /// Rebuilds the secondary indexes a crashed [BulkWriter] left deferred and
+  /// clears the meta rows, in the open transaction.
+  ///
+  /// The writer records every dropped index in `_cocoon_bulk` (with the DDL
+  /// that recreates it) in the same transaction that drops it, so rows left
+  /// behind mean the load never finished: without this step the database
+  /// would open with missing indexes — and, the shape hash being unchanged,
+  /// the reconciler would not recreate them. A recorded index is only
+  /// rebuilt when the current schema still declares it and its table still
+  /// exists, so a schema change between the crash and the reopen is
+  /// respected. Replay is idempotent (`CREATE ... IF NOT EXISTS`): when the
+  /// reconciler already recreated the index, the replay is a no-op.
+  static Future<void> _recoverBulkIndexes(
+    CocoonTx tx,
+    SchemaRegistry registry,
+  ) async {
+    final bulkTableExists = await tx.getOptional(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      [bulkTableName],
+    );
+    if (bulkTableExists == null) {
+      return;
+    }
+    final rows = await tx.getAll(
+      'SELECT tbl, index_name, sql FROM $bulkTableName',
+    );
+    if (rows.isEmpty) {
+      return;
+    }
+    final byTable = {for (final entry in registry.entries) entry.table: entry};
+    for (final row in rows) {
+      final table = row['tbl']! as String;
+      final name = row['index_name']! as String;
+      final entry = byTable[table];
+      if (entry == null) {
+        continue;
+      }
+      if (!entry.indexes.any((index) => index.name == name)) {
+        continue;
+      }
+      final tableExists =
+          await tx.getOptional(
+            "SELECT name FROM sqlite_master WHERE type = 'table' "
+            'AND name = ?',
+            [table],
+          ) !=
+          null;
+      if (!tableExists) {
+        continue;
+      }
+      await tx.execute(row['sql']! as String);
+    }
+    await tx.execute('DELETE FROM $bulkTableName');
   }
 
   static Future<void> _reconcileTable(CocoonTx tx, RegistryEntry entry) async {

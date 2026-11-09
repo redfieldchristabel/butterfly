@@ -444,6 +444,62 @@ batched statements before the commit (and before any read or delete in the
 same transaction, and every 2,000 queued rows), so large transactions cost
 batched round trips too, with no change in semantics.
 
+## Bulk loads: BulkWriter
+
+For bulk-shaped work too big for one transaction — restoring a backup, a
+first sync, loading a dataset — `db.bulkWriter()` queues
+`set`/`update`/`delete` synchronously and commits them in chunks, the way
+Firestore's server SDKs do it:
+
+```dart
+final bulk = db.bulkWriter(); // 10,000 rows per chunk; indexes deferred
+for (final t in txns) {
+  bulk.set(txnsOf(t.accountId).doc(t.id), t); // synchronous, buffered
+}
+await bulk.close(); // flushes, finishes the indexes, resolves when durable
+```
+
+- **Not atomic as a whole, atomic per chunk** — the same rule Firestore
+  documents loudly: every 10,000 rows (tune with `BulkWriterOptions
+  (chunkSize:)`) commit as one write transaction, so a crash leaves a prefix
+  of committed chunks, never a half chunk, and each chunk honours the
+  database's `Durability`. Use `db.batch()` instead when the whole queue
+  must commit or roll back as one.
+- `flush()` commits the operations queued so far and resolves (later
+  operations keep buffering); `close()` flushes the rest, finishes the
+  indexes and resolves. Using the writer after `close` — or closing it
+  twice — throws. A failed chunk (a failed `update`, a SQL error) rolls
+  back whole, the buffered operations after it are discarded, and the error
+  surfaces from `flush()`/`close()`.
+- Per-operation semantics are the standalone ones, as for `WriteBatch`:
+  `set` upserts, `update` replaces an existing document and fails its chunk
+  when the document is missing — a `set` queued earlier, in the same chunk
+  or an earlier committed one, satisfies it — and `delete` removes the
+  document and its whole subtree. Operations commit in call order; the
+  last write of a document wins inside its chunk.
+- **Deferred secondary indexes** (the default): when the load defers a
+  table's indexes — the table is empty, or the writer has buffered more
+  rows than the table already holds — the writer drops the table's
+  secondary indexes during the load and rebuilds them in `close()`'s one
+  write transaction. The scope index and the unique `path` constraint are
+  never dropped. A query whose plan needs a deferred index waits until the
+  writer closes, then runs; `get()` by id is unaffected. Watches fire once
+  per chunk commit; a query watch whose plan needs a deferred index re-runs
+  only after the writer closes.
+- **Crash recovery**: while the indexes are deferred they are recorded in
+  the internal `_cocoon_bulk` table, in the same transaction that drops
+  them. A database opened with rows left there (a crash mid-load) rebuilds
+  those indexes before the app sees it.
+- The buffer holds every queued operation until its chunk commits. For a
+  load that streams faster than it commits, call `flush()` every few
+  thousand operations to bound the memory.
+
+Measured on the rivals dataset at 1M transactions, `Durability.full`: the
+default `bulkWriter()` imports in ~13 s where `db.batch()` per 1,000 rows
+takes 103 s on the same dataset and indexes — within ~1.4x of raw SQLite's own 9.5 s deferred-index
+ceiling (`benchmarks/cocoon_rivals/CEILING.md`). The chunk-size curve and
+each lever's measurement: `benchmarks/cocoon_rivals/IMPORT.md`.
+
 ## Realtime: watches and the change log
 
 Every committed write appends one row per touched document to an internal
@@ -589,7 +645,9 @@ What holds at 1,000,000 transactions:
   123.6 s), single writes at `Durability.full` are 1,787 µs p50 vs drift's
   2,918 µs, and restoring 300k txns from NDJSON takes 11.2 s vs drift's
   13.9 s. See `benchmarks/cocoon_rivals/IMPORT.md` for where the time
-  went and what each change bought.
+  went and what each change bought. The dedicated bulk-load path
+  (`db.bulkWriter()`, the "Bulk loads" section) brings the 1M import to
+  ~13 s.
 - Where it loses, and by how much: bulk import is still 1.4x behind
   sembast (44.8 s), 2.6x behind Isar (24.9 s) and 8x behind Hive (8.0 s);
   files 388 MB vs drift's 224 MB (1.7x, measured with up to ~32 MiB of

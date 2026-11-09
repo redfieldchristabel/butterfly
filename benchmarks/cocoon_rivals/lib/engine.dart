@@ -119,6 +119,18 @@ abstract interface class BenchEngine {
   /// per transaction. Returns the bulk-import wall time in milliseconds.
   Future<int> import(BenchDataset data, String baseDir);
 
+  /// Imports [data] — accounts first (untimed, as [import]), then every
+  /// transaction through this engine's best documented bulk API, in one go
+  /// instead of [importBatchSize] per commit: Cocoon `bulkWriter()` with
+  /// defaults, drift one `batch` in one transaction, Isar one `writeTxn` +
+  /// `putAll`, ObjectBox one `putMany`, Hive one `putAll`, sembast one
+  /// transaction. The `bulkimport` op wipes its own database and runs this;
+  /// the read ops keep measuring [import]'s database. Like [restore],
+  /// implementations close any live instance first and leave nothing open,
+  /// so a sequential in-process caller (the smoke test) reopens [import]'s
+  /// database afterwards. Returns the bulk-import wall time in milliseconds.
+  Future<int> bulkimport(BenchDataset data, String baseDir);
+
   /// Opens the database and answers one small query over [accountId].
   /// Returns the open wall time in milliseconds; the process start-to-first-
   /// query time the CLI reports adds the harness overhead measured in

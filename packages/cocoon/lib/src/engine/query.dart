@@ -156,6 +156,7 @@ final class PlannedQuery {
     required this.countArgs,
     required this.fingerprint,
     required this.cursorColumns,
+    required this.servingIndex,
   });
 
   /// The page `SELECT`, bound to [args], with `LIMIT ?` when limited.
@@ -176,6 +177,14 @@ final class PlannedQuery {
 
   /// SQL column names the cursor keys are read from, in order-part order.
   final List<String> cursorColumns;
+
+  /// The physical index the planner selected for this query, or `null` when
+  /// the query runs without an index guarantee (`.allowFullScan()`).
+  ///
+  /// The engine uses it to hold a query whose serving index a bulk writer
+  /// currently has deferred (dropped for a bulk load): the query waits until
+  /// the writer rebuilds the index, then runs.
+  final String? servingIndex;
 }
 
 /// Builds the SQL for a query: filters, index check, sort order, keyset
@@ -223,16 +232,18 @@ PlannedQuery planQuery({
   }
   final fingerprint = _fingerprint(entry, scopePath, filters, effectiveOrders);
 
-  if (!fullScan) {
-    _checkIndex(
-      entry,
-      allFilters,
-      equalityNames,
-      rangeNames,
-      orders,
-      effectiveOrders,
-    );
-  }
+  // Which index serves the query (or none, for a full scan). The engine
+  // holds the query while that index is deferred by a bulk writer.
+  final serving = fullScan
+      ? null
+      : _servingIndexOrThrow(
+          entry,
+          allFilters,
+          equalityNames,
+          rangeNames,
+          orders,
+          effectiveOrders,
+        );
 
   final filterWhere = <String>[
     for (final filter in allFilters) _filterSql(filter),
@@ -288,10 +299,13 @@ PlannedQuery planQuery({
     countArgs: [...whereArgs],
     fingerprint: fingerprint,
     cursorColumns: _cursorColumns(entry, effectiveOrders),
+    servingIndex: serving?.name,
   );
 }
 
-void _checkIndex(
+/// The first index that can serve the query, throwing a
+/// [MissingIndexException] when none does.
+IndexPlan _servingIndexOrThrow(
   RegistryEntry entry,
   List<QueryFilter> allFilters,
   Set<String> equalityNames,
@@ -315,7 +329,7 @@ void _checkIndex(
     orders: effectiveOrders,
   );
   if (serving != null) {
-    return;
+    return serving;
   }
   final equalityInOrder = <String>[];
   final seen = <String>{};

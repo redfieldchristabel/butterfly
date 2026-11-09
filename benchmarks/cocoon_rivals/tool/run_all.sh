@@ -22,10 +22,12 @@ SIZES=("$@")
 [ ${#SIZES[@]} -eq 0 ] && SIZES=(10000 100000 300000 1000000)
 
 # The ops measured per engine, in order. `import` builds the database the
-# read ops run against; `verify` (once, untimed output dump) checks the read
-# contracts at scale BEFORE any timing counts; `rww` adds writer txns, so it
-# runs after the pure reads; `restore` rebuilds its own directory.
-OPS="verify open rss latest50 monthly gets write range yearreport statussearch bigspend amountrange pendingmonth deeppage count rww restore"
+# read ops run against; `bulkimport` runs right after it, measuring each
+# engine's best documented bulk API in its own directory (so the read ops'
+# database is untouched); `verify` (once, untimed output dump) checks the
+# read contracts at scale BEFORE any timing counts; `rww` adds writer txns,
+# so it runs after the pure reads; `restore` rebuilds its own directory.
+OPS="bulkimport verify open rss latest50 monthly gets write range yearreport statussearch bigspend amountrange pendingmonth deeppage count rww restore"
 
 echo "== machine ==" >&2
 dart run bin/bench.dart --engine cocoon --size 1 --op env | tail -1 \

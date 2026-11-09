@@ -101,6 +101,30 @@ final class ObjectBoxBenchEngine implements BenchEngine {
   }
 
   @override
+  Future<int> bulkimport(BenchDataset data, String baseDir) async {
+    // Sequential in-process ops (the smoke test's metrics loop) close the
+    // live store first, and the bulk load leaves nothing open, like
+    // `restore`: the read ops keep measuring `import`'s database.
+    _store?.close();
+    _store = null;
+    final store = await _open(baseDir);
+    final sw = Stopwatch()..start();
+    // ObjectBox's best documented bulk API: one putMany.
+    store.box<ObTxn>().putMany([
+      for (final benchTxn in data.txns)
+        _recordOf(
+          id: benchTxn.id,
+          accountId: benchTxn.accountId,
+          txn: benchTxn.txn,
+        ),
+    ]);
+    sw.stop();
+    store.close();
+    _store = null;
+    return sw.elapsedMilliseconds;
+  }
+
+  @override
   Future<int> coldOpen(String baseDir, {required String accountId}) async {
     final sw = Stopwatch()..start();
     // A fresh process opens here; an already-open instance (the smoke

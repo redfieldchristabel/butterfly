@@ -83,6 +83,27 @@ final class HiveBenchEngine implements BenchEngine {
   }
 
   @override
+  Future<int> bulkimport(BenchDataset data, String baseDir) async {
+    // Sequential in-process ops (the smoke test's metrics loop) must close
+    // the live box first — box names are process-global in Hive, so an
+    // open one would alias this load into `import`'s file — and the bulk
+    // load leaves nothing open, like `restore`.
+    await _txns?.close();
+    _txns = null;
+    final box = await _open(baseDir);
+    final sw = Stopwatch()..start();
+    // Hive's best documented bulk API: one putAll for the whole box.
+    await box.putAll({
+      for (final benchTxn in data.txns)
+        benchTxn.id: BenchDataset.sembastMapOf(benchTxn),
+    });
+    sw.stop();
+    await box.close();
+    _txns = null;
+    return sw.elapsedMilliseconds;
+  }
+
+  @override
   Future<int> coldOpen(String baseDir, {required String accountId}) async {
     final sw = Stopwatch()..start();
     final box = await _open(baseDir);

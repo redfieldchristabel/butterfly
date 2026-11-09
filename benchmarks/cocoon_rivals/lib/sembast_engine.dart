@@ -92,6 +92,29 @@ final class SembastBenchEngine implements BenchEngine {
   }
 
   @override
+  Future<int> bulkimport(BenchDataset data, String baseDir) async {
+    // Sequential in-process ops (the smoke test's metrics loop) close the
+    // live instance first, and the bulk load leaves nothing open, like
+    // `restore`: the read ops keep measuring `import`'s database.
+    await _db?.close();
+    _db = null;
+    final db = await _open(baseDir);
+    final sw = Stopwatch()..start();
+    // sembast's best documented bulk API: one transaction around every put.
+    await db.transaction((txn) async {
+      for (final benchTxn in data.txns) {
+        await _txns
+            .record(benchTxn.id)
+            .put(txn, BenchDataset.sembastMapOf(benchTxn));
+      }
+    });
+    sw.stop();
+    await db.close();
+    _db = null;
+    return sw.elapsedMilliseconds;
+  }
+
+  @override
   Future<int> coldOpen(String baseDir, {required String accountId}) async {
     final sw = Stopwatch()..start();
     final db = await _open(baseDir);

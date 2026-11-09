@@ -200,6 +200,14 @@ def main():
                 ),
             ),
             (
+                "Bulk import (s)",
+                lambda e: cell(
+                    load(f"results/{size}_{e}_bulkimport.json"),
+                    "elapsedMs",
+                    1000,
+                ),
+            ),
+            (
                 "File size (MB)",
                 lambda e: cell(
                     load(f"results/{size}_{e}_import.json"), "fileBytes", MB

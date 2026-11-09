@@ -111,7 +111,7 @@ which is what makes old readers tolerant of newer writers.
 
 ## Internal tables
 
-Cocoon keeps two internal tables (both reserved-name prefixed):
+Cocoon keeps three internal tables (all reserved-name prefixed):
 
 ```sql
 -- key/value metadata: schema_version, per-table shape hashes
@@ -124,8 +124,44 @@ CREATE TABLE _cocoon_changes (
   path TEXT NOT NULL,
   op TEXT NOT NULL CHECK (op IN ('set','delete')),
   at INTEGER NOT NULL
-)
+);
+
+-- deferred bulk-load indexes: one row per secondary index a running
+-- BulkWriter has dropped, with the DDL that recreates it
+CREATE TABLE _cocoon_bulk (tbl TEXT NOT NULL, index_name TEXT NOT NULL, sql TEXT NOT NULL)
 ```
+
+### How bulk-index deferral works
+
+A `BulkWriter` load with the default `deferIndexes: true` skips secondary
+index maintenance while it runs. On the first chunk that touches a table,
+inside the same write transaction as the chunk's rows, the writer decides —
+the table is empty, or the writer has buffered more rows for the table than
+the table holds — and, when deferral pays:
+
+1. inserts one `_cocoon_bulk` row per declared secondary index, carrying
+   the exact `CREATE ... INDEX IF NOT EXISTS` statement (the scope index and
+   the unique `path` constraint are never touched), and
+2. `DROP INDEX`es each of them.
+
+The writes of the chunk commit atomically with the drops, so the meta rows
+on disk always match the physically missing indexes. Every committed chunk
+still appends its change-log rows and fires its watch event; the
+hot-document cache works as always.
+
+While the indexes are deferred, a query whose plan needs one of them (the
+planner's serving index, exposed as `PlannedQuery.servingIndex`) is held by
+the engine until the writer closes; queries served by the scope index,
+`.allowFullScan()` queries and `get()` by id run immediately.
+
+`close()` rebuilds exactly the indexes the writer dropped — one write
+transaction: `CREATE INDEX` per index, then the meta rows deleted. A crash
+mid-load leaves the rows behind with the indexes gone (the table's shape
+hash is unchanged, so the reconciler would not recreate them); `Cocoon.open`
+runs the recovery inside its open transaction: every recorded index still
+declared by the current schema and living on an existing table is recreated
+from its recorded DDL, then all rows are deleted. An index the app no longer
+declares is not resurrected — the reconciler's decision wins.
 
 ## Money guidance
 
