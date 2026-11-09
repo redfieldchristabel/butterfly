@@ -1,0 +1,34 @@
+name: cocoon_rivals
+publish_to: none
+description: "An honest benchmark of Cocoon against the real local-database rivals (drift, Isar, ObjectBox, Hive CE, sembast) on finance-shaped data, up to 1M transactions."
+version: 0.0.1
+homepage: https://github.com/redfieldchristabel/butterfly
+
+environment:
+  sdk: ^3.11.0
+
+dependencies:
+  cocoon:
+    path: ../../packages/cocoon
+  drift: 2.34.0
+  hive_ce: ^2.23.1
+  isar_community: ^3.3.2
+  objectbox: 6.0.0-preview.6
+  sembast: ^3.9.0
+  sqlite3: ^3.5.2
+
+dev_dependencies:
+  build_runner: ^2.4.13
+  cocoon_generator:
+    path: ../../packages/cocoon_generator
+  drift_dev: 2.34.0
+  isar_community_generator: ^3.3.2
+  lints: ^6.0.0
+  objectbox_generator: 6.0.0-preview.6
+  test: ^1.24.0
+
+# cocoon_generator declares a hosted `cocoon: ^0.0.1` (it resolves to this
+# workspace's member there); pin it back to the real local package.
+dependency_overrides:
+  cocoon:
+    path: ../../packages/cocoon

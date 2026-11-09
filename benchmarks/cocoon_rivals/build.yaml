@@ -1,0 +1,19 @@
+targets:
+  $default:
+    # cocoon_generator reads the committed `cocoon.lock.json` from the package
+    # root, which build_runner does not include in its default source set.
+    sources:
+      - lib/**
+      - cocoon.lock.json
+      - $package$
+    builders:
+      # isar_community_generator matches its `@Collection` annotation by bare
+      # name, so it crashes on the Cocoon models' `@Collection(...)`; scope it
+      # to the Isar model file only.
+      isar_community_generator|isar_community_generator:
+        generate_for:
+          - lib/isar_models.dart
+      objectbox_generator|resolver:
+        enabled: true
+      objectbox_generator|generator:
+        enabled: true

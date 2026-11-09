@@ -1,0 +1,32 @@
+# Dart build output.
+.dart_tool/
+build/
+pubspec.lock
+
+# Generated code — commit the models, build.yaml and cocoon.lock.json instead,
+# every engine's codegen regenerates these from them.
+*.cocoon.dart
+lib/cocoon_schema.g.dart
+lib/drift_models.g.dart
+lib/isar_models.g.dart
+lib/objectbox.g.dart
+
+# Python bytecode from the tool/ scripts.
+__pycache__/
+
+# Isar's native core is not source: isar_community downloads it automatically
+# on first run when it is missing (isar_core.dart's _downloadIsarCore).
+bin/libisar.so
+
+# Databases and backups (the harness keeps them under $TMPDIR; these patterns
+# are the safety net if one ever lands here).
+*.db
+*.hive
+*.ndjson
+
+# Harness logs (results/run_all.log and friends); results/*.json stays.
+*.log
+
+# Superseded measurements: cells moved aside by the busy-window re-runs
+# (see results/BUSY_WINDOWS.txt).
+results/stale/
