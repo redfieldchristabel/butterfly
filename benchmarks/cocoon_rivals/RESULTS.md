@@ -31,36 +31,36 @@ Raw SQLite itself is mapped separately in [CEILING.md](CEILING.md): what the fas
 | Import (s) | 0.2 | 0.2 | 0.2 | 0.1 | 0.2 | 0.1 | 0.6 |
 | Bulk import (s) | 0.2 | 0.2 | 0.2 | 0.1 | 0.1 | 0.1 | 0.6 |
 | File size (MB) | 12.3 | 12.3 | 2.3 | 10.0 | 7.4 | 3.0 | 2.7 |
-| Cold open (ms) | 153 | 152 | 138 | 138 | 133 | 188 | 256 |
-| RSS after open, − floor (MB) | 92.9 | 85.0 | 71.0 | 57.7 | 60.1 | -4.5 | -26.9 |
-| RSS after reads, − floor (MB) | -16.2 | -10.2 | -31.6 | -51.5 | -44.3 | -21.6 | -17.5 |
-| Peak RSS, − floor peak (MB) | 73.4 | 72.3 | 71.2 | 75.2 | 86.9 | 94.2 | 75.9 |
-| Latest-50 p50 (ms) | 0.7 | 0.6 | 0.5 | 0.9 | 0.3 | 3.1 | 4.1 |
-| Latest-50 p95 (ms) | 2.4 | 2.2 | 1.3 | 1.6 | 0.8 | 4.7 | 5.9 |
-| Monthly totals (ms) | 19 | 20 | 14 | 21 | 10 | 5 | 48 |
-| 1,000 random gets (ms) | 150 | 135 | 107 | 388 | 15 | 1 | 9 |
-| Single write p50 (µs) | 2016 | 553 | 3119 | 1139 | 743 | 114 | 341 |
-| Single write p95 (µs) | 2881 | 953 | 3931 | 1802 | 1225 | 266 | 602 |
-| Month range, all accounts (ms) | 32 | 32 | 17 | 25 | 12 | 10 | 52 |
-| Year report, all accounts (ms) | 80 | 77 | 17 | 77 | 20 | 9 | 49 |
-| Status search p50 (ms) | 1.3 | 1.3 | 0.8 | 1.1 | 0.5 | 3.6 | 6.1 |
-| Status search p95 (ms) | 3.8 | 3.5 | 2.3 | 2.6 | 1.7 | 7.5 | 8.4 |
-| Bigspend p50 (ms) | 1.3 | 1.3 | 1.0 | 0.7 | 0.5 | 5.8 | 39.8 |
-| Bigspend p95 (ms) | 3.6 | 3.7 | 4.1 | 1.7 | 1.4 | 8.4 | 45.6 |
-| Amount range, all accounts (ms) | 20 | 19 | 13 | 20 | 12 | 10 | 46 |
+| Cold open (ms) | 153 | 152 | 138 | 130 | 133 | 188 | 256 |
+| RSS after open, − floor (MB) | 92.9 | 85.0 | 71.0 | 26.5 | 60.1 | -4.5 | -26.9 |
+| RSS after reads, − floor (MB) | -16.2 | -10.2 | -31.6 | -68.7 | -44.3 | -21.6 | -17.5 |
+| Peak RSS, − floor peak (MB) | 73.4 | 72.3 | 71.2 | 74.5 | 86.9 | 94.2 | 75.9 |
+| Latest-50 p50 (ms) | 0.7 | 0.6 | 0.5 | 0.8 | 0.3 | 3.1 | 4.1 |
+| Latest-50 p95 (ms) | 2.4 | 2.2 | 1.3 | 1.4 | 0.8 | 4.7 | 5.9 |
+| Monthly totals (ms) | 19 | 20 | 14 | 23 | 10 | 5 | 48 |
+| 1,000 random gets (ms) | 150 | 135 | 107 | 341 | 15 | 1 | 9 |
+| Single write p50 (µs) | 2016 | 553 | 3119 | 1112 | 743 | 114 | 341 |
+| Single write p95 (µs) | 2881 | 953 | 3931 | 1604 | 1225 | 266 | 602 |
+| Month range, all accounts (ms) | 32 | 32 | 17 | 24 | 12 | 10 | 52 |
+| Year report, all accounts (ms) | 80 | 77 | 17 | 56 | 20 | 9 | 49 |
+| Status search p50 (ms) | 1.3 | 1.3 | 0.8 | 1.2 | 0.5 | 3.6 | 6.1 |
+| Status search p95 (ms) | 3.8 | 3.5 | 2.3 | 2.3 | 1.7 | 7.5 | 8.4 |
+| Bigspend p50 (ms) | 1.3 | 1.3 | 1.0 | 1.3 | 0.5 | 5.8 | 39.8 |
+| Bigspend p95 (ms) | 3.6 | 3.7 | 4.1 | 2.9 | 1.4 | 8.4 | 45.6 |
+| Amount range, all accounts (ms) | 20 | 19 | 13 | 21 | 12 | 10 | 46 |
 | Pending month, all accounts (ms) | 12 | 12 | 10 | 23 | 11 | 10 | 44 |
 | Deep page p50 (ms) | 1.1 | 1.0 | 0.7 | 0.9 | 0.3 | 0.0 | 4.6 |
-| Deep page p95 (ms) | 3.7 | 3.2 | 2.2 | 1.8 | 0.8 | 4.7 | 6.8 |
+| Deep page p95 (ms) | 3.7 | 3.2 | 2.2 | 1.7 | 0.8 | 4.7 | 6.8 |
 | Deep page 20 (ms) | — | — | — | — | — | — | — |
-| Count pending p50 (ms) | 0.4 | 0.5 | 0.1 | 1.1 | 0.2 | 0.9 | 3.9 |
-| Count year p50 (ms) | 0.5 | 0.5 | 0.1 | 1.1 | 0.1 | 0.9 | 3.7 |
-| Read-while-write p95 (ms) | 2.5 | 2.3 | 5.2 | 1.9 | 0.9 | 5.0 | 6.2 |
-| Restore 300k from NDJSON (s) | 15.1 | 14.4 | 23.1 | 6.5 | 6.4 | 3.2 | 14.6 |
-| Import peak RSS, − floor peak (MB) | 67.5 | 75.5 | 68.9 | 64.9 | 80.8 | 69.8 | 69.3 |
+| Count pending p50 (ms) | 0.4 | 0.5 | 0.1 | 0.9 | 0.2 | 0.9 | 3.9 |
+| Count year p50 (ms) | 0.5 | 0.5 | 0.1 | 0.8 | 0.1 | 0.9 | 3.7 |
+| Read-while-write p95 (ms) | 2.5 | 2.3 | 5.2 | 1.4 | 0.9 | 5.0 | 6.2 |
+| Restore 300k from NDJSON (s) | 15.1 | 14.4 | 23.1 | 6.7 | 6.4 | 3.2 | 14.6 |
+| Import peak RSS, − floor peak (MB) | 67.5 | 75.5 | 68.9 | 64.6 | 80.8 | 69.8 | 69.3 |
 | Import CPU (s) | 0.6 | 0.5 | 0.5 | 0.4 | 0.5 | 0.4 | 0.8 |
-| Import disk written (MB) | 12.4 | 12.3 | 8.8 | 8.7 | 10.2 | 3.1 | 2.7 |
-| Import write amplification (x) | 1.01 | 1.00 | 3.79 | 0.87 | 1.38 | 1.00 | 1.00 |
-| Restore peak RSS, − floor peak (MB) | 66.6 | 63.6 | 68.6 | 78.9 | 130.2 | 563.9 | 501.6 |
+| Import disk written (MB) | 12.4 | 12.3 | 8.8 | 8.8 | 10.2 | 3.1 | 2.7 |
+| Import write amplification (x) | 1.01 | 1.00 | 3.79 | 0.88 | 1.38 | 1.00 | 1.00 |
+| Restore peak RSS, − floor peak (MB) | 66.6 | 63.6 | 68.6 | 62.3 | 130.2 | 563.9 | 501.6 |
 
 ## 100,000 transactions
 
@@ -83,9 +83,9 @@ Raw SQLite itself is mapped separately in [CEILING.md](CEILING.md): what the fas
 | Year report, all accounts (ms) | 233 | 229 | 43 | 198 | 159 | 45 | 161 |
 | Status search p50 (ms) | 1.2 | 1.3 | 0.8 | 5.8 | 5.2 | 67.4 | 100.8 |
 | Status search p95 (ms) | 3.2 | 4.0 | 2.3 | 8.3 | 7.4 | 72.7 | 109.0 |
-| Bigspend p50 (ms) | 1.2 | 1.3 | 0.8 | 0.7 | 6.7 | 68.5 | 881.4 |
-| Bigspend p95 (ms) | 4.0 | 4.0 | 2.2 | 1.7 | 8.4 | 73.5 | 989.4 |
-| Amount range, all accounts (ms) | 70 | 61 | 43 | 38 | 86 | 67 | 642 |
+| Bigspend p50 (ms) | 1.2 | 1.3 | 0.8 | 3.2 | 6.7 | 68.5 | 881.4 |
+| Bigspend p95 (ms) | 4.0 | 4.0 | 2.2 | 5.0 | 8.4 | 73.5 | 989.4 |
+| Amount range, all accounts (ms) | 70 | 61 | 43 | 41 | 86 | 67 | 642 |
 | Pending month, all accounts (ms) | 32 | 31 | 21 | 35 | 27 | 67 | 153 |
 | Deep page p50 (ms) | 0.8 | 0.8 | 1.1 | 4.8 | 2.8 | 0.0 | 67.2 |
 | Deep page p95 (ms) | 2.6 | 2.5 | 2.1 | 6.5 | 4.4 | 0.0 | 75.2 |
@@ -121,9 +121,9 @@ Raw SQLite itself is mapped separately in [CEILING.md](CEILING.md): what the fas
 | Year report, all accounts (ms) | 464 | 457 | 105 | 586 | 551 | 120 | 438 |
 | Status search p50 (ms) | 1.2 | 1.3 | 0.8 | 22.7 | 19.9 | 203.4 | 362.9 |
 | Status search p95 (ms) | 5.4 | 4.0 | 3.4 | 26.2 | 22.1 | 223.6 | 373.4 |
-| Bigspend p50 (ms) | 1.4 | 1.4 | 0.9 | 0.7 | 21.7 | 211.6 | 2896.8 |
-| Bigspend p95 (ms) | 3.4 | 3.7 | 2.7 | 1.4 | 24.7 | 234.0 | 3306.6 |
-| Amount range, all accounts (ms) | 118 | 111 | 208 | 85 | 713 | 194 | 5911 |
+| Bigspend p50 (ms) | 1.4 | 1.4 | 0.9 | 7.5 | 21.7 | 211.6 | 2896.8 |
+| Bigspend p95 (ms) | 3.4 | 3.7 | 2.7 | 9.5 | 24.7 | 234.0 | 3306.6 |
+| Amount range, all accounts (ms) | 118 | 111 | 208 | 95 | 713 | 194 | 5911 |
 | Pending month, all accounts (ms) | 56 | 56 | 38 | 149 | 145 | 185 | 1107 |
 | Deep page p50 (ms) | 0.8 | 0.8 | 1.2 | 18.2 | 13.8 | 0.0 | 242.5 |
 | Deep page p95 (ms) | 2.7 | 2.4 | 2.3 | 22.8 | 15.6 | 0.1 | 276.2 |
@@ -159,9 +159,9 @@ Raw SQLite itself is mapped separately in [CEILING.md](CEILING.md): what the fas
 | Year report, all accounts (ms) | 1419 | 1376 | 358 | 1928 | 1830 | 326 | 1131 |
 | Status search p50 (ms) | 1.4 | 1.4 | 0.8 | 85.3 | 65.6 | 645.2 | 1242.3 |
 | Status search p95 (ms) | 4.1 | 3.5 | 2.3 | 96.2 | 70.6 | 662.1 | 1271.0 |
-| Bigspend p50 (ms) | 1.3 | 1.4 | 0.8 | 0.7 | 69.1 | 638.6 | 10374.8 |
-| Bigspend p95 (ms) | 4.1 | 4.1 | 2.1 | 1.6 | 73.9 | 664.3 | 10681.1 |
-| Amount range, all accounts (ms) | 218 | 213 | 945 | 459 | 7725 | 588 | 57372 |
+| Bigspend p50 (ms) | 1.3 | 1.4 | 0.8 | 25.5 | 69.1 | 638.6 | 10374.8 |
+| Bigspend p95 (ms) | 4.1 | 4.1 | 2.1 | 31.2 | 73.9 | 664.3 | 10681.1 |
+| Amount range, all accounts (ms) | 218 | 213 | 945 | 515 | 7725 | 588 | 57372 |
 | Pending month, all accounts (ms) | 98 | 92 | 88 | 1098 | 1159 | 555 | 7667 |
 | Deep page p50 (ms) | 0.8 | 0.8 | 1.2 | 57.9 | 45.8 | 0.0 | 799.3 |
 | Deep page p95 (ms) | 2.5 | 2.6 | 2.4 | 66.5 | 48.7 | 0.0 | 826.6 |
@@ -191,9 +191,9 @@ pay for the whole history on every query: one account's latest 50 is 0.7 ms agai
 Hive holds 2.1 GB and sembast 2.3 GB, and its engine open is 82 ms where Hive needs 5.2 s.
 
 **It loses where it should be honest about it.** Against drift (plain SQLite, the speed
-limit) the indexed reads cost 1.4-2x: that gap is decoding documents into typed objects. The
-year report is 4x behind drift and Hive (no aggregate pushdown: Cocoon sums in Dart), monthly
-totals 1.7x behind drift, gets by id 9x behind ObjectBox and 19x behind Hive. A bulk load
+limit) the indexed reads cost 1.4-2x: that gap is decoding documents into typed objects. In this
+v2 run the year report was 4x behind drift and Hive and monthly totals 1.7x behind drift
+(Cocoon summed in Dart; aggregate pushdown has since closed both, see `AGGREGATES.md`), gets by id 9x behind ObjectBox and 19x behind Hive. A bulk load
 through `bulkWriter()` (12.6 s at 1M) beats drift and sembast but trails Isar 2.2x, Hive
 1.6x and ObjectBox 1.4x through their own best bulk APIs.
 
@@ -231,15 +231,17 @@ process start; since step 12 it includes ~70 ms of the harness's cost meter for 
   16 s. Cocoon's keyset cursor keeps page 20 as cheap as page 1.
 - **One month across all accounts, paged**: Cocoon 308 ms, drift 2.6 s, Isar 6.5 s,
   ObjectBox 12.5 s, sembast 103 s.
-- **A 1% amount band, paged**: Cocoon 218 ms, Isar 459, Hive 588, drift 945, ObjectBox 7.7 s,
+- **A 1% amount band, paged**: Cocoon 218 ms, Isar 515, Hive 588, drift 945, ObjectBox 7.7 s,
   sembast 57 s.
-- **The 50 biggest debits**: Isar 0.7 ms, drift 0.8, Cocoon 1.3, ObjectBox 69, Hive 639,
-  sembast 10.4 s.
+- **The 50 biggest debits**: drift 0.8 ms, Cocoon 1.3, Isar 25.5, ObjectBox 69, Hive 639,
+  sembast 10.4 s. Isar's index walk returns equal amounts in its own order, so a correct
+  answer (ties by id, as the contract says) re-fetches the rows tied with the 50th amount and
+  sorts them; that is what Isar's 25.5 ms pays for (it was 0.7 ms with the wrong tie order).
 - **Pending in one month (compound filter)**: drift 88 ms, Cocoon 98, Hive 555, Isar 1.1 s.
 - **Counts**: Cocoon 3.6 ms for every pending txn (drift 2.4, Isar 62, Hive 183).
 - **Year report**: Hive 326 ms, drift 358, sembast 1.1 s, Cocoon 1.4 s, ObjectBox 1.8 s,
-  Isar 1.9 s. The next read-side step is aggregate pushdown (Firestore's `sum`/`count`
-  aggregations) so this runs in SQL.
+  Isar 1.9 s. Since then Cocoon pushes aggregates into SQL (`aggregate()` / `groupBy()`): the
+  year report is 376 ms against drift's 358 (see `AGGREGATES.md`).
 - **1,000 gets by id**: Hive 5 ms, ObjectBox 10, drift 79, Cocoon 94, sembast 573, Isar 6.7 s.
 
 ### Writes
@@ -258,9 +260,9 @@ dataset); Hive peaks at 1.9 GB.
 
 ### Known issues in this run
 
-- **Isar's `bigspend` and `amountrange` at 100k and above** return the same rows as Cocoon
-  with ties on equal amounts in a different order (Isar walks equal index keys in its own
-  order, the contract says id ascending). Their timings are shown; the fix is pending.
+- **Isar's amount shapes were re-measured on 2026-11-10** after fixing their tie order
+  (`bigspend`, `amountrange` at every size, and every Isar op at 10k on a fresh database);
+  every engine now matches Cocoon's `verify` dump at every size.
 - **Disk written** comes from the Foreman job's cgroup `io.stat` (this WSL2 kernel has no
   per-process io accounting), so it is only meaningful because the matrix runs one process at
   a time.

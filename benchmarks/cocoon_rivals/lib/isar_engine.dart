@@ -426,12 +426,34 @@ final class IsarBenchEngine implements BenchEngine {
     // No amount filter (the dataset's 50 smallest amounts are always
     // debits); the where clause walks the amount index, most negative
     // first.
-    final records = await _isar!.isarTxns
+    final first = await _isar!.isarTxns
         .where()
         .amountMinorBetween(_intMin, _intMax)
         .limit(50)
         .findAll();
-    return [for (final record in records) record.code];
+    if (first.isEmpty) {
+      return const [];
+    }
+    // Isar walks equal index keys in its own order; the contract breaks
+    // amount ties by string id ASC. Fetch every row tied with the 50th
+    // amount, merge and sort, as an Isar app needing a stable order must.
+    final edge = first.last.amountMinor;
+    final ties = await _isar!.isarTxns
+        .where()
+        .amountMinorEqualTo(edge)
+        .findAll();
+    final merged = [
+      for (final record in first)
+        if (record.amountMinor < edge) record,
+      ...ties,
+    ]..sort(_byAmountThenCode);
+    return [for (final record in merged.take(50)) record.code];
+  }
+
+  /// The contract order for the amount shapes: amount ASC, string id ASC.
+  static int _byAmountThenCode(IsarTxn a, IsarTxn b) {
+    final byAmount = a.amountMinor.compareTo(b.amountMinor);
+    return byAmount != 0 ? byAmount : a.code.compareTo(b.code);
   }
 
   @override
@@ -440,6 +462,7 @@ final class IsarBenchEngine implements BenchEngine {
     // Isar's idiom is offset/limit pagination (as in `rangeMonthIds`).
     final isar = _isar!;
     final ids = <String>[];
+    final records = <IsarTxn>[];
     var pages = 0;
     while (true) {
       final page = await isar.isarTxns
@@ -453,12 +476,16 @@ final class IsarBenchEngine implements BenchEngine {
       if (page.isEmpty) {
         break;
       }
-      ids.addAll([for (final record in page) record.code]);
+      records.addAll(page);
       if (page.length < amountRangePageSize) {
         break;
       }
       pages++;
     }
+    // Pages arrive in index (amount) order; equal amounts come in Isar's
+    // own order, so the contract's id tie-break is applied here.
+    records.sort(_byAmountThenCode);
+    ids.addAll([for (final record in records) record.code]);
     // An empty band is a legal answer (the smoke test runs at 500 txns,
     // where it is often empty); the verify dump diffs emptiness loudly.
     return ids;

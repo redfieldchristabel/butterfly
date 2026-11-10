@@ -977,50 +977,42 @@ harness baseline. Full tables and raw runs:
 on-device app would actually pick — drift (plain SQLite, the speed limit),
 Isar, ObjectBox, Hive CE and sembast, plus Cocoon itself at
 `Durability.normal` — on the same finance-shaped data, four sizes up to
-1,000,000 transactions, 13 operations, every run a fresh process, every
+1,000,000 transactions, every workload in RESULTS.md, every run a fresh process, every
 memory number minus a measured harness baseline, every rival's results
 diffed against Cocoon's before any timing counts. Full tables and
 per-workload verdicts:
 [benchmarks/cocoon_rivals/RESULTS.md](https://github.com/redfieldchristabel/butterfly/tree/master/benchmarks/cocoon_rivals/RESULTS.md).
 
-What holds at 1,000,000 transactions:
+What holds at 1,000,000 transactions (matrix v2, 9-10 Nov 2026; the
+file size is the shipped layout):
 
-- Indexed reads stay flat while the in-RAM engines linearly scan: one
-  account's latest-50 is 0.74 ms p50 (from 0.69 ms at 10k) — Hive needs
-  641 ms and sembast 769 ms (871x / 1,044x slower), Isar 55 ms, ObjectBox
-  59 ms. The `(status, bookedOn)` status search is 1.42 ms vs 608 ms
-  (Hive) and 1,171 ms (sembast).
-- All-accounts scans: the paged June-2024 month range runs in 320 ms —
-  7.7x faster than drift's idiomatic LIMIT/OFFSET paging (2,476 ms; keyset
-  cursors, not offsets) and 309x faster than sembast (98,982 ms).
-- Memory: after the read workloads Cocoon's own share is at or below the
-  bare-harness floor at every size; at 1M sembast is +2,242 MB over the
-  same floor, Hive +2,214 MB, Isar +262 MB, ObjectBox +539 MB.
+- Indexed reads stay flat while the in-RAM engines scan: one account's
+  latest 50 is 0.7 ms p50 against Isar 55 ms, ObjectBox 44 ms, Hive 711 ms
+  and sembast 796 ms. The `(status, bookedOn)` status search is 1.4 ms vs
+  Hive's 645 ms and sembast's 1,242 ms; the 50 biggest debits 1.3 ms (drift
+  0.8, Isar 25.5, Hive 639).
+- All-accounts scans: the paged June-2024 month range runs in 308 ms, 8.4x
+  faster than drift's idiomatic LIMIT/OFFSET paging (2,588 ms; keyset
+  cursors, not offsets) and 333x faster than sembast.
+- Aggregates run in SQL (`aggregate()` / `groupBy()`): the year report is
+  376 ms vs drift's 358 ms `GROUP BY`, and one account's monthly totals are
+  35 ms for 12 group rows. See `benchmarks/cocoon_rivals/AGGREGATES.md`.
+- Memory: after the read workloads Cocoon is +2 MB over the bare-harness
+  floor; Isar +305 MB, ObjectBox +546 MB, Hive +2.1 GB, sembast +2.3 GB.
 - Under concurrent writes (one committed txn every 10 ms) Cocoon's
-  latest-50 p95 is 3.0 ms; drift, which serializes every statement
-  through one background isolate, pays 4.96 ms.
-- Bulk writes (since the `db.batch()` / buffered-transaction write path):
-  importing 1M txns takes 64.7 s vs drift's 95.5 s (1.5x faster; it was
-  123.6 s), single writes at `Durability.full` are 1,787 µs p50 vs drift's
-  2,918 µs, and restoring 300k txns from NDJSON takes 11.2 s vs drift's
-  13.9 s. See `benchmarks/cocoon_rivals/IMPORT.md` for where the time
-  went and what each change bought. The dedicated bulk-load path
-  (`db.bulkWriter()`, the "Bulk loads" section) brings the 1M import to
-  ~13 s.
-- Aggregates (since the `aggregate()` / `groupBy()` pushdown): the
-  aggregate workloads run in SQL now, and the "a document API has no
-  aggregate pushdown" loss is gone — the year report is 376 ms vs drift's
-  358 ms `GROUP BY` (was 1,430 ms, 3.6x behind), and one account's monthly
-  totals are 35 ms for 12 group rows (was 185 ms across 9,874
-  documents). See `benchmarks/cocoon_rivals/AGGREGATES.md`.
-- Where it loses, and by how much: bulk import is still 1.4x behind
-  sembast (44.8 s), 2.6x behind Isar (24.9 s) and 8x behind Hive (8.0 s);
-  files 388 MB vs drift's 224 MB (1.7x, measured with up to ~32 MiB of
-  un-checkpointed WAL); gets by
-  id are 6x behind ObjectBox and 20x behind Hive's in-RAM lookups;
-  the NDJSON restore is 3.7x behind Hive's 3.0 s; single writes trail
-  Hive's fsync-less appends (112 µs) — `Durability.normal` (377 µs) is
-  7.7x faster than drift's default while staying crash-safe.
+  latest-50 p95 is 3.2 ms; drift, which serializes every statement through
+  one background isolate, pays 4.3 ms.
+- Writes: one write at `Durability.full` is 1,885 µs p50 vs drift's
+  2,975 µs; `Durability.normal` (still crash-safe) is 450 µs.
+- Bulk loads through each engine's best API: Isar 5.7 s, Hive 7.9 s,
+  ObjectBox 8.8 s, **Cocoon `bulkWriter()` 12.6 s**, drift 18.7 s, sembast
+  46.5 s.
+- Where it loses, and by how much: the bulk load trails Isar 2.2x, Hive
+  1.6x and ObjectBox 1.4x; gets by id are 9x behind ObjectBox and 19x
+  behind Hive's in-RAM lookups (94 ms per 1,000 vs 10 and 5); the 300k
+  NDJSON restore is 13.0 s vs Hive's 3.1 s; indexed reads cost 1.4-2x
+  drift's (decoding documents into typed objects); the file is 305 MB vs
+  drift's 231 MB for the same data (`benchmarks/cocoon_rivals/STORAGE.md`).
 
 ## Tuning
 
