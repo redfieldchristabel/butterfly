@@ -48,6 +48,13 @@ against the committed lock, and asks only what a human must answer:
   another field is not offered again.
 - Removed fields without candidates and removed collections ask a plain
   `y/N` confirm; the default (`No`) aborts without writing anything.
+- A field **added** to an existing collection that is non-nullable and has
+  no constructor default would read its proto3 zero value (`''`, `0`,
+  `false`, the epoch, the first enum value) in every document written
+  before it existed. A menu shows that exact value and asks: write a
+  backfill stub (default — the engine sets the field on existing documents
+  at the next open), keep the zero value (recorded in the lock, never asked
+  again), or abort. A brand-new collection asks nothing.
 - Everything else is decided without asking: added fields get fresh numbers,
   reorders and index changes change nothing, and a **type change** always
   moves the field to a fresh number (the old number is reserved forever) and
@@ -81,8 +88,10 @@ see the Cocoon README's "Schema migrations" section.
 | `--rename Model.old=new` | Decide a rename without the menu (repeatable). |
 | `--drop Model.field` | Drop a removed field, reserving its number (repeatable). |
 | `--drop-collection Model` | Confirm a removed collection or embedded class (repeatable). |
-| `--yes` | Accept the default answer of every rename menu; never covers drops. |
-| `--check` | Exit 1 if the run would change anything; writes nothing. |
+| `--backfill Model.field` | Decide an added required field with a backfill stub (repeatable). |
+| `--keep-zero Model.field` | Decide an added required field to keep its zero value; recorded in the lock (repeatable). |
+| `--yes` | Accept the default answer of every rename menu and of every new-required-field question (a backfill stub, never keep-zero); never covers drops. |
+| `--check` | Exit 1 if the run would change anything — pending required-field decisions included; writes nothing. |
 
 When stdin is not a terminal and a decision is missing, the command exits 2
 and lists the flags that would resolve it. Exit codes: 0 up to date or

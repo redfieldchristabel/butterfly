@@ -133,6 +133,7 @@ class CollectionSpec {
     Set<int> reserved = const {},
     List<List<String>> indexes = const [],
     List<String> mirrored = const [],
+    List<String> keepZero = const [],
   }) : fields = List<FieldSpec>.unmodifiable(
          List<FieldSpec>.of(fields)
            ..sort((FieldSpec a, FieldSpec b) => a.number.compareTo(b.number)),
@@ -141,7 +142,8 @@ class CollectionSpec {
        indexes = List<List<String>>.unmodifiable(
          indexes.map(List<String>.unmodifiable),
        ),
-       mirrored = List<String>.unmodifiable(mirrored);
+       mirrored = List<String>.unmodifiable(mirrored),
+       keepZero = List<String>.unmodifiable(keepZero);
 
   /// Restores the lock entry [model] from its `cocoon.lock.json` JSON.
   factory CollectionSpec.fromJson(String model, Map<String, Object?> json) {
@@ -166,6 +168,10 @@ class CollectionSpec {
       ],
       mirrored: [
         for (final name in json['mirrored'] as List<Object?>? ?? const [])
+          name! as String,
+      ],
+      keepZero: [
+        for (final name in json['keepZero'] as List<Object?>? ?? const [])
           name! as String,
       ],
     );
@@ -194,6 +200,12 @@ class CollectionSpec {
   /// inspector can label them.
   final List<String> mirrored;
 
+  /// Fields whose added-and-required question was answered "keep the zero
+  /// value": the field is non-nullable without a constructor default, and
+  /// existing documents knowingly read the proto3 zero instead of a
+  /// backfilled value. Recorded so the migrate command never asks again.
+  final List<String> keepZero;
+
   /// The field with [name], or `null` when it is not pinned.
   FieldSpec? field(String name) {
     for (final f in fields) {
@@ -216,6 +228,7 @@ class CollectionSpec {
     // Omitted when empty, so locks written before mirroring existed still
     // round-trip byte-for-byte through this format.
     if (mirrored.isNotEmpty) 'mirrored': mirrored,
+    if (keepZero.isNotEmpty) 'keepZero': keepZero,
   };
 }
 
@@ -530,8 +543,17 @@ class CollectionDiff {
   /// [renames] maps removed field names to added field names. Every removed
   /// field not in [renames] is dropped and its number reserved. Every added
   /// field not targeted by a rename gets a fresh number.
+  ///
+  /// [keepZeroFields] names added fields the developer decided to keep at
+  /// their proto3 zero value instead of backfilling; they are recorded in
+  /// the new spec's [CollectionSpec.keepZero]. The record also carries
+  /// forward for every field that was kept unchanged (same name, type and
+  /// number), and is forgotten for everything else — a dropped or
+  /// type-changed field would come back as a new number, which is a new
+  /// decision.
   ({CollectionSpec spec, List<FieldUpgrade> upgrades}) resolve({
     Map<String, String> renames = const {},
+    Set<String> keepZeroFields = const {},
   }) {
     final removedByName = {for (final f in removed) f.name: f};
     final addedNames = {for (final f in added) f.name};
@@ -558,6 +580,8 @@ class CollectionDiff {
     var next = previous?.nextNumber ?? 1;
     final fields = <FieldSpec>[];
     final upgrades = <FieldUpgrade>[];
+    final previousKeepZero = previous?.keepZero ?? const <String>[];
+    final newKeepZero = <String>{};
 
     for (final field in declared.fields) {
       final kept = previous?.field(field.name);
@@ -567,6 +591,9 @@ class CollectionDiff {
         fields.add(
           FieldSpec(name: field.name, number: old.number, type: field.type),
         );
+        if (kept != null && previousKeepZero.contains(field.name)) {
+          newKeepZero.add(field.name);
+        }
       } else {
         final spec = FieldSpec(
           name: field.name,
@@ -577,6 +604,8 @@ class CollectionDiff {
         if (old != null) {
           reserved.add(old.number);
           upgrades.add(FieldUpgrade(from: old, to: spec));
+        } else if (keepZeroFields.contains(field.name)) {
+          newKeepZero.add(field.name);
         }
       }
     }
@@ -593,6 +622,7 @@ class CollectionDiff {
         reserved: reserved,
         indexes: declared.indexes,
         mirrored: declared.mirrored,
+        keepZero: newKeepZero.toList(),
       ),
       upgrades: List.unmodifiable(upgrades),
     );
@@ -918,16 +948,24 @@ class SchemaDiff {
   /// Resolves every collection into the next lock.
   ///
   /// [renames] is keyed by model name, then removed field name -> new name;
-  /// [embeddedRenames] the same, keyed by embedded class name. Embedded
-  /// classes not declared anymore are dropped. The version bumps only when
-  /// something changed.
+  /// [embeddedRenames] the same, keyed by embedded class name;
+  /// [keepZeroFields] is keyed by model name and names that model's added
+  /// fields to record at their zero value (see
+  /// [CollectionDiff.resolve]). Embedded classes not declared anymore are
+  /// dropped. The version bumps only when something changed.
   ({SchemaLock lock, Map<String, List<FieldUpgrade>> upgrades}) resolve({
     Map<String, Map<String, String>> renames = const {},
     Map<String, Map<String, String>> embeddedRenames = const {},
+    Map<String, Set<String>> keepZeroFields = const {},
   }) {
-    final unknown = renames.keys.where(
-      (m) => !collections.any((c) => c.declared.model == m),
-    );
+    final unknown = [
+      ...renames.keys.where(
+        (m) => !collections.any((c) => c.declared.model == m),
+      ),
+      ...keepZeroFields.keys.where(
+        (m) => !collections.any((c) => c.declared.model == m),
+      ),
+    ];
     if (unknown.isNotEmpty) {
       throw ArgumentError('Renames for unknown models: ${unknown.join(', ')}');
     }
@@ -935,7 +973,10 @@ class SchemaDiff {
     final upgrades = <String, List<FieldUpgrade>>{};
     for (final diff in collections) {
       final model = diff.declared.model;
-      final resolved = diff.resolve(renames: renames[model] ?? const {});
+      final resolved = diff.resolve(
+        renames: renames[model] ?? const {},
+        keepZeroFields: keepZeroFields[model] ?? const {},
+      );
       specs[model] = resolved.spec;
       if (resolved.upgrades.isNotEmpty) upgrades[model] = resolved.upgrades;
     }

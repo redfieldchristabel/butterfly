@@ -55,7 +55,12 @@ CREATE TABLE txn (
   failure leaves the old layout and the next open finishes — and a file
   written by a NEWER format refuses to open with
   `StorageFormatTooNewException`. The same rule backs up and restore: an
-  older-format backup restores fine and migrates at the next open.
+  older-format backup restores fine and migrates at the next open. The
+  dropped tables' pages stay on the freelist until reclaimed, so an
+  upgrading open that finds more than a fifth of the file free runs one
+  `VACUUM` after its transaction commits (`CocoonOptions.compactAfterUpgrade`,
+  default on; `onCompactionFailed` reports a failure — a full disk — without
+  failing the open). Normal opens never compact.
 - **Path params are typed columns** (`p_account_id`). Querying one parent is
   an index range scan; skipping the parent filter is a collection-group
   query for free.
@@ -155,6 +160,15 @@ Missing fields decode to the constructor default, else `null` when
 nullable, else the zero value — so documents written before a field existed
 still load. Unknown field numbers from the future are skipped (`reader.skip`),
 which is what makes old readers tolerant of newer writers.
+
+The canonical layout is also what makes migration rewrites safe to do at
+the wire level: the engine's migration runner rebuilds each document's
+bytes field by field, and a **backfill** (the migrate command's answer to a
+newly added required field) is the same operation where the field does not
+exist yet — every occurrence of the field is dropped and the stub's value
+is inserted at its canonical ascending position. The stub receives the
+decoded document; the value it returns is encoded with the field's normal
+wire encoding (`DateTime` as UTC microseconds, enums by name).
 
 ## Internal tables
 

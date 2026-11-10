@@ -439,6 +439,60 @@ Uint8List rewriteField(
   return writer.toBytes();
 }
 
+/// Writes one field value into a canonical document: every occurrence of
+/// field [field] is removed and [value], encoded as [wire], is inserted at
+/// the field's canonical ascending position. Every other field is
+/// re-serialized byte-for-byte and the result is a new list — [doc] itself
+/// is never modified.
+///
+/// This is the write side of a backfill migration ([BackfillMigration]):
+/// unlike [rewriteField], the field does not need to exist — an absent field
+/// is simply added, which is how documents written before the field existed
+/// gain their value.
+///
+/// [map] is required exactly when [wire] is [MigrationWireType.map]. Throws
+/// an [ArgumentError] when [value] is null: a backfill always writes a
+/// value (dropping one is [rewriteField]'s job) — the field is non-nullable
+/// by construction.
+Uint8List writeField(
+  Uint8List doc, {
+  required int field,
+  required MigrationWireType wire,
+  required Object? value,
+  MapWireType? map,
+}) {
+  _requireMapArgs(wire, map, 'wire', 'map');
+  if (value == null) {
+    throw ArgumentError.value(
+      value,
+      'value',
+      'Must not be null: writeField writes a value (rewriteField drops one)',
+    );
+  }
+  final reader = WireReader(doc);
+  final kept = <(int, WireType, Uint8List)>[];
+  while (!reader.isAtEnd) {
+    final tag = reader.readTag();
+    final raw = reader._readRawValue(tag.type);
+    if (tag.field != field) {
+      kept.add((tag.field, tag.type, raw));
+    }
+  }
+  final writer = WireWriter();
+  var inserted = false;
+  for (final (number, type, raw) in kept) {
+    if (!inserted && number >= field) {
+      _writeWireValue(writer, field, wire, value, map);
+      inserted = true;
+    }
+    writer._writeRaw(number, type, raw);
+  }
+  if (!inserted) {
+    _writeWireValue(writer, field, wire, value, map);
+  }
+  return writer.toBytes();
+}
+
 /// Validates the [MigrationWireType.map] / [MapWireType] pairing of a
 /// [rewriteField] side.
 void _requireMapArgs(

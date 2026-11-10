@@ -258,6 +258,151 @@ class Staff {
 }
 ''';
 
+/// `title` added as a required field: non-nullable, no constructor default —
+/// the backfill question.
+const staffAddedRequiredModels = '''
+import 'package:cocoon/cocoon.dart';
+
+@Collection('staff', indexes: [Index(['name'])])
+class Staff {
+  const Staff({
+    required this.name,
+    required this.staffId,
+    required this.title,
+  });
+  final String name;
+  final String staffId;
+  final String title;
+}
+''';
+
+/// Two required additions of date/enum types: the stubs carry the field's
+/// REAL Dart type (not the stored representation).
+enum StaffLevel { junior, senior }
+
+const staffAddedDateTimeEnumModels = '''
+import 'package:cocoon/cocoon.dart';
+
+enum StaffLevel { junior, senior }
+
+@Collection('staff', indexes: [Index(['name'])])
+class Staff {
+  const Staff({
+    required this.name,
+    required this.staffId,
+    required this.since,
+    required this.level,
+  });
+  final String name;
+  final String staffId;
+  final DateTime since;
+  final StaffLevel level;
+}
+''';
+
+/// Additions that need NO decision: nullable, defaulted, list, map and
+/// embedded fields read null/default/empty on old documents.
+const staffAddedBenignModels = '''
+import 'package:cocoon/cocoon.dart';
+
+@Collection('staff', indexes: [Index(['name'])])
+class Staff {
+  const Staff({
+    required this.name,
+    required this.staffId,
+    this.memo,
+    this.tag = 'none',
+    this.tags = const [],
+    this.meta = const {},
+    this.address,
+  });
+  final String name;
+  final String staffId;
+  final String? memo;
+  final String tag;
+  final List<String> tags;
+  final Map<String, String> meta;
+  final Address? address;
+}
+
+@Embedded()
+class Address {
+  const Address({required this.city});
+  final String city;
+}
+''';
+
+/// A brand-new collection with required fields: nothing to ask.
+const staffPlusNewTeamModels = '''
+import 'package:cocoon/cocoon.dart';
+
+@Collection('staff', indexes: [Index(['name'])])
+class Staff {
+  const Staff({required this.name, required this.staffId});
+  final String name;
+  final String staffId;
+}
+
+@Collection('teams')
+class Team {
+  const Team({required this.title, required this.size});
+  final String title;
+  final int size;
+}
+''';
+
+/// `staffId` renamed to `staffUid`, and the embedded `Badge` gains a required
+/// field — embedded classes are not asked the backfill question.
+const staffRenamedEmbeddedRequiredModels = '''
+import 'package:cocoon/cocoon.dart';
+
+@Collection('staff', indexes: [Index(['name'])])
+class Staff {
+  const Staff({required this.name, required this.staffUid, this.badge});
+  final String name;
+  final String staffUid;
+  final Badge? badge;
+}
+
+@Embedded()
+class Badge {
+  const Badge({required this.code, required this.level});
+  final String code;
+  final String level;
+}
+''';
+
+final staffWithBadgeLock = lockText(
+  version: 1,
+  collections: {
+    'Staff': TestCollection(
+      'staff',
+      const {'name': 'String', 'staffId': 'String', 'badge': 'embedded:Badge?'},
+      indexes: const [
+        ['name'],
+      ],
+    ),
+  },
+  embedded: {
+    'Badge': const {'code': 'String'},
+  },
+);
+
+/// The lock a backfill run writes for [staffAddedRequiredModels]: `title`
+/// pinned at number 3, nothing reserved.
+final staffAddedRequiredLockV2 = lockText(
+  version: 2,
+  collections: {
+    'Staff': TestCollection(
+      'staff',
+      const {'name': 'String', 'staffId': 'String', 'title': 'String'},
+      indexes: const [
+        ['name'],
+      ],
+    ),
+  },
+);
+
 String lockFileOf(Directory pkg) =>
     File('${pkg.path}/cocoon.lock.json').readAsStringSync();
 
@@ -781,7 +926,10 @@ class Ledger {
         models: staffRenamedModels,
         lock: staffV1Lock,
       );
-      final exit = await migrate(pkg, args: ['--drop', 'Staff.staffId']);
+      final exit = await migrate(
+        pkg,
+        args: ['--drop', 'Staff.staffId', '--keep-zero', 'Staff.staffUid'],
+      );
       expect(exit, 0);
       final lock = SchemaLock.parse(lockFileOf(pkg));
       final staff = lock.collections['Staff']!;
@@ -861,6 +1009,545 @@ class Ledger {
       final pkg = await tempPackage(models: staffV1Models, lock: staffV1Lock);
       final exit = await migrate(pkg, args: ['--check']);
       expect(exit, 0);
+    },
+  );
+
+  test(
+    'an added required field asks the backfill menu; Enter writes the stub',
+    timeout: const Timeout(Duration(minutes: 2)),
+    () async {
+      final pkg = await tempPackage(
+        models: staffAddedRequiredModels,
+        lock: staffV1Lock,
+      );
+      final exit = await migrate(pkg, tty: true, lines: ['']);
+      expect(exit, 0, reason: lastIo.out.toString());
+      final out = lastIo.out.toString();
+      expect(
+        out,
+        contains(
+          "Staff: `title` (String) is new and required. Existing documents "
+          "would read ''.",
+        ),
+      );
+      expect(
+        out,
+        contains(
+          '  1) Write a backfill stub (a migration sets the value for '
+          'existing documents) [default]',
+        ),
+      );
+      expect(out, contains("  2) Keep the zero value ('')"));
+      expect(
+        out,
+        contains('  3) Abort (add a default or make it nullable first)'),
+      );
+
+      final lock = SchemaLock.parse(lockFileOf(pkg));
+      expect(lock.version, 2);
+      final staff = lock.collections['Staff']!;
+      expect(staff.field('title')!.number, 3);
+      expect(staff.keepZero, isEmpty); // the stub decision needs no record
+
+      final migrations = Directory('${pkg.path}/lib/cocoon_migrations');
+      final file = File('${migrations.path}/m0002_staff_title_backfill.dart');
+      expect(file.existsSync(), isTrue);
+      final source = file.readAsStringSync();
+      expect(
+        source,
+        contains("import 'package:migrate_test_pkg/models.dart';"),
+      );
+      expect(
+        source,
+        contains(
+          'String backfillStaffTitle(Staff doc) => '
+          "throw UnimplementedError('Write the backfill');",
+        ),
+      );
+      expect(
+        source,
+        contains('final m0002Backfills = <BackfillMigration<Object?>>['),
+      );
+      expect(
+        source,
+        contains(
+          'BackfillMigration<Staff>(\n'
+          "    model: 'Staff',\n"
+          "    fieldName: 'title',\n"
+          '    fieldNumber: 3,\n'
+          "    fieldType: 'String',\n"
+          '    wire: MigrationWireType.text,\n'
+          '    backfill: backfillStaffTitle,\n'
+          '  ),',
+        ),
+      );
+      expect(
+        File('${migrations.path}/migrations.dart').readAsStringSync(),
+        contains(
+          'CocoonMigration(version: 2, backfills: m0002.m0002Backfills),',
+        ),
+      );
+    },
+  );
+
+  test(
+    'keep zero records the decision in the lock and is not asked again',
+    timeout: const Timeout(Duration(minutes: 2)),
+    () async {
+      final pkg = await tempPackage(
+        models: staffAddedRequiredModels,
+        lock: staffV1Lock,
+      );
+      final exit = await migrate(pkg, tty: true, lines: ['2']);
+      expect(exit, 0, reason: lastIo.out.toString());
+      final lock = SchemaLock.parse(lockFileOf(pkg));
+      expect(lock.collections['Staff']!.keepZero, ['title']);
+      expect(migrationDirExists(pkg), isFalse); // no rewrite, no stub
+
+      // The recorded decision survives the next run: adding ANOTHER required
+      // field asks about that one only.
+      File('${pkg.path}/lib/models.dart').writeAsStringSync('''
+import 'package:cocoon/cocoon.dart';
+
+@Collection('staff', indexes: [Index(['name'])])
+class Staff {
+  const Staff({
+    required this.name,
+    required this.staffId,
+    required this.title,
+    required this.badge,
+  });
+  final String name;
+  final String staffId;
+  final String title;
+  final String badge;
+}
+''');
+      final second = await migrate(pkg);
+      expect(second, 2);
+      final out = lastIo.out.toString();
+      expect(
+        out,
+        contains('--backfill Staff.badge or --keep-zero Staff.badge'),
+      );
+      expect(out, isNot(contains('--backfill Staff.title')));
+    },
+  );
+
+  test(
+    'aborting the backfill menu writes nothing',
+    timeout: const Timeout(Duration(minutes: 2)),
+    () async {
+      final pkg = await tempPackage(
+        models: staffAddedRequiredModels,
+        lock: staffV1Lock,
+      );
+      final exit = await migrate(pkg, tty: true, lines: ['3']);
+      expect(exit, 1);
+      expect(lastIo.out.toString(), contains('Aborted; nothing was written.'));
+      expect(lockFileOf(pkg), staffV1Lock);
+      expect(migrationDirExists(pkg), isFalse);
+    },
+  );
+
+  test(
+    'non-interactive stdin with an undecided required field exits 2',
+    timeout: const Timeout(Duration(minutes: 2)),
+    () async {
+      final pkg = await tempPackage(
+        models: staffAddedRequiredModels,
+        lock: staffV1Lock,
+      );
+      final exit = await migrate(pkg);
+      expect(exit, 2);
+      expect(
+        lastIo.out.toString(),
+        contains(
+          "Staff: `title` (String) is new and required; existing documents "
+          "would read '': pass --backfill Staff.title or "
+          '--keep-zero Staff.title',
+        ),
+      );
+      expect(lockFileOf(pkg), staffV1Lock);
+    },
+  );
+
+  test(
+    'the --backfill flag decides without a terminal and writes the stub',
+    timeout: const Timeout(Duration(minutes: 2)),
+    () async {
+      final pkg = await tempPackage(
+        models: staffAddedRequiredModels,
+        lock: staffV1Lock,
+      );
+      final exit = await migrate(pkg, args: ['--backfill', 'Staff.title']);
+      expect(exit, 0, reason: lastIo.out.toString());
+      expect(
+        File(
+          '${pkg.path}/lib/cocoon_migrations/m0002_staff_title_backfill.dart',
+        ).existsSync(),
+        isTrue,
+      );
+      expect(
+        SchemaLock.parse(lockFileOf(pkg)).collections['Staff']!.keepZero,
+        isEmpty,
+      );
+    },
+  );
+
+  test(
+    'the --keep-zero flag records the lock decision without a terminal',
+    timeout: const Timeout(Duration(minutes: 2)),
+    () async {
+      final pkg = await tempPackage(
+        models: staffAddedRequiredModels,
+        lock: staffV1Lock,
+      );
+      final exit = await migrate(pkg, args: ['--keep-zero', 'Staff.title']);
+      expect(exit, 0, reason: lastIo.out.toString());
+      expect(migrationDirExists(pkg), isFalse);
+      expect(SchemaLock.parse(lockFileOf(pkg)).collections['Staff']!.keepZero, [
+        'title',
+      ]);
+    },
+  );
+
+  test(
+    '--yes picks the backfill default, never a silent keep-zero',
+    timeout: const Timeout(Duration(minutes: 2)),
+    () async {
+      final pkg = await tempPackage(
+        models: staffAddedRequiredModels,
+        lock: staffV1Lock,
+      );
+      final exit = await migrate(pkg, args: ['--yes'], tty: true);
+      expect(exit, 0, reason: lastIo.out.toString());
+      expect(
+        File(
+          '${pkg.path}/lib/cocoon_migrations/m0002_staff_title_backfill.dart',
+        ).existsSync(),
+        isTrue,
+      );
+      expect(
+        SchemaLock.parse(lockFileOf(pkg)).collections['Staff']!.keepZero,
+        isEmpty,
+      );
+
+      // Without a terminal --yes still refuses to decide (same rule as
+      // renames): the exact flags come back with exit 2.
+      final silent = await tempPackage(
+        models: staffAddedRequiredModels,
+        lock: staffV1Lock,
+      );
+      final silentExit = await migrate(silent, args: ['--yes']);
+      expect(silentExit, 2);
+      expect(lastIo.out.toString(), contains('--backfill Staff.title'));
+    },
+  );
+
+  test(
+    '--check reports the pending required-field decisions',
+    timeout: const Timeout(Duration(minutes: 2)),
+    () async {
+      final pkg = await tempPackage(
+        models: staffAddedRequiredModels,
+        lock: staffV1Lock,
+      );
+      final exit = await migrate(pkg, args: ['--check']);
+      expect(exit, 1);
+      final out = lastIo.out.toString();
+      expect(out, contains('New required fields need a decision:'));
+      expect(
+        out,
+        contains(
+          "Staff: `title` (String) is new and required; existing documents "
+          "would read '': pass --backfill Staff.title or "
+          '--keep-zero Staff.title',
+        ),
+      );
+      expect(lockFileOf(pkg), staffV1Lock);
+    },
+  );
+
+  test(
+    'additions that need no decision never ask: nullable, defaulted, list, '
+    'map, embedded',
+    timeout: const Timeout(Duration(minutes: 2)),
+    () async {
+      final benignLock = lockText(
+        version: 1,
+        collections: {
+          'Staff': TestCollection(
+            'staff',
+            const {'name': 'String', 'staffId': 'String'},
+            indexes: const [
+              ['name'],
+            ],
+          ),
+        },
+      );
+      final pkg = await tempPackage(
+        models: staffAddedBenignModels,
+        lock: benignLock,
+      );
+      final exit = await migrate(pkg); // non-interactive
+      expect(exit, 0, reason: lastIo.out.toString());
+      expect(lastIo.out.toString(), isNot(contains('new and required')));
+      expect(migrationDirExists(pkg), isFalse);
+    },
+  );
+
+  test(
+    'a brand-new collection asks nothing, whatever its fields require',
+    timeout: const Timeout(Duration(minutes: 2)),
+    () async {
+      final pkg = await tempPackage(
+        models: staffPlusNewTeamModels,
+        lock: staffV1Lock,
+      );
+      final exit = await migrate(pkg);
+      expect(exit, 0, reason: lastIo.out.toString());
+      expect(lastIo.out.toString(), isNot(contains('new and required')));
+    },
+  );
+
+  test(
+    'DateTime and enum stubs carry the field\'s real Dart type',
+    timeout: const Timeout(Duration(minutes: 2)),
+    () async {
+      final lock = lockText(
+        version: 1,
+        collections: {
+          'Staff': TestCollection(
+            'staff',
+            const {'name': 'String', 'staffId': 'String'},
+            indexes: const [
+              ['name'],
+            ],
+          ),
+        },
+      );
+      final pkg = await tempPackage(
+        models: staffAddedDateTimeEnumModels,
+        lock: lock,
+      );
+      final exit = await migrate(
+        pkg,
+        args: ['--backfill', 'Staff.since', '--backfill', 'Staff.level'],
+      );
+      expect(exit, 0, reason: lastIo.out.toString());
+      final source = File(
+        '${pkg.path}/lib/cocoon_migrations/'
+        'm0002_staff_level_backfill_and_staff_since_backfill.dart',
+      ).readAsStringSync();
+      expect(
+        source,
+        contains(
+          'DateTime backfillStaffSince(Staff doc) => '
+          "throw UnimplementedError('Write the backfill');",
+        ),
+      );
+      expect(
+        source,
+        contains(
+          'StaffLevel backfillStaffLevel(Staff doc) => '
+          "throw UnimplementedError('Write the backfill');",
+        ),
+      );
+      expect(source, contains("fieldType: 'DateTime',"));
+      expect(source, contains('wire: MigrationWireType.sint64,'));
+      expect(source, contains("fieldType: 'enum:StaffLevel',"));
+      expect(source, contains('wire: MigrationWireType.text,'));
+    },
+  );
+
+  test(
+    'the backfill flags refuse fields with nothing to decide',
+    timeout: const Timeout(Duration(minutes: 2)),
+    () async {
+      Future<int> run(Directory pkg, List<String> args) =>
+          migrate(pkg, args: args);
+
+      // Not an added field at all.
+      final existing = await tempPackage(
+        models: staffAddedRequiredModels,
+        lock: staffV1Lock,
+      );
+      expect((await run(existing, ['--backfill', 'Staff.name'])), 2);
+      expect(
+        lastIo.out.toString(),
+        contains('"name" is not a new field of Staff'),
+      );
+
+      // Nullable: old documents read null, nothing to decide.
+      final nullableAddition = await tempPackage(
+        models: staffAddedBenignModels,
+        lock: lockText(
+          version: 1,
+          collections: {
+            'Staff': TestCollection(
+              'staff',
+              const {'name': 'String', 'staffId': 'String'},
+              indexes: const [
+                ['name'],
+              ],
+            ),
+          },
+        ),
+      );
+      expect((await run(nullableAddition, ['--backfill', 'Staff.memo'])), 2);
+      expect(
+        lastIo.out.toString(),
+        contains('the field is nullable; old documents read null'),
+      );
+
+      // Constructor default: old documents read it.
+      final defaulted = await tempPackage(
+        models: staffAddedBenignModels,
+        lock: lockText(
+          version: 1,
+          collections: {
+            'Staff': TestCollection(
+              'staff',
+              const {'name': 'String', 'staffId': 'String'},
+              indexes: const [
+                ['name'],
+              ],
+            ),
+          },
+        ),
+      );
+      expect((await run(defaulted, ['--keep-zero', 'Staff.tag'])), 2);
+      expect(
+        lastIo.out.toString(),
+        contains('the field has a constructor default'),
+      );
+
+      // A brand-new collection has no old documents.
+      final fresh = await tempPackage(
+        models: staffPlusNewTeamModels,
+        lock: staffV1Lock,
+      );
+      expect((await run(fresh, ['--backfill', 'Team.title'])), 2);
+      expect(
+        lastIo.out.toString(),
+        contains('Team is a new collection; it has no existing documents'),
+      );
+
+      // An embedded class is not asked the question.
+      final embedded = await tempPackage(
+        models: staffRenamedEmbeddedRequiredModels,
+        lock: staffWithBadgeLock,
+      );
+      expect((await run(embedded, ['--keep-zero', 'Badge.level'])), 2);
+      expect(
+        lastIo.out.toString(),
+        contains('Badge is an embedded class; its fields are not backfilled'),
+      );
+
+      // Decided twice, or against a rename target.
+      final twice = await tempPackage(
+        models: staffAddedRequiredModels,
+        lock: staffV1Lock,
+      );
+      expect(
+        (await run(twice, [
+          '--backfill',
+          'Staff.title',
+          '--keep-zero',
+          'Staff.title',
+        ])),
+        2,
+      );
+      expect(lastIo.out.toString(), contains('given twice'));
+
+      final againstRename = await tempPackage(
+        models: staffRenamedModels,
+        lock: staffV1Lock,
+      );
+      expect(
+        (await run(againstRename, [
+          '--rename',
+          'Staff.staffId=staffUid',
+          '--backfill',
+          'Staff.staffUid',
+        ])),
+        2,
+      );
+      expect(
+        lastIo.out.toString(),
+        contains('"staffUid" is decided by a rename'),
+      );
+    },
+  );
+
+  test(
+    'the build fails while a backfill stub is unimplemented, like type stubs',
+    timeout: const Timeout(Duration(minutes: 2)),
+    () async {
+      final pkg = await tempPackage(
+        models: staffAddedRequiredModels,
+        lock: staffV1Lock,
+      );
+      final exit = await migrate(pkg, args: ['--backfill', 'Staff.title']);
+      expect(exit, 0, reason: lastIo.out.toString());
+      final stub = File(
+        '${pkg.path}/lib/cocoon_migrations/m0002_staff_title_backfill.dart',
+      ).readAsStringSync();
+
+      // The generated stub keeps the build failing.
+      final failing = await runSchemaVersionBuilder(staffAddedRequiredLockV2, {
+        'a|lib/cocoon_migrations/m0002_staff_title_backfill.dart': stub,
+      });
+      expect(failing.succeeded, isFalse);
+      expect(
+        failing.errors.join('\n'),
+        contains('still contains an unimplemented'),
+      );
+
+      // Implementing the body unblocks the build.
+      final implemented = stub.replaceFirst(
+        "throw UnimplementedError('Write the backfill');",
+        "'\${doc.name}';",
+      );
+      final passing = await runSchemaVersionBuilder(staffAddedRequiredLockV2, {
+        'a|lib/cocoon_migrations/m0002_staff_title_backfill.dart': implemented,
+      });
+      expect(passing.succeeded, isTrue, reason: failing.errors.join('\n'));
+    },
+  );
+
+  test(
+    'the generated backfill migration file analyzes clean once implemented',
+    timeout: const Timeout(Duration(minutes: 3)),
+    () async {
+      final pkg = await tempPackage(
+        models: staffAddedRequiredModels,
+        lock: staffV1Lock,
+      );
+      final exit = await migrate(pkg, args: ['--backfill', 'Staff.title']);
+      expect(exit, 0, reason: lastIo.out.toString());
+      final stub = File(
+        '${pkg.path}/lib/cocoon_migrations/m0002_staff_title_backfill.dart',
+      ).readAsStringSync();
+      File(
+        '${pkg.path}/lib/cocoon_migrations/m0002_staff_title_backfill.dart',
+      ).writeAsStringSync(
+        stub.replaceFirst(
+          "throw UnimplementedError('Write the backfill');",
+          "'\${doc.name} <\${doc.staffId}>';",
+        ),
+      );
+      final analyze = await Process.run(Platform.resolvedExecutable, [
+        'analyze',
+        '--fatal-infos',
+        pkg.path,
+      ]);
+      expect(
+        analyze.exitCode,
+        0,
+        reason: '${analyze.stdout}\n${analyze.stderr}',
+      );
     },
   );
 

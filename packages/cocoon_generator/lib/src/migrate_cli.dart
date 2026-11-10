@@ -83,6 +83,8 @@ final class _Options {
     required this.renames,
     required this.drops,
     required this.dropCollections,
+    required this.backfills,
+    required this.keepZeros,
     required this.yes,
     required this.check,
   });
@@ -96,8 +98,17 @@ final class _Options {
   /// `--drop-collection Model` (also accepted for removed embedded classes).
   final List<String> dropCollections;
 
-  /// `--yes`: accept the default answer of every rename menu. Drop
-  /// confirmations are never covered: drops must be explicit flags.
+  /// `--backfill Model.field`: decide an added required field with a
+  /// backfill stub (the default answer).
+  final List<(String, String)> backfills;
+
+  /// `--keep-zero Model.field`: decide an added required field to keep the
+  /// proto3 zero value, recorded in the lock.
+  final List<(String, String)> keepZeros;
+
+  /// `--yes`: accept the default answer of every rename menu and of every
+  /// new-required-field question (a backfill stub — never "keep zero").
+  /// Drop confirmations are never covered: drops must be explicit flags.
   final bool yes;
 
   /// `--check`: exit 1 when the lock would change; never writes.
@@ -157,7 +168,8 @@ Future<int> _run(String? packageRoot, List<String> args, MigrateIo io) async {
     );
   }
 
-  final (:models, :embedded) = await _extractDeclarations(libPath);
+  final (:models, :embedded, :classes, :modelLibraries) =
+      await _extractDeclarations(libPath);
   final lockFile = File('$root/cocoon.lock.json');
   final lock = lockFile.existsSync()
       ? SchemaLock.parse(lockFile.readAsStringSync())
@@ -187,6 +199,13 @@ Future<int> _run(String? packageRoot, List<String> args, MigrateIo io) async {
   }
   if (options.check) {
     io.write(_describeChanges(diff));
+    final pending = _pendingRequiredFields(diff, classes);
+    if (pending.isNotEmpty) {
+      io.write('New required fields need a decision:\n');
+      for (final (collection, field) in pending) {
+        io.write('  - ${_requiredFieldLine(collection, field)}\n');
+      }
+    }
     io.write(
       '${_color('cocoon.lock.json was not written (--check).', _ansiYellow, io.stdoutIsTerminal)}\n',
     );
@@ -198,11 +217,12 @@ Future<int> _run(String? packageRoot, List<String> args, MigrateIo io) async {
       if (!diff.embedded.any((e) => e.declared.name == name)) name,
   ]..sort();
 
-  final renames = _decide(diff, removedEmbedded, options, io);
+  final decisions = _decide(diff, removedEmbedded, options, io, classes);
 
   final (lock: newLock, upgrades: upgrades) = diff.resolve(
-    renames: renames.collections,
-    embeddedRenames: renames.embedded,
+    renames: decisions.collections,
+    embeddedRenames: decisions.embedded,
+    keepZeroFields: decisions.keepZero,
   );
   // Refuse before anything is written: a type the command cannot generate a
   // conversion for (lists, embedded classes, maps whose values are lists or
@@ -217,16 +237,30 @@ Future<int> _run(String? packageRoot, List<String> args, MigrateIo io) async {
       _wireTypeOf(upgrade.to.type, context);
     }
   }
+  for (final model in decisions.backfills.keys) {
+    for (final field in decisions.backfills[model]!) {
+      final type = _declaredFieldType(diff, model, field);
+      _wireTypeOf(type, '$model.$field');
+    }
+  }
   lockFile.writeAsStringSync(newLock.toSource());
   io.write(
     '${_color('Wrote cocoon.lock.json (version ${newLock.version}).', _ansiGreen, io.stdoutIsTerminal)}\n',
   );
 
-  if (upgrades.isNotEmpty) {
-    _writeMigrationFile(root, newLock.version, upgrades, io);
+  if (upgrades.isNotEmpty || decisions.backfills.isNotEmpty) {
+    _writeMigrationFile(
+      root,
+      newLock.version,
+      upgrades,
+      decisions.backfills,
+      newLock,
+      modelLibraries,
+      io,
+    );
     io.write(
-      'Next: implement the `upgrade...` functions in the new migration file, '
-      'then run build_runner.\n',
+      'Next: implement the `upgrade...` and `backfill...` functions in the '
+      'new migration file, then run build_runner.\n',
     );
   }
   _writeMigrationsList(root, io);
@@ -238,12 +272,22 @@ Future<int> _run(String? packageRoot, List<String> args, MigrateIo io) async {
 typedef _Declarations = ({
   List<ExtractedModel> models,
   List<ExtractedEmbedded> embedded,
+
+  /// The extracted classes keyed by name: the constructor defaults decide
+  /// whether an added field needs a value for old documents.
+  Map<String, ExtractedClass> classes,
+
+  /// The declaring library URI (e.g. `package:app/models.dart`) per model
+  /// name: the import a backfill stub file needs for the model type.
+  Map<String, String> modelLibraries,
 });
 
 Future<_Declarations> _extractDeclarations(String libPath) async {
   final contexts = AnalysisContextCollection(includedPaths: [libPath]);
   final models = <ExtractedModel>[];
   final embedded = <ExtractedEmbedded>[];
+  final classes = <String, ExtractedClass>{};
+  final modelLibraries = <String, String>{};
   final modelNames = <String>{};
   final embeddedNames = <String>{};
   for (final context in contexts.contexts) {
@@ -259,6 +303,7 @@ Future<_Declarations> _extractDeclarations(String libPath) async {
       if (declarations == null) {
         continue;
       }
+      final libraryUri = result.element.identifier;
       for (final model in declarations.models) {
         if (!modelNames.add(model.clazz.name)) {
           throw MigrateException(
@@ -267,40 +312,59 @@ Future<_Declarations> _extractDeclarations(String libPath) async {
           );
         }
         models.add(model);
+        classes[model.clazz.name] = model.clazz;
+        modelLibraries[model.clazz.name] = libraryUri;
       }
       for (final embeddedClass in declarations.embedded) {
         if (embeddedNames.add(embeddedClass.clazz.name)) {
           embedded.add(embeddedClass);
+          classes[embeddedClass.clazz.name] = embeddedClass.clazz;
         }
       }
     }
   }
-  return (models: models, embedded: embedded);
+  return (
+    models: models,
+    embedded: embedded,
+    classes: classes,
+    modelLibraries: modelLibraries,
+  );
 }
 
 // -- Decisions ----------------------------------------------------------------
 
-/// The rename decisions of one migrate run, split the way
-/// `SchemaDiff.resolve` takes them.
-typedef _Renames = ({
+/// The decisions of one migrate run, split the way `SchemaDiff.resolve` and
+/// the migration-file writer take them.
+typedef _Decisions = ({
   Map<String, Map<String, String>> collections,
   Map<String, Map<String, String>> embedded,
+
+  /// Added fields decided "backfill", per model: the new migration file
+  /// carries one stub per field.
+  Map<String, Set<String>> backfills,
+
+  /// Added fields decided "keep the zero value", per model: recorded in the
+  /// new lock so the question is never asked again.
+  Map<String, Set<String>> keepZero,
 });
 
 /// Works out every decision before resolving: flags first (validated
 /// against the diff), then prompts for the rest. On non-interactive stdin a
 /// missing decision throws with the flags that would resolve it; a `No` at
 /// any drop confirmation aborts without writing.
-_Renames _decide(
+_Decisions _decide(
   SchemaDiff diff,
   List<String> removedEmbedded,
   _Options options,
   MigrateIo io,
+  Map<String, ExtractedClass> classes,
 ) {
   final renames = <String, Map<String, String>>{};
   final embeddedRenames = <String, Map<String, String>>{};
   final decidedFields = <String, Set<String>>{};
   final droppedNames = <String>{};
+  final backfilled = <String, Set<String>>{};
+  final keepZero = <String, Set<String>>{};
 
   void decideFlagTarget({
     required String model,
@@ -349,6 +413,89 @@ _Renames _decide(
       );
     }
     decideFlagTarget(model: model, old: old, newName: newName);
+  }
+
+  // The --backfill / --keep-zero flags decide an added required field up
+  // front; both share the same validation and are mutually exclusive per
+  // field, like two --rename flags for the same removed field.
+  void decideFlagAdded({
+    required String model,
+    required String field,
+    required bool backfill,
+  }) {
+    final flag = backfill ? '--backfill' : '--keep-zero';
+    final collection = diff.collections
+        .where((c) => c.declared.model == model)
+        .firstOrNull;
+    if (collection == null) {
+      final embeddedClass = diff.embedded
+          .where((e) => e.declared.name == model)
+          .firstOrNull;
+      throw MigrateException(
+        '$flag $model.$field: ${embeddedClass == null ? '"$field" is not a new field of $model.' : '$model is an embedded class; its fields are not backfilled — '
+                  'make $model.$field nullable or give it a constructor '
+                  'default instead.'}',
+        exitCode: _exitUsage,
+      );
+    }
+    if (collection.isNew) {
+      throw MigrateException(
+        '$flag $model.$field: $model is a new collection; it has no existing '
+        'documents to backfill.',
+        exitCode: _exitUsage,
+      );
+    }
+    final added = collection.added.where((f) => f.name == field).firstOrNull;
+    if (added == null) {
+      throw MigrateException(
+        '$flag $model.$field: "$field" is not a new field of $model.',
+        exitCode: _exitUsage,
+      );
+    }
+    if (added.type.endsWith('?')) {
+      throw MigrateException(
+        '$flag $model.$field: the field is nullable; old documents read null '
+        'and there is nothing to decide.',
+        exitCode: _exitUsage,
+      );
+    }
+    if (classes[model]?.defaults.containsKey(field) ?? false) {
+      throw MigrateException(
+        '$flag $model.$field: the field has a constructor default; old '
+        'documents read it and there is nothing to decide.',
+        exitCode: _exitUsage,
+      );
+    }
+    if (!_isStorableScalar(added.type)) {
+      throw MigrateException(
+        '$flag $model.$field: ${added.type} fields read an empty value on '
+        'old documents and are not backfilled.',
+        exitCode: _exitUsage,
+      );
+    }
+    if (renames[model]?.containsValue(field) ?? false) {
+      throw MigrateException(
+        '$flag $model.$field: "$field" is decided by a rename; remove the '
+        '--rename that targets it.',
+        exitCode: _exitUsage,
+      );
+    }
+    if (backfilled[model]?.contains(field) ??
+        keepZero[model]?.contains(field) ??
+        false) {
+      throw MigrateException(
+        '$flag $model.$field: given twice.',
+        exitCode: _exitUsage,
+      );
+    }
+    (backfill ? backfilled : keepZero).putIfAbsent(model, () => {}).add(field);
+  }
+
+  for (final (model, field) in options.backfills) {
+    decideFlagAdded(model: model, field: field, backfill: true);
+  }
+  for (final (model, field) in options.keepZeros) {
+    decideFlagAdded(model: model, field: field, backfill: false);
   }
   for (final (model, field) in options.drops) {
     final (collection, embeddedClass) = _diffFor(diff, model);
@@ -493,6 +640,41 @@ _Renames _decide(
     }
   }
 
+  // Added required fields: a non-nullable field without a constructor
+  // default would read its proto3 zero value in every document written
+  // before it existed. Ask (or take --yes's default: a backfill stub),
+  // unless a flag already decided the field.
+  final renameTargets = <String, Set<String>>{};
+  for (final MapEntry(key: model, value: targets) in renames.entries) {
+    renameTargets[model] = targets.values.toSet();
+  }
+  for (final (collection, field) in _pendingRequiredFields(
+    diff,
+    classes,
+    takenRenameTargets: renameTargets,
+  )) {
+    final model = collection.declared.model;
+    if (backfilled[model]?.contains(field.name) ??
+        keepZero[model]?.contains(field.name) ??
+        false) {
+      continue;
+    }
+    if (!io.stdinIsTerminal) {
+      missing.add('  - ${_requiredFieldLine(collection, field)}');
+      continue;
+    }
+    if (options.yes) {
+      // The default answer is the backfill stub — never a silent keep-zero.
+      backfilled.putIfAbsent(model, () => {}).add(field.name);
+      continue;
+    }
+    if (_promptBackfillMenu(model, field, io)) {
+      backfilled.putIfAbsent(model, () => {}).add(field.name);
+    } else {
+      keepZero.putIfAbsent(model, () => {}).add(field.name);
+    }
+  }
+
   if (missing.isNotEmpty) {
     throw MigrateException(
       'Non-interactive stdin with ${missing.length} decision(s) missing:\n'
@@ -500,7 +682,138 @@ _Renames _decide(
       exitCode: _exitUsage,
     );
   }
-  return (collections: renames, embedded: embeddedRenames);
+  return (
+    collections: renames,
+    embedded: embeddedRenames,
+    backfills: backfilled,
+    keepZero: keepZero,
+  );
+}
+
+/// The added fields of existing collections that old documents would read at
+/// their proto3 zero value: non-nullable, no constructor default, a storable
+/// scalar, not already recorded in the lock and — when [takenRenameTargets]
+/// is given — not the target of a decided rename. Sorted by model and field
+/// name, so prompts and reports are stable.
+List<(CollectionDiff, DeclaredField)> _pendingRequiredFields(
+  SchemaDiff diff,
+  Map<String, ExtractedClass> classes, {
+  Map<String, Set<String>> takenRenameTargets = const {},
+}) {
+  final pending = <(CollectionDiff, DeclaredField)>[];
+  final collections = diff.collections.toList()
+    ..sort((a, b) => a.declared.model.compareTo(b.declared.model));
+  for (final collection in collections) {
+    if (collection.isNew) {
+      continue;
+    }
+    final clazz = classes[collection.declared.model];
+    if (clazz == null) {
+      continue;
+    }
+    final taken = takenRenameTargets[collection.declared.model] ?? const {};
+    final fields = collection.added.toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+    for (final field in fields) {
+      if (taken.contains(field.name)) {
+        continue;
+      }
+      if (field.type.endsWith('?')) {
+        continue;
+      }
+      if (clazz.defaults.containsKey(field.name)) {
+        continue;
+      }
+      if (!_isStorableScalar(field.type)) {
+        continue;
+      }
+      if (collection.previous!.keepZero.contains(field.name)) {
+        continue;
+      }
+      pending.add((collection, field));
+    }
+  }
+  return pending;
+}
+
+/// Whether an added field's type is a storable scalar (the types the
+/// backfill question covers): lists, maps and embedded classes read empty
+/// containers and zero instances, which need no decision.
+bool _isStorableScalar(String canonicalType) {
+  final base = _baseType(canonicalType);
+  return !base.startsWith('List<') &&
+      !base.startsWith('Map<') &&
+      !base.startsWith('embedded:');
+}
+
+/// The value old documents read for a missing field of [canonicalType] —
+/// the proto3 zero, as the question and `--check` show it.
+String _zeroDisplay(String canonicalType) {
+  final base = _baseType(canonicalType);
+  return switch (base) {
+    'int' => '0',
+    'double' => '0.0',
+    'bool' => 'false',
+    'String' => "''",
+    'DateTime' => 'the epoch (1970-01-01T00:00:00.000Z)',
+    'Uint8List' => '<0 bytes>',
+    _ when base.startsWith('enum:') => 'the first ${base.substring(5)} value',
+    _ => 'its zero value',
+  };
+}
+
+/// One pending added-required-field line: the question's facts and the flags
+/// that would decide it (used by the missing-decision error and `--check`).
+String _requiredFieldLine(CollectionDiff collection, DeclaredField field) {
+  final model = collection.declared.model;
+  return '$model: `${field.name}` (${field.type}) is new and required; '
+      'existing documents would read ${_zeroDisplay(field.type)}: pass '
+      '--backfill $model.${field.name} or --keep-zero $model.${field.name}';
+}
+
+/// The added-required-field menu: Enter (or 1) writes a backfill stub, 2
+/// records "keep the zero value" in the lock, 3 aborts the run.
+bool _promptBackfillMenu(String model, DeclaredField field, MigrateIo io) {
+  io.write(
+    '$model: `${field.name}` (${field.type}) is new and required. Existing '
+    'documents would read ${_zeroDisplay(field.type)}.\n',
+  );
+  io.write(
+    '  1) Write a backfill stub (a migration sets the value for existing '
+    'documents) [default]\n',
+  );
+  io.write('  2) Keep the zero value (${_zeroDisplay(field.type)})\n');
+  io.write('  3) Abort (add a default or make it nullable first)\n');
+  while (true) {
+    io.write('Choice [1]: ');
+    final line = io.readLine().trim();
+    if (line.isEmpty || line == '1') {
+      return true;
+    }
+    if (line == '2') {
+      return false;
+    }
+    if (line == '3') {
+      throw MigrateException('Aborted; nothing was written.');
+    }
+    io.write('Enter a number between 1 and 3.\n');
+  }
+}
+
+/// The field's canonical type as the model declares it — for the wire-type
+/// validation of a decided backfill.
+String _declaredFieldType(SchemaDiff diff, String model, String field) {
+  for (final collection in diff.collections) {
+    if (collection.declared.model != model) {
+      continue;
+    }
+    for (final declared in collection.added) {
+      if (declared.name == field) {
+        return declared.type;
+      }
+    }
+  }
+  throw StateError('No added field $model.$field');
 }
 
 /// The collection diff and the embedded diff called [name] — at most one of
@@ -612,18 +925,25 @@ String _describeChanges(SchemaDiff diff) {
 // -- Writes -------------------------------------------------------------------
 
 /// Writes `lib/cocoon_migrations/m<NNNN>_<summary>.dart` with one typed
-/// conversion stub per upgrade. Returns whether a file was written.
+/// conversion stub per upgrade and one document-backfill stub per added
+/// required field. Returns whether a file was written.
 bool _writeMigrationFile(
   String root,
   int version,
   Map<String, List<FieldUpgrade>> upgrades,
+  Map<String, Set<String>> backfills,
+  SchemaLock newLock,
+  Map<String, String> modelLibraries,
   MigrateIo io,
 ) {
   final dir = Directory('$root/lib/cocoon_migrations');
   dir.createSync(recursive: true);
-  final name = 'm${_pad4(version)}_${_upgradeSummary(upgrades)}.dart';
+  final name =
+      'm${_pad4(version)}_${_migrationSummary(upgrades, backfills)}.dart';
   final listName = 'm${_pad4(version)}Migrations';
-  final sortedModels = upgrades.keys.toList()..sort();
+  final backfillListName = 'm${_pad4(version)}Backfills';
+  final hasUpgrades = upgrades.isNotEmpty;
+  final sortedModels = {...upgrades.keys, ...backfills.keys}.toList()..sort();
   final buffer = StringBuffer()
     ..writeln(
       '// GENERATED CODE - DO NOT MODIFY BY HAND, except the conversion bodies.',
@@ -632,26 +952,45 @@ bool _writeMigrationFile(
     ..writeln('// Cocoon schema migration to version $version, written by')
     ..writeln('// `dart run cocoon_generator:migrate`. Implement every')
     ..writeln(
-      '// `upgrade...` function below, then run build_runner again: the build',
+      '// `upgrade...` and `backfill...` function below, then run build_runner',
     )
-    ..writeln('// fails while any `UnimplementedError` remains.')
+    ..writeln(
+      '// again: the build fails while any `UnimplementedError` remains.',
+    )
     ..writeln();
   for (final model in sortedModels) {
-    for (final upgrade in upgrades[model]!) {
+    for (final upgrade in upgrades[model] ?? const <FieldUpgrade>[]) {
       buffer.writeln(
         '// $model.${upgrade.from.name}: ${upgrade.from.type} '
         '(#${upgrade.from.number}) -> ${upgrade.to.name}: '
         '${upgrade.to.type} (#${upgrade.to.number})',
       );
     }
+    for (final field in backfills[model] ?? const <String>[]) {
+      final spec = newLock.collections[model]!.field(field)!;
+      buffer.writeln(
+        '// $model.$field: ${spec.type} (#${spec.number}) added and required; '
+        'a backfill sets it on existing documents',
+      );
+    }
   }
   buffer
     ..writeln()
-    ..writeln("import 'package:cocoon/cocoon.dart';")
-    ..writeln();
+    ..writeln("import 'package:cocoon/cocoon.dart';");
+  if (backfills.isNotEmpty) {
+    final imports = [
+      for (final model in sortedModels)
+        if (backfills[model]?.isNotEmpty ?? false)
+          _modelImport(modelLibraries[model], dir.path),
+    ]..sort();
+    for (final import in imports.toSet()) {
+      buffer.writeln("import '$import';");
+    }
+  }
+  buffer.writeln();
   final functions = <String>[];
   for (final model in sortedModels) {
-    for (final upgrade in upgrades[model]!) {
+    for (final upgrade in upgrades[model] ?? const <FieldUpgrade>[]) {
       final function = _upgradeFunctionName(model, upgrade.from.name);
       functions.add(function);
       final fromType = _stubType(
@@ -675,99 +1014,203 @@ bool _writeMigrationFile(
         ..writeln();
     }
   }
-  buffer
-    ..writeln(
-      "/// The field rewrites of this migration, listed by 'migrations.dart'.",
-    )
-    ..writeln('final $listName = <FieldMigration>[');
-  var index = 0;
+  final backfillFunctions = <String>[];
   for (final model in sortedModels) {
-    for (final upgrade in upgrades[model]!) {
-      final context = '$model.${upgrade.from.name}';
-      final fromBase = _baseType(upgrade.from.type);
-      final toBase = _baseType(upgrade.to.type);
-      final fromIsMap = fromBase.startsWith('Map<');
-      final toIsMap = toBase.startsWith('Map<');
-      if (fromIsMap) {
-        // FieldMigration.typed<...> needs a Dart type argument per side; map
-        // types carry commas, so map rewrites use the untyped constructor
-        // and describe their shape with fromMap/toMap below.
-        buffer.writeln('  FieldMigration(');
-      } else {
-        final fromType = _stubType(upgrade.from.type, context);
-        final toType = _stubType(upgrade.to.type, context);
-        buffer.writeln('  FieldMigration.typed<$fromType, $toType>(');
-      }
+    for (final field in backfills[model] ?? const <String>[]) {
+      final spec = newLock.collections[model]!.field(field)!;
+      final function = _backfillFunctionName(model, field);
+      backfillFunctions.add(function);
       buffer
-        ..writeln("    model: '$model',")
-        ..writeln("    fromName: '${upgrade.from.name}',")
-        ..writeln('    fromNumber: ${upgrade.from.number},')
-        ..writeln("    fromType: '${_literalType(upgrade.from.type)}',")
         ..writeln(
-          '    fromWire: MigrationWireType.'
-          '${_wireTypeOf(upgrade.from.type, context)},',
-        );
-      if (fromIsMap) {
-        final (key: key, value: value) = _splitMapType(fromBase, context);
-        buffer
-          ..writeln('    fromMap: MapWireType(')
-          ..writeln(
-            '      key: MigrationWireType.${_mapKeyWire(key, context)},',
-          )
-          ..writeln(
-            '      value: MigrationWireType.'
-            '${_wireTypeOf(value, context)},',
-          )
-          ..writeln('    ),');
-      }
-      buffer
-        ..writeln("    toName: '${upgrade.to.name}',")
-        ..writeln('    toNumber: ${upgrade.to.number},')
-        ..writeln("    toType: '${_literalType(upgrade.to.type)}',")
+          '/// Fills $model.$field for documents written before the field',
+        )
+        ..writeln('/// existed. [doc] is the existing document: `$field` reads')
         ..writeln(
-          '    toWire: MigrationWireType.'
-          '${_wireTypeOf(upgrade.to.type, context)},',
-        );
-      if (toIsMap) {
-        final (key: key, value: value) = _splitMapType(toBase, context);
-        buffer
-          ..writeln('    toMap: MapWireType(')
-          ..writeln(
-            '      key: MigrationWireType.${_mapKeyWire(key, context)},',
-          )
-          ..writeln(
-            '      value: MigrationWireType.'
-            '${_wireTypeOf(value, context)},',
-          )
-          ..writeln('    ),');
-      }
-      if (fromIsMap) {
-        // The decoded old value is a Map<Object?, Object?>; the stub takes
-        // the field's real map type, so cast first. A cast view keeps the
-        // conversion type-checked without copying the entries.
-        final (key: key, value: value) = _splitMapType(fromBase, context);
-        buffer
-          ..writeln('    convert: (value) => ${functions[index]}(')
-          ..writeln(
-            '      (value! as Map<Object?, Object?>).cast<'
-            '${_stubType(key, context)}, ${_stubType(value, context)}>(),',
-          )
-          ..writeln('    ),');
-      } else {
-        buffer.writeln('    convert: ${functions[index]},');
-      }
-      buffer.writeln('  ),');
-      index++;
+          '/// its zero value on it, every other field the value the previous',
+        )
+        ..writeln(
+          '/// migrations left. Return the value to store — it may depend on',
+        )
+        ..writeln('/// any of the document\'s other fields.')
+        ..writeln(
+          '${_backfillValueType(spec.type)} $function($model doc) => '
+          "throw UnimplementedError('Write the backfill');",
+        )
+        ..writeln();
     }
+  }
+  if (hasUpgrades) {
+    buffer
+      ..writeln(
+        "/// The field rewrites of this migration, listed by 'migrations.dart'.",
+      )
+      ..writeln('final $listName = <FieldMigration>[');
+    var index = 0;
+    for (final model in sortedModels) {
+      for (final upgrade in upgrades[model] ?? const <FieldUpgrade>[]) {
+        final context = '$model.${upgrade.from.name}';
+        final fromBase = _baseType(upgrade.from.type);
+        final toBase = _baseType(upgrade.to.type);
+        final fromIsMap = fromBase.startsWith('Map<');
+        final toIsMap = toBase.startsWith('Map<');
+        if (fromIsMap) {
+          // FieldMigration.typed<...> needs a Dart type argument per side; map
+          // types carry commas, so map rewrites use the untyped constructor
+          // and describe their shape with fromMap/toMap below.
+          buffer.writeln('  FieldMigration(');
+        } else {
+          final fromType = _stubType(upgrade.from.type, context);
+          final toType = _stubType(upgrade.to.type, context);
+          buffer.writeln('  FieldMigration.typed<$fromType, $toType>(');
+        }
+        buffer
+          ..writeln("    model: '$model',")
+          ..writeln("    fromName: '${upgrade.from.name}',")
+          ..writeln('    fromNumber: ${upgrade.from.number},')
+          ..writeln("    fromType: '${_literalType(upgrade.from.type)}',")
+          ..writeln(
+            '    fromWire: MigrationWireType.'
+            '${_wireTypeOf(upgrade.from.type, context)},',
+          );
+        if (fromIsMap) {
+          final (key: key, value: value) = _splitMapType(fromBase, context);
+          buffer
+            ..writeln('    fromMap: MapWireType(')
+            ..writeln(
+              '      key: MigrationWireType.${_mapKeyWire(key, context)},',
+            )
+            ..writeln(
+              '      value: MigrationWireType.'
+              '${_wireTypeOf(value, context)},',
+            )
+            ..writeln('    ),');
+        }
+        buffer
+          ..writeln("    toName: '${upgrade.to.name}',")
+          ..writeln('    toNumber: ${upgrade.to.number},')
+          ..writeln("    toType: '${_literalType(upgrade.to.type)}',")
+          ..writeln(
+            '    toWire: MigrationWireType.'
+            '${_wireTypeOf(upgrade.to.type, context)},',
+          );
+        if (toIsMap) {
+          final (key: key, value: value) = _splitMapType(toBase, context);
+          buffer
+            ..writeln('    toMap: MapWireType(')
+            ..writeln(
+              '      key: MigrationWireType.${_mapKeyWire(key, context)},',
+            )
+            ..writeln(
+              '      value: MigrationWireType.'
+              '${_wireTypeOf(value, context)},',
+            )
+            ..writeln('    ),');
+        }
+        if (fromIsMap) {
+          // The decoded old value is a Map<Object?, Object?>; the stub takes
+          // the field's real map type, so cast first. A cast view keeps the
+          // conversion type-checked without copying the entries.
+          final (key: key, value: value) = _splitMapType(fromBase, context);
+          buffer
+            ..writeln('    convert: (value) => ${functions[index]}(')
+            ..writeln(
+              '      (value! as Map<Object?, Object?>).cast<'
+              '${_stubType(key, context)}, ${_stubType(value, context)}>(),',
+            )
+            ..writeln('    ),');
+        } else {
+          buffer.writeln('    convert: ${functions[index]},');
+        }
+        buffer.writeln('  ),');
+        index++;
+      }
+    }
+    buffer.writeln('];');
+  }
+  if (backfills.isNotEmpty) {
+    buffer
+      ..writeln(
+        "/// The document backfills of this migration, listed by 'migrations.dart'.",
+      )
+      ..writeln('final $backfillListName = <BackfillMigration<Object?>>[');
+    for (final model in sortedModels) {
+      for (final field in backfills[model] ?? const <String>[]) {
+        final spec = newLock.collections[model]!.field(field)!;
+        buffer
+          ..writeln('  BackfillMigration<$model>(')
+          ..writeln("    model: '$model',")
+          ..writeln("    fieldName: '$field',")
+          ..writeln('    fieldNumber: ${spec.number},')
+          ..writeln("    fieldType: '${_literalType(spec.type)}',")
+          ..writeln(
+            '    wire: MigrationWireType.'
+            '${_wireTypeOf(spec.type, '$model.$field')},',
+          )
+          ..writeln(
+            '    backfill: ${backfillFunctions[_backfillIndex(backfills, model, field)]},',
+          )
+          ..writeln('  ),');
+      }
+    }
+    buffer.writeln('];');
   }
   // No trailing blank line at EOF: the emitted files stay dart-format
   // stable as written.
-  buffer.writeln('];');
+  if (!buffer.toString().endsWith('\n')) {
+    buffer.writeln();
+  }
   File('${dir.path}/$name').writeAsStringSync(buffer.toString());
   io.write(
     '${_color('Wrote lib/cocoon_migrations/$name.', _ansiGreen, io.stdoutIsTerminal)}\n',
   );
   return true;
+}
+
+/// The 0-based position of a backfill field in the sorted emission order, so
+/// the list references the stub function written for it.
+int _backfillIndex(
+  Map<String, Set<String>> backfills,
+  String model,
+  String field,
+) {
+  final models = backfills.keys.toList()..sort();
+  var index = 0;
+  for (final m in models) {
+    final fields = backfills[m]!.toList()..sort();
+    if (m == model) {
+      return index + fields.indexOf(field);
+    }
+    index += fields.length;
+  }
+  throw StateError('No backfill $model.$field');
+}
+
+/// The import of the library that declares [model]'s class, as the backfill
+/// stub file needs it: package URIs are used as-is, file URIs become a
+/// relative path from the migrations directory.
+String _modelImport(String? libraryUri, String migrationDir) {
+  final uri = libraryUri ?? '';
+  if (uri.startsWith('file:')) {
+    final modelPath = Uri.parse(uri).toFilePath(windows: false);
+    final from = migrationDir.endsWith('/') ? migrationDir : '$migrationDir/';
+    final model = modelPath.startsWith('/')
+        ? modelPath.substring(1)
+        : modelPath;
+    final base = from.startsWith('/') ? from.substring(1) : from;
+    final modelParts = model.split('/')..removeLast();
+    final baseParts = base.split('/')..removeLast();
+    var common = 0;
+    while (common < modelParts.length &&
+        common < baseParts.length &&
+        modelParts[common] == baseParts[common]) {
+      common++;
+    }
+    return [
+      for (var i = common; i < baseParts.length; i++) '..',
+      ...modelParts.skip(common),
+    ].join('/');
+  }
+  return uri;
 }
 
 /// (Re)generates `lib/cocoon_migrations/migrations.dart`: every migration
@@ -778,6 +1221,7 @@ void _writeMigrationsList(String root, MigrateIo io) {
     return;
   }
   final files = <(int, String)>[];
+  final sources = <String, String>{};
   for (final entry in dir.listSync()) {
     if (entry is! File) {
       continue;
@@ -786,6 +1230,7 @@ void _writeMigrationsList(String root, MigrateIo io) {
     final match = RegExp(r'^m(\d{4})_.+\.dart$').firstMatch(name);
     if (match != null) {
       files.add((int.parse(match.group(1)!), name));
+      sources[name] = entry.readAsStringSync();
     }
   }
   if (files.isEmpty) {
@@ -815,11 +1260,18 @@ void _writeMigrationsList(String root, MigrateIo io) {
       '/// Every Cocoon schema migration of this package, oldest first.',
     )
     ..writeln('final cocoonMigrations = <CocoonMigration>[');
-  for (final (version, _) in files) {
-    buffer.writeln(
-      '  CocoonMigration(version: $version, fields: '
-      'm${_pad4(version)}.m${_pad4(version)}Migrations),',
-    );
+  for (final (version, name) in files) {
+    final prefix = 'm${_pad4(version)}';
+    // A migration file declares exactly the lists it carries: field rewrites
+    // (`mNNNNMigrations`) and/or document backfills (`mNNNNBackfills`).
+    final parts = <String>['version: $version'];
+    if (sources[name]!.contains('final ${prefix}Migrations =')) {
+      parts.add('fields: $prefix.${prefix}Migrations');
+    }
+    if (sources[name]!.contains('final ${prefix}Backfills =')) {
+      parts.add('backfills: $prefix.${prefix}Backfills');
+    }
+    buffer.writeln('  CocoonMigration(${parts.join(', ')}),');
   }
   buffer.writeln('];');
   File('${dir.path}/migrations.dart').writeAsStringSync(buffer.toString());
@@ -834,11 +1286,42 @@ void _writeMigrationsList(String root, MigrateIo io) {
 String _upgradeFunctionName(String model, String field) =>
     'upgrade${_pascal(model)}${_pascal(field)}';
 
+/// `Txn.currency` -> `backfillTxnCurrency`.
+String _backfillFunctionName(String model, String field) =>
+    'backfill${_pascal(model)}${_pascal(field)}';
+
+/// The Dart type of a backfill stub's return: the field's REAL type as the
+/// model declares it — the stub returns a value, not a stored
+/// representation (`DateTime` fields take a `DateTime`, enums the enum).
+String _backfillValueType(String canonicalType) {
+  final base = _baseType(canonicalType);
+  if (base.startsWith('enum:')) {
+    return base.substring(5);
+  }
+  return switch (base) {
+    'int' ||
+    'double' ||
+    'bool' ||
+    'String' ||
+    'DateTime' ||
+    'Uint8List' => base,
+    _ => throw MigrateException(
+      'Cannot generate a backfill for "$canonicalType": it is not a storable '
+      'scalar. Make the field nullable or give it a constructor default '
+      'instead.',
+    ),
+  };
+}
+
 String _pascal(String name) =>
     name.isEmpty ? name : '${name[0].toUpperCase()}${name.substring(1)}';
 
-/// The migration file name's summary: `txn_currency_to_currency_code`.
-String _upgradeSummary(Map<String, List<FieldUpgrade>> upgrades) {
+/// The migration file name's summary: `txn_currency_to_currency_code`, plus
+/// one `model_field_backfill` part per backfill.
+String _migrationSummary(
+  Map<String, List<FieldUpgrade>> upgrades,
+  Map<String, Set<String>> backfills,
+) {
   final parts = <String>[];
   for (final model in upgrades.keys.toList()..sort()) {
     for (final upgrade in upgrades[model]!) {
@@ -846,6 +1329,12 @@ String _upgradeSummary(Map<String, List<FieldUpgrade>> upgrades) {
         '${snakeCase(model)}_${snakeCase(upgrade.from.name)}_to_'
         '${snakeCase(upgrade.to.name)}',
       );
+    }
+  }
+  for (final model in backfills.keys.toList()..sort()) {
+    final fields = backfills[model]!.toList()..sort();
+    for (final field in fields) {
+      parts.add('${snakeCase(model)}_${snakeCase(field)}_backfill');
     }
   }
   return parts.join('_and_');
@@ -952,11 +1441,13 @@ _Options _parseArgs(List<String> args) {
   final renames = <(String, String, String)>[];
   final drops = <(String, String)>[];
   final dropCollections = <String>[];
+  final backfills = <(String, String)>[];
+  final keepZeros = <(String, String)>[];
   var yes = false;
   var check = false;
   const name = '[A-Za-z_][A-Za-z0-9_]*';
   final renamePattern = RegExp('^($name)\\.($name)=($name)');
-  final dropPattern = RegExp('^($name)\\.($name)');
+  final fieldPattern = RegExp('^($name)\\.($name)');
 
   String valueOf(String flag, int index) {
     if (index + 1 >= args.length) {
@@ -987,7 +1478,7 @@ _Options _parseArgs(List<String> args) {
       final value = arg == '--drop'
           ? valueOf('--drop', i++)
           : arg.substring('--drop='.length);
-      final match = dropPattern.firstMatch(value);
+      final match = fieldPattern.firstMatch(value);
       if (match == null) {
         throw MigrateException(
           '--drop expects Model.field, got "$value".',
@@ -995,6 +1486,30 @@ _Options _parseArgs(List<String> args) {
         );
       }
       drops.add((match.group(1)!, match.group(2)!));
+    } else if (arg == '--backfill' || arg.startsWith('--backfill=')) {
+      final value = arg == '--backfill'
+          ? valueOf('--backfill', i++)
+          : arg.substring('--backfill='.length);
+      final match = fieldPattern.firstMatch(value);
+      if (match == null) {
+        throw MigrateException(
+          '--backfill expects Model.field, got "$value".',
+          exitCode: _exitUsage,
+        );
+      }
+      backfills.add((match.group(1)!, match.group(2)!));
+    } else if (arg == '--keep-zero' || arg.startsWith('--keep-zero=')) {
+      final value = arg == '--keep-zero'
+          ? valueOf('--keep-zero', i++)
+          : arg.substring('--keep-zero='.length);
+      final match = fieldPattern.firstMatch(value);
+      if (match == null) {
+        throw MigrateException(
+          '--keep-zero expects Model.field, got "$value".',
+          exitCode: _exitUsage,
+        );
+      }
+      keepZeros.add((match.group(1)!, match.group(2)!));
     } else if (arg == '--drop-collection' ||
         arg.startsWith('--drop-collection=')) {
       final value = arg == '--drop-collection'
@@ -1011,7 +1526,8 @@ _Options _parseArgs(List<String> args) {
       throw MigrateException(
         'Unknown argument "$arg". Usage: dart run cocoon_generator:migrate '
         '[--rename Model.old=new]... [--drop Model.field]... '
-        '[--drop-collection Model]... [--yes] [--check]',
+        '[--drop-collection Model]... [--backfill Model.field]... '
+        '[--keep-zero Model.field]... [--yes] [--check]',
         exitCode: _exitUsage,
       );
     }
@@ -1020,6 +1536,8 @@ _Options _parseArgs(List<String> args) {
     renames: renames,
     drops: drops,
     dropCollections: dropCollections,
+    backfills: backfills,
+    keepZeros: keepZeros,
     yes: yes,
     check: check,
   );

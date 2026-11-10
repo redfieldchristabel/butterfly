@@ -93,6 +93,8 @@ final class CocoonOptions {
     this.pageCacheMiB = defaultPageCacheMiB,
     this.tempStoreInMemory = true,
     this.walAutoCheckpointPages = defaultWalAutoCheckpointPages,
+    this.compactAfterUpgrade = true,
+    this.onCompactionFailed,
   });
 
   /// The default hot-document cache size.
@@ -173,6 +175,26 @@ final class CocoonOptions {
   /// database file, and a larger interval only costs some of that work at
   /// open after a crash). Values `<= 0` keep SQLite's default.
   final int walAutoCheckpointPages;
+
+  /// Whether an open that upgraded the file's storage format compacts the
+  /// file afterwards (a one-time `VACUUM`) when the upgrade left more than a
+  /// fifth of the file on the freelist.
+  ///
+  /// A format upgrade rebuilds every collection table; the dropped tables'
+  /// pages stay on the freelist until something reclaims them — measured on
+  /// the 1M rivals file, 409 MB grew to 544 MB and stayed there until a
+  /// compaction. On a phone that is wasted storage until the next backup, so
+  /// by default the upgrade open compacts once after its transaction commits
+  /// (see [onCompactionFailed] for the failure path — the open itself never
+  /// fails over this). Normal opens are unaffected either way.
+  final bool compactAfterUpgrade;
+
+  /// Called when the post-upgrade compaction ([compactAfterUpgrade]) could
+  /// not run — most often a full disk: `VACUUM` needs roughly the file size
+  /// in free space. The file is left exactly as the upgrade made it, the
+  /// open succeeds, and the freelist is reclaimed by the next `backupTo` (or
+  /// any explicit `VACUUM`). `null` — the default — reports nothing.
+  final void Function(Object error)? onCompactionFailed;
 }
 
 /// A typed, disk-backed, Firestore-style local database on SQLite.
@@ -340,6 +362,7 @@ final class Cocoon {
     final registry = SchemaRegistry.build(collections);
     // Fail fast on an unusable retention policy, before the file is touched.
     options.changeRetention?.validate();
+    var upgradedFormat = false;
     final instanceId = await executor.writeTransaction((tx) async {
       await _createMetaTableIfMissing(tx);
       await _createChangesTableIfMissing(tx);
@@ -347,7 +370,7 @@ final class Cocoon {
       // The file's storage layout is brought up to the engine's before the
       // schema versions run: the format rebuild is shape-preserving, and
       // the migration runner and reconciler both assume the current layout.
-      await _applyStorageFormat(
+      upgradedFormat = await _applyStorageFormat(
         tx,
         onMigrationProgress: onMigrationProgress,
         databasePath: databasePath ?? '',
@@ -375,6 +398,12 @@ final class Cocoon {
       await _recoverBulkIndexes(tx, registry);
       return instanceId;
     });
+    if (upgradedFormat && options.compactAfterUpgrade) {
+      // The upgrade's dropped tables left their pages on the freelist;
+      // reclaim them now, outside the open transaction, so a phone does not
+      // carry the waste until its next backup. Never fails the open.
+      await _compactAfterFormatUpgrade(executor, options.onCompactionFailed);
+    }
     final db = Cocoon._(
       executor,
       registry,
@@ -1480,7 +1509,11 @@ final class Cocoon {
   /// [StorageFormatTooNewException]. A fresh database has no format row
   /// yet; the rebuild finds no tables carrying the old layout and just
   /// stamps the current version.
-  static Future<void> _applyStorageFormat(
+  ///
+  /// Returns whether this open actually converted an older layout (as
+  /// opposed to a fresh create or an already-current file): only that open
+  /// considers the post-upgrade compaction.
+  static Future<bool> _applyStorageFormat(
     CocoonTx tx, {
     required void Function(int done, int total)? onMigrationProgress,
     required String databasePath,
@@ -1507,9 +1540,50 @@ final class Cocoon {
       );
     }
     if (stored == storageFormatVersion) {
-      return;
+      return false;
     }
-    await FormatMigrator.migrateInTx(tx, onProgress: onMigrationProgress);
+    final rebuilt = await FormatMigrator.migrateInTx(
+      tx,
+      onProgress: onMigrationProgress,
+    );
+    // An older format row means a real upgrade; rebuilt tables also cover
+    // files that predate the format row itself.
+    return rebuilt > 0 || stored > 0;
+  }
+
+  /// The freelist share above which the post-upgrade compaction runs: the
+  /// check is `freelist * compactFreelistDenominator > pages`, so the
+  /// default (5) compacts when MORE than a fifth of the file is reclaimable.
+  ///
+  /// Below that the one-time `VACUUM` rewrite of the whole file is not worth
+  /// the reclaimed bytes; the next `backupTo` compacts anyway.
+  @visibleForTesting
+  static const int compactFreelistDenominator = 5;
+
+  /// Reclaims the freelist pages a storage-format upgrade left behind, once,
+  /// after the open transaction committed.
+  ///
+  /// Runs `VACUUM` only when more than a fifth of the file sits on the
+  /// freelist. Every failure is caught and reported through
+  /// [onCompactionFailed] — a full disk (VACUUM needs about the file size in
+  /// free space) must not fail the open; the file stays as the upgrade made
+  /// it and the next `backupTo` compacts instead.
+  static Future<void> _compactAfterFormatUpgrade(
+    CocoonExecutor executor,
+    void Function(Object error)? onCompactionFailed,
+  ) async {
+    try {
+      final freeRow = await executor.getOptional('PRAGMA freelist_count');
+      final pagesRow = await executor.getOptional('PRAGMA page_count');
+      final free = freeRow?['freelist_count'] as int? ?? 0;
+      final pages = pagesRow?['page_count'] as int? ?? 0;
+      if (pages <= 0 || free * compactFreelistDenominator <= pages) {
+        return;
+      }
+      await executor.execute('VACUUM');
+    } on Object catch (error) {
+      onCompactionFailed?.call(error);
+    }
   }
 
   /// Compares the stored schema version with [schemaVersion] and applies

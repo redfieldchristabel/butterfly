@@ -1,5 +1,28 @@
 ## Unreleased
 
+- **`migrate` now asks before a new required field silently reads its zero
+  value.** Adding a non-nullable field with no constructor default to an
+  existing collection used to book every old document at the proto3 zero
+  (`''`, `0`, `false`, the epoch) — a quiet data bug for money and dates.
+  The migrate command now shows the exact value old documents would read
+  and asks: write a backfill stub (the default — the engine then sets the
+  field on every existing document at the next open, inside the usual
+  crash-safe migration, the build failing while the stub is
+  `UnimplementedError`), keep the zero knowingly (recorded in the lock,
+  never asked again), or abort. Scripts use `--backfill Model.field` /
+  `--keep-zero Model.field`; `--yes` picks the backfill, never a silent
+  keep-zero, and `--check` reports pending decisions.
+- **A storage-format upgrade no longer leaves wasted file size behind.**
+  After an open that upgraded an older file's layout, Cocoon now compacts
+  the file once when more than a fifth of it sits on the freelist (at 1M:
+  the upgrade transiently grew the file to ~519 MiB; the automatic
+  `VACUUM` returns it to 304.9 MiB in ~1 s) — no phone carries the
+  upgrade's dropped pages until its next backup. Disable with
+  `CocoonOptions.compactAfterUpgrade: false`; a compaction that cannot run
+  (a full disk) is reported through the new
+  `CocoonOptions.onCompactionFailed` and never fails the open. Measured in
+  `benchmarks/cocoon_rivals/STORAGE.md`.
+
 - **`db.getAll(refs)`: many documents by id in one trip.** Loading a set of
   known ids — a split's participants, linked accounts, a sync batch — no
   longer costs one round trip per document. `getAll` answers in refs order,

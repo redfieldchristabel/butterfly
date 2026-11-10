@@ -57,13 +57,20 @@ on the docs site under **Cocoon**:
   matters. Adds, drops, reorders and index changes need no migration; renames
   are confirmed in the interactive `migrate` command; type changes move the
   field to a fresh number (the old reserved forever) and write a typed
-  conversion stub.
+  conversion stub. An added field that is non-nullable without a
+  constructor default would silently read its proto3 zero value in every
+  pre-existing document, so `migrate` asks for a one-off decision (the
+  Django `makemigrations` idea): write a generated backfill stub that the
+  engine runs over the existing documents at the next open, or record a
+  deliberate keep-the-zero in the lock — never a silent zero.
 - **Who runs what:** `dart run cocoon_generator:migrate` on the developer's
   machine writes the lock and migration files (both committed, so renames
   show up in review); build_runner only generates and **fails** on any
   models/lock disagreement or unimplemented stub — it never writes the lock;
   on device, `Cocoon.open` applies pending migrations once, in order, inside
-  one transaction (wire-level rewrites in batches of 500, one change-log row
+  one transaction (wire-level rewrites in batches of 500, then document
+  backfills — each stub receives the decoded document as the rewrites left
+  it and its value is written at the new field's number — one change-log row
   per rewritten document, migrated columns and indexes rebuilt from the
   rewritten bytes). A file newer than the app refuses to open.
 - **Queries:** Firestore-strict index rule (equality names, then sort keys,
@@ -240,7 +247,15 @@ on the docs site under **Cocoon**:
   older-format ones (they migrate at the next open). Measured on a copy of
   the real pre-step-20 1M file: 5.1-8.7 s, data and change log intact,
   `VACUUM`/`backupTo` afterwards compacts to exactly the shipped layout's
-  size (304.9 MiB).
+  size (304.9 MiB). Since step 23 the upgrade open compacts by itself when
+  it is done (`CocoonOptions.compactAfterUpgrade`, default on): the dropped
+  tables leave 41.3% of the upgraded 1M file's pages on the freelist, past
+  the 20% threshold, so the open runs one `VACUUM` after its transaction
+  commits — 390.1 → 304.9 MiB, freelist 0, ~1.1 s at 1M and ~34 ms on a
+  0.5 MiB file, measured in
+  `benchmarks/cocoon_rivals/STORAGE.md`. A compaction that cannot run (a
+  full disk) is reported through `CocoonOptions.onCompactionFailed` and
+  never fails the open; normal opens never compact.
 - **The change log is the app's to bound.** `pruneChanges` returns the rows
   deleted; `earliestChangeSeq` reports the oldest readable seq; reading
   from a pruned watermark throws `ChangesPrunedException` (the Firestore
@@ -318,6 +333,8 @@ executor, so it is deferred.
 | `@Mirrored()` fields: an `f_` column (aggregates, groupBy) with no index; add-and-backfill / drop at open, lock round-trip, DevTools "mirrored (no index)" label; measured storage cost and backfill time at 1M in the README | done |
 | Storage format 2: scope-key identity (no stored `path` column), path derived from table + params + id, `_cocoon_meta` format version with crash-safe table-by-table upgrade on open and newer-format refusal (`StorageFormatTooNewException`); measured at 1M in `benchmarks/cocoon_rivals/STORAGE.md` | done |
 | Change-log bounding: `pruneChanges` count, `earliestChangeSeq`, `ChangesPrunedException`, `CocoonOptions.changeRetention` (small-batch post-commit enforcement), `BulkWriterOptions(logChanges: false)` | done |
+| Added-required-field decisions: `migrate` asks when a new non-nullable field without a constructor default joins an existing collection (backfill stub vs recorded keep-zero vs abort; `--backfill`/`--keep-zero`/`--yes` for scripts), generated `BackfillMigration` runs over existing documents in the open transaction like any migration | done |
+| Post-upgrade compaction: `CocoonOptions.compactAfterUpgrade` (default on) runs one `VACUUM` after a storage-format upgrade that left > 20% of the file on the freelist, `onCompactionFailed` reports a failure without failing the open; measured at 1M and on a small file in `benchmarks/cocoon_rivals/STORAGE.md` | done |
 | Butterfly CLI shortcuts (`butterfly generate model --cocoon`, `butterfly cocoon migrate`/`build`): scaffold + delegate only, the CLI never imports `cocoon_generator` or reimplements generation/diff | done |
 | pub.dev packaging (both packages at 0.1.0: repository/issue_tracker/topics metadata, install + quick-start README with a runnable generator-free `example/`, CHANGELOG released, `dart pub publish --dry-run` verified) | done |
 | Publishing to pub.dev (maintainer: push, then `dart pub publish` in cocoon, then cocoon_generator) | planned |

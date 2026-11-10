@@ -91,6 +91,18 @@ cocoon.db`, 409,088,000 B — the exact file Part A anatomized):
   reclaims them: `VACUUM` takes 4.3 s and lands at **319,778,816 B —
   304.9 MiB, byte-for-byte the probe's L0 size**. `db.backupTo()` performs
   the same compaction as part of every backup.
+- Since step 23 the upgrade open runs that compaction itself
+  (`CocoonOptions.compactAfterUpgrade`, default on), once after the
+  upgrade transaction commits and only when the freelist exceeds a fifth
+  of the file. Measured on the same 1M copy
+  (`tool/upgrade_compact_probe.dart`): 41.3% of the post-upgrade file's
+  pages were free, the open ended at **319,778,816 B with a freelist of
+  0** — the upgrade's 5.4 s plus a 1.1 s `VACUUM`. A small file behaves
+  the same: 0.5 MiB with 400 txns upgraded and compacted in one 34 ms
+  open. When the compaction cannot run (a full disk — `VACUUM` needs
+  about the file size in free space), the open still succeeds and
+  `CocoonOptions.onCompactionFailed` reports it; the next `backupTo`
+  compacts instead.
 
 Noise note: measured 2026-11-10 on the shared build box through Foreman
 (no emulator running); single runs, medians of 3 for the probe variants.

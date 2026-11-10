@@ -88,13 +88,16 @@ final class FormatMigrator {
   ///
   /// Runs inside the caller's write transaction (the open's). [onProgress]
   /// reports `(documents copied, documents total)` after each table.
+  /// Returns how many tables were rebuilt: 0 for a fresh database or an
+  /// already-current file, more when an older layout was actually converted
+  /// (the open decides on a post-upgrade compaction from this).
   ///
   /// The rebuild is shape-preserving: each table is recreated from its own
   /// stored `CREATE` SQL minus the `path` column, so hand-tuned or
   /// not-currently-registered tables survive the upgrade too; the open's
   /// schema reconciliation aligns registered tables with the app's current
   /// adapters right after.
-  static Future<void> migrateInTx(
+  static Future<int> migrateInTx(
     CocoonTx tx, {
     void Function(int done, int total)? onProgress,
   }) async {
@@ -130,6 +133,7 @@ final class FormatMigrator {
       'INSERT OR REPLACE INTO $metaTableName (key, value) VALUES (?, ?)',
       [formatVersionMetaKey, '$storageFormatVersion'],
     );
+    return tables.length;
   }
 
   /// Throws the injected [StateError] when [injected] names [step].

@@ -188,7 +188,40 @@ first, Enter accepts the preselected one — and a final drop option; fields
 without candidates and removed collections ask a plain `y/N`. Everything
 else is decided without asking: added fields get fresh numbers, reorders
 and index changes change nothing, and a type change always moves the field
-to a fresh number with a conversion stub. The command writes the updated
+to a fresh number with a conversion stub.
+
+One more question, for an added field of an **existing** collection that is
+non-nullable and has no constructor default: such a field would silently
+read its proto3 zero value (`''`, `0`, `false`, the epoch for `DateTime`,
+the first enum value) in every document written before it existed — for
+money and dates, a quiet data bug. The command shows the exact value the
+old documents would read and asks:
+
+```text
+Txn: `currency` (String) is new and required. Existing documents would read ''.
+  1) Write a backfill stub (a migration sets the value for existing documents) [default]
+  2) Keep the zero value ('')
+  3) Abort (add a default or make it nullable first)
+```
+
+The default writes a backfill stub into the new migration file — a function
+that receives each decoded old document and returns the value to store, so
+it can depend on the document's other fields:
+
+```dart
+// lib/cocoon_migrations/m0004_txn_currency_backfill.dart
+String backfillTxnCurrency(Txn doc) => doc.memo == null ? 'MYR' : 'USD';
+```
+
+Implement the stubs — the build fails while any `UnimplementedError`
+remains — and on the device the engine runs the backfill over every
+existing document inside the open's one transaction: batched, one
+change-log row per document, crash-safe, progress through
+`onMigrationProgress`, a throwing stub rolls the whole open back. Choice 2
+records the decision in the lock so the question is never asked again. A
+brand-new collection asks nothing — it has no existing documents.
+
+The command writes the updated
 lock and, only when stored data must change, a numbered migration file:
 
 ```dart
@@ -227,9 +260,13 @@ included — rolls the whole open back.
 
 Scripts and pre-commit hooks drive the command without a terminal:
 `--rename Model.old=new`, `--drop Model.field`, `--drop-collection Model`
-(drops are never implied by `--yes`), `--check` (exit 1 when the lock would
-change, no writes), and a missing decision on non-interactive stdin exits 2
-listing the flags that would resolve it. See the cocoon_generator README.
+(drops are never implied by `--yes`), `--backfill Model.field` and
+`--keep-zero Model.field` (decide an added required field without the
+menu; `--yes` picks the default — a backfill stub, never a silent
+keep-zero), `--check` (exit 1 when the lock would change, no writes; it
+reports pending required-field decisions), and a missing decision on
+non-interactive stdin exits 2 listing the flags that would resolve it. See
+the cocoon_generator README.
 
 ## Writing an adapter by hand
 
@@ -840,6 +877,7 @@ final db = await Cocoon.open(
     pageCacheMiB: 64, // PRAGMA cache_size on the writer; readers keep the default; <= 0 = default
     tempStoreInMemory: true, // PRAGMA temp_store = MEMORY
     walAutoCheckpointPages: 8000, // PRAGMA wal_autocheckpoint; <= 0 = default
+    compactAfterUpgrade: true, // VACUUM once after a storage-format upgrade that left > 1/5 of the file free
   ),
 );
 ```
@@ -859,8 +897,16 @@ plus id) table by table, inside the open, crash-safe, with progress
 reported through `onMigrationProgress` — and a file written by a newer
 version refuses to open with a `StorageFormatTooNewException`. Measured on
 a 1M file: the one-time upgrade takes ~5-9 s, keeps every document and
-change-log row, and a `backupTo` (or any `VACUUM`) afterwards compacts the
-file from 390 MiB to 305 MiB.
+change-log row, and the file transiently grows to ~519 MiB — the dropped
+tables' pages sit on the freelist. After the upgrade's transaction commits,
+the open compacts the file once (`VACUUM`) when more than a fifth of it is
+reclaimable: 390 → 305 MiB with the freelist back to zero, ~1 s of
+`VACUUM` at 1M, ~34 ms on a 0.5 MiB file. `compactAfterUpgrade: false`
+keeps the old behavior (the next `backupTo`, which always compacts,
+reclaims the space instead), and a compaction that cannot run — most often
+a full disk, since `VACUUM` needs about the file size in free space — is
+reported through `onCompactionFailed` and never fails the open. Normal
+opens never compact.
 
 One `Cocoon` instance must own its database file: do not open the same file
 from two instances or two processes — SQLite's write lock and the hot-cache

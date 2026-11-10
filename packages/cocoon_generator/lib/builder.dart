@@ -152,8 +152,8 @@ class _CocoonSchemaVersionBuilder implements Builder {
   }
 
   /// Fails the build while any migration file still throws
-  /// `UnimplementedError`: the generated conversion stubs must be
-  /// implemented before the package builds against the new schema.
+  /// `UnimplementedError`: the generated conversion and backfill stubs must
+  /// be implemented before the package builds against the new schema.
   Future<void> _requireImplementedMigrations(BuildStep buildStep) async {
     await for (final id in buildStep.findAssets(
       Glob('lib/cocoon_migrations/m*.dart'),
@@ -164,8 +164,8 @@ class _CocoonSchemaVersionBuilder implements Builder {
       if (source.contains('throw UnimplementedError')) {
         throw CocoonBuildError(
           'Cocoon migration ${id.path} still contains an unimplemented '
-          'conversion: implement the `upgrade...` functions in it, then run '
-          'build_runner again.',
+          'conversion or backfill: implement the `upgrade...`/`backfill...` '
+          'functions in it, then run build_runner again.',
         );
       }
     }

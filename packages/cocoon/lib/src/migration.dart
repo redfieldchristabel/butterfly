@@ -15,10 +15,15 @@ import 'wire.dart';
 ///
 /// [version] is the lock version this step brings the database up to; the
 /// engine runs every step whose [version] is greater than the stored one, in
-/// ascending order.
+/// ascending order. [fields] are wire-level rewrites of changed fields;
+/// [backfills] set newly added required fields on every existing document.
 final class CocoonMigration {
   /// Builds a step; generated code lists one per migration file.
-  const CocoonMigration({required this.version, required this.fields});
+  const CocoonMigration({
+    required this.version,
+    this.fields = const [],
+    this.backfills = const [],
+  });
 
   /// The schema version this step upgrades the database to.
   final int version;
@@ -26,9 +31,76 @@ final class CocoonMigration {
   /// The field rewrites to apply, in a stable order.
   final List<FieldMigration> fields;
 
+  /// The document backfills to apply after [fields]: one per newly added
+  /// field that old documents must gain a value for. Every stub of one
+  /// version receives the same decoded document — the document as this
+  /// version's [fields] rewrites left it.
+  final List<BackfillMigration<Object?>> backfills;
+
   @override
   String toString() =>
-      'CocoonMigration(v$version: ${fields.map((f) => f.toString()).join(', ')})';
+      'CocoonMigration(v$version: '
+      '${[...fields, ...backfills].map((f) => f.toString()).join(', ')})';
+}
+
+/// One document backfill inside a [CocoonMigration]: every existing document
+/// of [model] is decoded and [backfill] decides what [fieldName] should read.
+///
+/// This is the generated companion of the migrate command's "write a
+/// backfill stub" answer: an added field that is non-nullable and has no
+/// constructor default would otherwise silently decode to its proto3 zero
+/// value (`''`, `0`, `false`, the epoch, the first enum value) in every
+/// document written before the field existed. The stub receives the decoded
+/// old document — the new field reads its zero value on it — and returns the
+/// value to store, so it can depend on the document's other fields.
+///
+/// [T] is the model class; the returned value must have [fieldType]'s Dart
+/// type (`DateTime` fields take a UTC-normalizable [DateTime], enum fields
+/// the enum value — stored by name). The engine writes the returned value at
+/// [fieldNumber] in the canonical wire document, in batches, inside the open
+/// transaction: one change-log row per rewritten document, progress through
+/// `onMigrationProgress`, and a throwing stub rolls the whole open back.
+///
+/// Backfills target storable scalars (`int`, `double`, `bool`, `String`,
+/// `DateTime`, `Uint8List`, enums); lists, maps and embedded classes read
+/// empty containers and zero instances, which never need a decision.
+final class BackfillMigration<T> {
+  /// Builds a backfill; generated code lists one per added required field.
+  const BackfillMigration({
+    required this.model,
+    required this.fieldName,
+    required this.fieldNumber,
+    required this.fieldType,
+    required this.wire,
+    required this.backfill,
+  });
+
+  /// The model class name, e.g. `Txn`. Determines the migrated table.
+  final String model;
+
+  /// The field the backfill sets, e.g. `currency`.
+  final String fieldName;
+
+  /// The field's number in the lock (fresh — the field was just added).
+  final int fieldNumber;
+
+  /// The field's canonical lock type, e.g. `String` or `DateTime`.
+  final String fieldType;
+
+  /// The wire encoding [fieldNumber]'s values are stored with.
+  final MigrationWireType wire;
+
+  /// Receives the decoded document and returns the value [fieldName] should
+  /// read from it on. Returning `null` fails the migration (the field is
+  /// non-nullable); throwing aborts the whole open, like a conversion stub.
+  final Object? Function(T doc) backfill;
+
+  /// Applies [backfill] to a decoded document, keeping the engine's
+  /// `Object?` view type-checked against [T].
+  Object? apply(Object? doc) => backfill(doc! as T);
+
+  @override
+  String toString() => '$model.$fieldName: $fieldType (#$fieldNumber) backfill';
 }
 
 /// One field rewrite inside a [CocoonMigration]: the stored values of field
