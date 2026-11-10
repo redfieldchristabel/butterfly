@@ -14,6 +14,8 @@ import 'package:meta/meta_meta.dart';
 /// ```
 @Target({TargetKind.classType})
 class Collection {
+  /// Marks the annotated class as a Cocoon collection at [path] with
+  /// [indexes].
   const Collection(this.path, {this.indexes = const []});
 
   /// Path pattern: collection ids separated by `{param}` placeholders,
@@ -29,6 +31,8 @@ class Collection {
 /// Prefix a field with `-` to sort it descending. The document id is always
 /// appended as the final tiebreaker so keyset pagination stays stable.
 class Index {
+  /// Indexes [fields] in order; set [unique] to make the combination unique
+  /// within the collection.
   const Index(this.fields, {this.unique = false});
 
   /// Field (or path param) names in sort order, e.g. `['accountId', '-bookedOn']`.
@@ -73,12 +77,14 @@ class Index {
 /// removing it drops the column the same way.
 @Target({TargetKind.field, TargetKind.getter})
 class Mirrored {
+  /// Marks the annotated field as mirrored (column, no index).
   const Mirrored();
 }
 
 /// Excludes a field from storage. It is neither encoded nor tracked by the lock.
 @Target({TargetKind.field, TargetKind.getter})
 class Ignore {
+  /// Excludes the annotated field from storage.
   const Ignore();
 }
 
@@ -101,5 +107,6 @@ class Ignore {
 /// ```
 @Target({TargetKind.classType})
 class Embedded {
+  /// Marks the annotated class as embeddable.
   const Embedded();
 }

@@ -58,7 +58,6 @@ import 'package:cocoon_rivals/engine.dart'
     show OpCost, fileSizeWithSidecars, importBatchSize;
 import 'package:cocoon_rivals/models.dart';
 import 'package:sqlite3/sqlite3.dart' as raw;
-import 'package:sqlite_async/sqlite_async.dart';
 
 /// Whether a variant writes change-log rows, and at which granularity.
 enum ChangeRows { none, perDoc, perChunk }

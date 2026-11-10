@@ -1,8 +1,15 @@
 name: cocoon
 resolution: workspace
 description: "A typed, disk-backed, Firestore-style local database for Dart and Flutter, built on SQLite."
-version: 0.0.1
-homepage: https://github.com/redfieldchristabel/butterfly
+version: 0.1.0
+repository: https://github.com/redfieldchristabel/butterfly/tree/master/packages/cocoon
+issue_tracker: https://github.com/redfieldchristabel/butterfly/issues
+topics:
+  - database
+  - sqlite
+  - firestore
+  - offline
+  - orm
 
 environment:
   sdk: ^3.11.0

@@ -7,7 +7,6 @@ import 'package:cocoon/src/engine/query.dart' show QueryOrder, planQuery;
 import 'package:cocoon/src/engine/schema_sql.dart'
     show RegistryEntry, SchemaRegistry;
 import 'package:cocoon/src/engine/sqlite_executor.dart';
-import 'package:sqlite_async/sqlite_async.dart' show SqliteDatabase;
 import 'package:test/test.dart';
 
 import 'support/models.dart';

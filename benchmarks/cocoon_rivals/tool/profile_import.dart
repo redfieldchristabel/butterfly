@@ -59,7 +59,6 @@ import 'package:cocoon/src/engine/sqlite_executor.dart'; // ignore: implementati
 import 'package:cocoon_rivals/dataset.dart';
 import 'package:cocoon_rivals/engine.dart' show OpCost, importBatchSize;
 import 'package:cocoon_rivals/models.dart';
-import 'package:sqlite_async/sqlite_async.dart';
 
 Future<void> main(List<String> args) async {
   var size = 100000;

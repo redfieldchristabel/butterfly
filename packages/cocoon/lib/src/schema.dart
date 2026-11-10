@@ -14,9 +14,13 @@ const schemaLockFormat = 1;
 /// `DateTime`, `List<String>` or a nested model name.
 @immutable
 class DeclaredField {
+  /// Declares the field [name] of canonical type [type].
   const DeclaredField(this.name, this.type);
 
+  /// The field name in the model.
   final String name;
+
+  /// The field's canonical type name.
   final String type;
 
   @override
@@ -33,6 +37,8 @@ class DeclaredField {
 /// A collection as the model declares it, read from `@Collection`.
 @immutable
 class DeclaredCollection {
+  /// Declares the collection [model] at [path] with its [fields], [indexes]
+  /// and [mirrored] names, as read from the annotations.
   DeclaredCollection({
     required this.model,
     required this.path,
@@ -66,6 +72,7 @@ class DeclaredCollection {
 /// An embedded class as the models declare it, read from `@Embedded`.
 @immutable
 class DeclaredEmbedded {
+  /// Declares the embedded class [name] with its [fields].
   DeclaredEmbedded(this.name, List<DeclaredField> fields)
     : fields = List.unmodifiable(fields);
 
@@ -80,16 +87,25 @@ class DeclaredEmbedded {
 /// A field pinned in the lock: its number is its identity on disk.
 @immutable
 class FieldSpec {
+  /// Pins [name] at [number] with the wire type string [type].
   const FieldSpec({
     required this.name,
     required this.number,
     required this.type,
   });
 
+  /// The field name in the model.
   final String name;
+
+  /// The field number: the field's identity on disk, never reused.
   final int number;
+
+  /// The field's type, as the wire codec spells it (e.g. `int`, `String`,
+  /// `List<String>`).
   final String type;
 
+  /// The lock's JSON shape for this field (number and type; the name is the
+  /// JSON key).
   Map<String, Object> toJson() => {'number': number, 'type': type};
 
   @override
@@ -109,6 +125,7 @@ class FieldSpec {
 /// A collection pinned in the lock.
 @immutable
 class CollectionSpec {
+  /// Pins [model] at [path]; [fields] is stored sorted by number.
   CollectionSpec({
     required this.model,
     required this.path,
@@ -126,6 +143,7 @@ class CollectionSpec {
        ),
        mirrored = List<String>.unmodifiable(mirrored);
 
+  /// Restores the lock entry [model] from its `cocoon.lock.json` JSON.
   factory CollectionSpec.fromJson(String model, Map<String, Object?> json) {
     final fields = (json['fields']! as Map<String, Object?>).entries.map((e) {
       final value = e.value! as Map<String, Object?>;
@@ -153,7 +171,10 @@ class CollectionSpec {
     );
   }
 
+  /// The model (class) name this entry pins.
   final String model;
+
+  /// The collection path pattern, e.g. `accounts/{accountId}/txns`.
   final String path;
 
   /// Fields sorted by number.
@@ -163,6 +184,8 @@ class CollectionSpec {
   /// misread as a new field.
   final Set<int> reserved;
 
+  /// The declared `Index([...])` sets, as field-name parts (`-` prefixes a
+  /// descending part).
   final List<List<String>> indexes;
 
   /// Field names annotated `@Mirrored()`: their `f_` column exists but no
@@ -171,6 +194,7 @@ class CollectionSpec {
   /// inspector can label them.
   final List<String> mirrored;
 
+  /// The field with [name], or `null` when it is not pinned.
   FieldSpec? field(String name) {
     for (final f in fields) {
       if (f.name == name) return f;
@@ -182,6 +206,8 @@ class CollectionSpec {
   int get nextNumber =>
       [0, ...fields.map((f) => f.number), ...reserved].reduce(math.max) + 1;
 
+  /// The `cocoon.lock.json` JSON shape for this entry (the model name is the
+  /// JSON key).
   Map<String, Object> toJson() => {
     'path': path,
     'fields': {for (final f in fields) f.name: f.toJson()},
@@ -199,6 +225,7 @@ class CollectionSpec {
 /// is stored inline inside its owning documents and never queried directly.
 @immutable
 class EmbeddedSpec {
+  /// Pins the embedded class [name]; [fields] is stored sorted by number.
   EmbeddedSpec({
     required this.name,
     required List<FieldSpec> fields,
@@ -209,6 +236,7 @@ class EmbeddedSpec {
        ),
        reserved = Set<int>.unmodifiable(reserved);
 
+  /// Restores the lock entry [name] from its `cocoon.lock.json` JSON.
   factory EmbeddedSpec.fromJson(String name, Map<String, Object?> json) {
     final fields = (json['fields']! as Map<String, Object?>).entries.map((e) {
       final value = e.value! as Map<String, Object?>;
@@ -237,6 +265,7 @@ class EmbeddedSpec {
   /// misread as a new field.
   final Set<int> reserved;
 
+  /// The field with [name], or `null` when it is not pinned.
   FieldSpec? field(String name) {
     for (final f in fields) {
       if (f.name == name) return f;
@@ -248,6 +277,8 @@ class EmbeddedSpec {
   int get nextNumber =>
       [0, ...fields.map((f) => f.number), ...reserved].reduce(math.max) + 1;
 
+  /// The `cocoon.lock.json` JSON shape for this entry (the class name is the
+  /// JSON key).
   Map<String, Object> toJson() => {
     'fields': {for (final f in fields) f.name: f.toJson()},
     'reserved': [...reserved]..sort(),
@@ -257,6 +288,7 @@ class EmbeddedSpec {
 /// The committed `cocoon.lock.json`: the source of truth for field numbers.
 @immutable
 class SchemaLock {
+  /// Builds a lock from parsed pieces; prefer [parse]/[fromJson] for files.
   SchemaLock({
     required this.version,
     required Map<String, CollectionSpec> collections,
@@ -268,6 +300,8 @@ class SchemaLock {
   factory SchemaLock.empty() =>
       SchemaLock(version: 0, collections: const {}, embedded: const {});
 
+  /// Restores the lock from its `cocoon.lock.json` JSON (must carry the
+  /// current `format`).
   factory SchemaLock.fromJson(Map<String, Object?> json) {
     final format = json['format'];
     if (format != schemaLockFormat) {
@@ -304,6 +338,7 @@ class SchemaLock {
   /// Embedded classes keyed by type name.
   final Map<String, EmbeddedSpec> embedded;
 
+  /// The `cocoon.lock.json` JSON shape for the whole lock.
   Map<String, Object> toJson() {
     final models = collections.keys.toList()..sort();
     final json = <String, Object>{
@@ -327,9 +362,13 @@ class SchemaLock {
 /// changed (possibly together with a rename), so it moved to a new number.
 @immutable
 class FieldUpgrade {
+  /// The old pin [from] and the new pin [to] (a fresh number).
   const FieldUpgrade({required this.from, required this.to});
 
+  /// The field as the old lock pinned it.
   final FieldSpec from;
+
+  /// The field as the new lock pins it.
   final FieldSpec to;
 
   @override
@@ -346,13 +385,18 @@ class FieldUpgrade {
 /// A possible rename suggested for a removed field.
 @immutable
 class RenameCandidate {
+  /// Suggests renaming [from] (the removed lock field) to [to], ranked by
+  /// [similarity].
   const RenameCandidate({
     required this.from,
     required this.to,
     required this.similarity,
   });
 
+  /// The removed lock field.
   final FieldSpec from;
+
+  /// The model field that may replace it.
   final DeclaredField to;
 
   /// Name similarity from 0 to 1 (case-insensitive edit distance).
@@ -378,6 +422,9 @@ class CollectionDiff {
     this.added,
   );
 
+  /// Diffs the model [declared] against the lock entry [previous] (null
+  /// when the model is new), classifying every field as kept, type-changed,
+  /// removed or added.
   factory CollectionDiff.compute(
     CollectionSpec? previous,
     DeclaredCollection declared,
@@ -402,6 +449,7 @@ class CollectionDiff {
     );
   }
 
+  /// The model as the code declares it.
   final DeclaredCollection declared;
 
   /// The lock entry, or `null` for a brand-new collection.
@@ -419,10 +467,16 @@ class CollectionDiff {
   /// Model fields missing from the lock: renamed or new, ask the user.
   final List<DeclaredField> added;
 
+  /// Whether the model is new (no lock entry yet): nothing to ask, just
+  /// assign fresh numbers.
   bool get isNew => previous == null;
 
+  /// Whether the model moved to a different collection path, which the
+  /// migrate command refuses.
   bool get pathChanged => previous != null && previous!.path != declared.path;
 
+  /// Whether the `Index([...])` set changed: the on-device open creates or
+  /// drops the SQLite indexes, so the schema version moves with it.
   bool get indexesChanged =>
       previous == null ||
       jsonEncode(previous!.indexes) != jsonEncode(declared.indexes);
@@ -439,6 +493,8 @@ class CollectionDiff {
   bool get needsRenameDecisions =>
       !isNew && removed.isNotEmpty && added.isNotEmpty;
 
+  /// Whether models and lock already agree for this collection: nothing to
+  /// ask, nothing to migrate.
   bool get isEmpty =>
       !isNew &&
       typeChanged.isEmpty &&
@@ -640,6 +696,9 @@ class EmbeddedDiff {
     this.added,
   );
 
+  /// Diffs the embedded class [declared] against the lock entry [previous]
+  /// (null when the class is new), classifying every field like
+  /// [CollectionDiff.compute].
   factory EmbeddedDiff.compute(
     EmbeddedSpec? previous,
     DeclaredEmbedded declared,
@@ -663,6 +722,7 @@ class EmbeddedDiff {
     );
   }
 
+  /// The class as the code declares it.
   final DeclaredEmbedded declared;
 
   /// The lock entry, or `null` for a brand-new embedded class.
@@ -680,6 +740,8 @@ class EmbeddedDiff {
   /// Class fields missing from the lock: renamed or new, ask the user.
   final List<DeclaredField> added;
 
+  /// Whether the class is new (no lock entry yet): nothing to ask, just
+  /// assign fresh numbers.
   bool get isNew => previous == null;
 
   /// Whether the generator has to ask before it can resolve this diff:
@@ -687,6 +749,8 @@ class EmbeddedDiff {
   bool get needsRenameDecisions =>
       !isNew && removed.isNotEmpty && added.isNotEmpty;
 
+  /// Whether models and lock already agree for this class: nothing to ask,
+  /// nothing to migrate.
   bool get isEmpty =>
       !isNew && typeChanged.isEmpty && removed.isEmpty && added.isEmpty;
 
@@ -790,6 +854,8 @@ class SchemaDiff {
     this.embedded,
   );
 
+  /// Diffs every collection in [declared] (and the embedded classes in
+  /// [declaredEmbedded]) against the committed [lock].
   factory SchemaDiff.compute(
     SchemaLock lock,
     List<DeclaredCollection> declared, [
@@ -830,7 +896,10 @@ class SchemaDiff {
     );
   }
 
+  /// The committed lock the models were diffed against.
   final SchemaLock lock;
+
+  /// Every declared collection, diffed against its lock entry.
   final List<CollectionDiff> collections;
 
   /// Lock collections with no model anymore: dropped (the CLI confirms).

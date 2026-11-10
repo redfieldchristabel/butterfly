@@ -4,8 +4,6 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:meta/meta.dart';
-import 'package:sqlite_async/sqlite_async.dart'
-    show SqliteDatabase, SqliteOptions, SqliteSynchronous;
 import '../cursor.dart';
 import '../id.dart' show newDocId;
 import '../inspector/service.dart';

@@ -37,6 +37,8 @@ const String cocoonLibraryVersion = '0.0.1';
 /// `Cocoon.inspectBackup` reads it from an existing file; the static
 /// `Cocoon.restoreBackup` returns the restored database's copy of it.
 final class BackupInfo {
+  /// The metadata [Cocoon.backupTo]/[Cocoon.inspectBackup] read and
+  /// [Cocoon.restoreBackup] returns for the restored database's copy of it.
   BackupInfo({
     required this.path,
     required this.bytes,
@@ -125,6 +127,8 @@ final class BackupInfo {
 /// no `_cocoon_meta` table, or there is one without a backup marker. A live
 /// Cocoon database file (not written by `backupTo`) reports this too.
 final class NotCocoonBackupException implements Exception {
+  /// The file at [path] does not qualify as a backup; [reason] says what is
+  /// missing.
   NotCocoonBackupException(this.path, this.reason);
 
   /// The inspected file.
@@ -142,6 +146,8 @@ final class NotCocoonBackupException implements Exception {
 /// self-description does not parse: `PRAGMA integrity_check` fails, the
 /// bytes are not a database at all, or the backup metadata is corrupt.
 final class BackupDamagedException implements Exception {
+  /// The file could not be inspected: [reason] says whether the bytes are
+  /// not a database at all or the metadata is corrupt.
   BackupDamagedException(this.path, this.reason);
 
   /// The inspected file.
@@ -159,6 +165,8 @@ final class BackupDamagedException implements Exception {
 /// know how to read (a newer app wrote it). Restore the backup with the app
 /// version that wrote it, or upgrade.
 final class BackupFormatTooNewException implements Exception {
+  /// The backup was written by a newer app; [formatVersion] exceeds this
+  /// engine's [maxSupported].
   BackupFormatTooNewException({
     required this.path,
     required this.formatVersion,

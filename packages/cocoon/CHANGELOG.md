@@ -1,4 +1,11 @@
-## Unreleased
+## 0.1.0
+
+Cocoon is a typed, disk-backed, Firestore-style local database for Dart and
+Flutter, built on SQLite. Your model classes are the schema; documents live
+in collections and subcollections inside one SQLite file on disk; queries run
+only when an index serves them, exactly like Firestore; and the bounded
+hot-document cache keeps RAM flat no matter how large the file grows. This is
+the first published release. Everything below is in it.
 
 - **Existing databases upgrade themselves on open** — and every file got
   ~18% smaller at 1M transactions. The internal `path` column (and its
@@ -193,7 +200,7 @@
   JSON).
 - A query runner that runs typed queries read-only and explains the plan in
   plain words: which index served the query ("Used index cx_txn_ab12cd34"),
-  when it read every row ("Full scan: add Index([...])"), and the exact
+  when it read every row ("Full scan: add `Index([...])`"), and the exact
   `Index([...])` to declare when the index rule refused the query.
 - A live change feed of every committed write, one row per touched document,
   filterable by collection and pausable, streamed from the app as

@@ -15,13 +15,46 @@ built on SQLite.
   reopening the database reconciles tables, columns and indexes on its own,
   and a type change needs exactly one conversion line that the on-device
   runner applies for you.
+- **Native**: Android, iOS, macOS, Linux and Windows — the data is one SQLite
+  file on the device. No web build (the wire codec needs a 64-bit `int`).
 
 > Status: the storage engine, the change log, realtime watches, the
 > `cocoon_generator` codegen (with the interactive `migrate` command that
 > maintains `cocoon.lock.json`), the on-device migration runner and the
 > DevTools inspector are in. See [doc/design.md](doc/design.md).
 
-## The 30-second version
+## Install
+
+```sh
+dart pub add cocoon
+dart pub add --dev cocoon_generator build_runner
+```
+
+Flutter apps also add
+[`sqlite3_flutter_libs`](https://pub.dev/packages/sqlite3_flutter_libs),
+which bundles the native SQLite library (see
+["The native SQLite library"](#the-native-sqlite-library) below). A runnable
+tour of the core API lives in [example/main.dart](example/main.dart).
+
+## Quick start
+
+```dart
+// lib/models.dart
+import 'package:cocoon/cocoon.dart';
+
+part 'models.cocoon.dart';
+
+@Collection('accounts/{accountId}/txns', indexes: [Index(['accountId', '-bookedOn'])])
+class Txn {
+  const Txn({required this.bookedOn, required this.amountMinor});
+  final int bookedOn; // yyyymmdd
+  final int amountMinor; // minor units
+}
+```
+
+```sh
+dart run build_runner build -d
+```
 
 ```dart
 final db = await Cocoon.open(file, collections: [accounts, txns, splits]);
@@ -44,10 +77,10 @@ committed `cocoon.lock.json`, never from field order.
 ```yaml
 # pubspec.yaml
 dependencies:
-  cocoon: ^0.0.1
+  cocoon: ^0.1.0
 dev_dependencies:
   build_runner: ^2.4.13
-  cocoon_generator: ^0.0.1
+  cocoon_generator: ^0.1.0
 ```
 
 ```yaml
@@ -921,7 +954,7 @@ Measured against sembast on finance-shaped data (20 accounts sharing
 10k/100k/300k txns over five years, same indexes Finance Sync would
 declare), every run a fresh process, every memory number minus a measured
 harness baseline. Full tables and raw runs:
-[packages/cocoon_bench/RESULTS.md](../cocoon_bench/RESULTS.md).
+[packages/cocoon_bench/RESULTS.md](https://github.com/redfieldchristabel/butterfly/tree/master/packages/cocoon_bench/RESULTS.md).
 
 - Indexed reads: one account's latest-50 stays at ~0.7 ms p50 from 10k to
   300k txns (keyset scan over the composite index); sembast, which has no
@@ -948,7 +981,7 @@ Isar, ObjectBox, Hive CE and sembast, plus Cocoon itself at
 memory number minus a measured harness baseline, every rival's results
 diffed against Cocoon's before any timing counts. Full tables and
 per-workload verdicts:
-[benchmarks/cocoon_rivals/RESULTS.md](../../benchmarks/cocoon_rivals/RESULTS.md).
+[benchmarks/cocoon_rivals/RESULTS.md](https://github.com/redfieldchristabel/butterfly/tree/master/benchmarks/cocoon_rivals/RESULTS.md).
 
 What holds at 1,000,000 transactions:
 
@@ -1035,8 +1068,8 @@ The knobs of `CocoonOptions`, with their measured trade-offs:
 A debug or profile app with a `Cocoon` database open gets a **Cocoon tab** in
 Dart DevTools — no extra dependency, no setup. It browses collections,
 documents and fields with a path breadcrumb, runs read-only typed queries and
-shows whether an index served each one ("Used index cx_txn_ab12cd34" /
-"Full scan: add Index([...])"), streams committed changes live, and shows the
+shows whether an index served each one ("Used index `cx_txn_ab12cd34`" /
+"Full scan: add `Index([...])`"), streams committed changes live, and shows the
 schema (live tables plus the lock's field numbers and reserved numbers when
 the app passed `schemaLock:` to `Cocoon.open`). Product builds never register
 the inspector. See the [DevTools Inspector](https://docs.page/butterfly/libraries/cocoon/inspector)

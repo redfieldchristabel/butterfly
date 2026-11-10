@@ -301,5 +301,7 @@ executor, so it is deferred.
 | Storage format 2: scope-key identity (no stored `path` column), path derived from table + params + id, `_cocoon_meta` format version with crash-safe table-by-table upgrade on open and newer-format refusal (`StorageFormatTooNewException`); measured at 1M in `benchmarks/cocoon_rivals/STORAGE.md` | done |
 | Change-log bounding: `pruneChanges` count, `earliestChangeSeq`, `ChangesPrunedException`, `CocoonOptions.changeRetention` (small-batch post-commit enforcement), `BulkWriterOptions(logChanges: false)` | done |
 | Butterfly CLI shortcuts (`butterfly generate model --cocoon`, `butterfly cocoon migrate`/`build`): scaffold + delegate only, the CLI never imports `cocoon_generator` or reimplements generation/diff | done |
+| pub.dev packaging (both packages at 0.1.0: repository/issue_tracker/topics metadata, install + quick-start README with a runnable generator-free `example/`, CHANGELOG released, `dart pub publish --dry-run` verified) | done |
+| Publishing to pub.dev (maintainer: push, then `dart pub publish` in cocoon, then cocoon_generator) | planned |
 | Export/import streams (documents through the public API, NDJSON-shaped) | planned |
 | Incremental backups (change-log-tailed deltas on top of `backupTo`) | planned |

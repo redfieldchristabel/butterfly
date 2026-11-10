@@ -1,4 +1,13 @@
-## Unreleased
+## 0.1.0
+
+This package is the build_runner code generator for
+[Cocoon](https://pub.dev/packages/cocoon), the typed, disk-backed,
+Firestore-style local database on SQLite. For every `@Collection` and
+`@Embedded` model it writes the `CollectionAdapter`, the typed query handles
+(`Txn$.bookedOn`) and the canonical protobuf wire codec, with field numbers
+pinned by the committed `cocoon.lock.json`; the interactive `migrate`
+command maintains that lock and writes on-device conversion stubs. First
+published release; everything below is in it.
 
 - `Map<String, V>` and `Map<int, V>` fields. The generated codec stores each
   entry as a nested message (key at field 1, value at field 2), written

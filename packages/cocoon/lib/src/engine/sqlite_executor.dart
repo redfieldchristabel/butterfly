@@ -9,6 +9,14 @@ import 'aggregate.dart' show AggregateOverflowException;
 import 'executor.dart';
 import 'naming.dart';
 
+/// The sqlite_async types `Cocoon.open` needs to build its connections.
+///
+/// Re-exported here so no other Cocoon file imports `package:sqlite_async`
+/// directly: this file is the only one allowed to (see the design doc), and
+/// the engine talks to SQLite only through the [CocoonExecutor] interface.
+export 'package:sqlite_async/sqlite_async.dart'
+    show SqliteDatabase, SqliteOptions, SqliteSynchronous;
+
 /// [CocoonExecutor] on a `SqliteDatabase` (package:sqlite_async, WAL by
 /// default).
 ///

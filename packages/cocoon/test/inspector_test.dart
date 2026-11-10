@@ -5,7 +5,6 @@ import 'dart:typed_data';
 import 'package:cocoon/cocoon.dart';
 import 'package:cocoon/src/engine/sqlite_executor.dart';
 import 'package:cocoon/src/inspector/service.dart';
-import 'package:sqlite_async/sqlite_async.dart' show SqliteDatabase;
 import 'package:test/test.dart';
 
 import 'support/models.dart';

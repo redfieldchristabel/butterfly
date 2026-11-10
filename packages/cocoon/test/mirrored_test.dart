@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:cocoon/cocoon.dart';
 import 'package:cocoon/src/engine/executor.dart';
 import 'package:cocoon/src/engine/sqlite_executor.dart';
-import 'package:sqlite_async/sqlite_async.dart' show SqliteDatabase;
 import 'package:test/test.dart';
 
 import 'support/models.dart';

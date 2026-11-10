@@ -106,6 +106,9 @@ final class MapWireType {
 /// Integers are Dart's native 64-bit `int`, so this codec targets native
 /// platforms. Web support needs a separate 64-bit integer path.
 class WireWriter {
+  /// Starts an empty canonical document buffer.
+  WireWriter();
+
   Uint8List _buffer = Uint8List(64);
   int _length = 0;
   int _lastField = 0;
@@ -232,6 +235,7 @@ class WireWriter {
 /// }
 /// ```
 class WireReader {
+  /// Reads the canonical wire document from the start of the given bytes.
   WireReader(this._bytes);
 
   final Uint8List _bytes;

@@ -538,7 +538,7 @@ final class AggregateQuerySnapshot<T extends Object?> {
       'values: ${[for (var i = 0; i < _specs.length; i++) '${_specs[i].label}: ${_values[i]}'].join(', ')})';
 }
 
-/// One group of a [group-by query](AggregateGroupQuery): its key values
+/// One group of an [AggregateGroupQuery]: its key values
 /// plus the same aggregates as a whole-result snapshot, plus `minOf`/`maxOf`.
 ///
 /// Groups come ordered by their keys ascending; groups whose key values

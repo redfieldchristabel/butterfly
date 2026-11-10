@@ -2,8 +2,10 @@ import 'dart:convert';
 
 /// Thrown when a cursor string is malformed or from an unsupported version.
 class InvalidCursorException implements Exception {
+  /// The cursor could not be decoded: [message] says why.
   const InvalidCursorException(this.message);
 
+  /// What is wrong with the cursor string.
   final String message;
 
   @override
@@ -13,9 +15,14 @@ class InvalidCursorException implements Exception {
 /// Thrown when a cursor is used with a different query than the one that
 /// produced it.
 class CursorMismatchException implements Exception {
+  /// The cursor's fingerprint does not match [expected] (the query it was
+  /// used with): it belongs to [actual].
   const CursorMismatchException({required this.expected, required this.actual});
 
+  /// The fingerprint of the query the cursor was used with.
   final String expected;
+
+  /// The fingerprint of the query that produced the cursor.
   final String actual;
 
   @override
