@@ -1,6 +1,6 @@
 ---
 title: CLI & MCP Reference
-description: Generate serializable or immutable models, stamp app versions, commit changes, and compare against manual Dart boilerplate.
+description: Generate serializable or immutable models (including Cocoon @Collection scaffolds), run the project's Cocoon codegen tools, stamp app versions, commit changes, and compare against manual Dart boilerplate.
 ---
 
 The `butterfly` CLI (`butterfly_cli`) automates repetitive project tasks: generating model boilerplate, stamping `lib/version.dart` from `pubspec.yaml`, creating conventional commits, and exposing an MCP server for AI coding agents.
@@ -12,8 +12,11 @@ The `butterfly` CLI (`butterfly_cli`) automates repetitive project tasks: genera
 | `butterfly version` | — | Prints the CLI's built-in `kVersion` (`0.2.0`) |
 | `butterfly init` | — | Interactive project wizard (see [Installation](/installation#interactive-project-scaffolding-butterfly-init)) |
 | `butterfly generate model <Name>` | `gen` / `g`, `m` / `mdl` | Scaffolds a model class under `lib/models/` |
+| `butterfly generate model <Name> --cocoon` | | Scaffolds a Cocoon `@Collection` model (see [Cocoon shortcuts](#cocoon-shortcuts-optional)) |
 | `butterfly generate version` | `gen` / `g` | Reads `pubspec.yaml` version and writes `lib/version.dart` |
 | `butterfly commit` | `c`, `comit`, `commits`, `cm` | Interactive or flag-driven conventional `git commit` |
+| `butterfly cocoon migrate [args...]` | | Runs the project's `cocoon_generator:migrate` with args passed through verbatim (see [Cocoon shortcuts](#cocoon-shortcuts-optional)) |
+| `butterfly cocoon build` | | Runs the project's `build_runner build -d` (see [Cocoon shortcuts](#cocoon-shortcuts-optional)) |
 | `butterfly mcp-server` | `mcp`, `mcp-srv` | Launches the stdio Model Context Protocol (MCP) server |
 
 <Info>
@@ -81,7 +84,19 @@ The `butterfly` CLI (`butterfly_cli`) automates repetitive project tasks: genera
 ---
 
 <Property name="--immutable / -i" type="boolean" optional>
-  Defaults to `false`. Switches from the standard mutable class brick to the `built_value` abstract class template.
+  Defaults to `false`. Switches from the standard mutable class brick to the `built_value` abstract class template. Cannot be combined with `--cocoon`.
+</Property>
+
+---
+
+<Property name="--cocoon / -c" type="boolean" optional>
+  Defaults to `false`. Scaffolds a Cocoon `@Collection` model starter instead of the JSON/built_value models. See [Cocoon shortcuts](#cocoon-shortcuts-optional).
+</Property>
+
+---
+
+<Property name="--collection" type="string" optional>
+  Only meaningful with `--cocoon`: the Cocoon collection path written into `@Collection(...)`, e.g. `accounts/{accountId}/txns` — `{param}` segments are kept as-is. Defaults to the plural snake_case of the name (`Txn` -> `txns`).
 </Property>
 
 ---
@@ -115,6 +130,72 @@ The CLI scaffolds the skeleton file (and prompts before overwriting an existing 
     3. **If `--serializable` is enabled (the default):** The template references a project-level `serializers` instance (`serializers.deserializeWith(...)`). Create and import your app's `@SerializersFor([...])` registry (with `StandardJsonPlugin` if using map JSON) before running `build_runner`, otherwise the newly generated file will not compile yet.
   </TabItem>
 </Tabs>
+
+---
+
+## Cocoon shortcuts (optional)
+
+Cocoon — the typed, Firestore-style local database on SQLite — works entirely
+without the Butterfly CLI: its real tooling is `build_runner` +
+`cocoon_generator`, pinned in each project's pubspec (see
+[Collections & Documents](/libraries/cocoon/collections)). These shortcuts
+only save typing: the CLI is installed once per machine, so it **never
+generates or diffs anything itself** — it scaffolds a starter file from a
+template and delegates every codegen step to the project's own pinned tools.
+That keeps a CLI one version behind the project's Cocoon from writing
+mismatched code.
+
+### Scaffold a `@Collection` model
+
+```bash
+# Starter at lib/models/txn.dart for the default collection path txns
+butterfly generate model Txn --cocoon
+
+# A subcollection path with {param} segments, written as-is
+butterfly generate model Txn --cocoon --collection accounts/{accountId}/txns
+
+# Same file naming rules as the plain model generator
+butterfly generate model AuthUser --cocoon --path auth
+```
+
+The scaffold matches the starter models in `packages/cocoon_example`:
+`@Collection('<path>', indexes: [])`, final fields, a
+`part '<file>.cocoon.dart';` directive, and dartdoc lines pointing at
+`Index` and `@Mirrored()`. Add your fields, then run the two commands the
+CLI prints:
+
+```bash
+dart run build_runner build -d
+butterfly cocoon migrate
+```
+
+<Info>
+  <Icon name="terminal" /> **Missing dependencies are never installed for you:**
+  when the pubspec lacks `cocoon`, `cocoon_generator` or `build_runner`, the CLI prints the exact
+  `dart pub add cocoon` / `dart pub add --dev cocoon_generator build_runner` lines and — for
+  `--cocoon` — still writes the scaffold. The `cocoon` subcommands refuse to run instead.
+</Info>
+
+### Run the project's codegen tools
+
+```bash
+# Read-only: exit 1 when the models changed and a real migrate is needed
+butterfly cocoon migrate --check
+
+# Interactive rename/drop menus work exactly as when run directly
+butterfly cocoon migrate --rename Txn.bookedOn=day --yes
+
+# The codegen build with the project's pinned build_runner
+butterfly cocoon build
+```
+
+`cocoon migrate [args...]` forwards every argument verbatim to the project's
+`dart run cocoon_generator:migrate` with inherited stdio and exits with the
+same code (0 up to date or written, 1 refused/aborted/`--check` would change,
+2 usage error or a missing non-interactive decision). `cocoon build` runs
+`dart run build_runner build -d` the same way. Both first check the project's
+pubspec for `cocoon_generator` (dev_)dependency and `build_runner` and fail
+with a readable message when they are missing.
 
 ---
 
@@ -179,6 +260,18 @@ butterfly mcp-server
 
 ---
 
+<Property name="generate_cocoon_model" type="MCP tool" required>
+  Scaffolds a Cocoon `@Collection` starter via MCP (the `--cocoon` flag of `generate model`). Requires `name` (`String`), with optional `path` and `collection` (the collection path; defaults to the plural snake_case of the name). Like `generate_model`, it refuses to overwrite an existing target file; the project's own `build_runner` still does all codegen.
+</Property>
+
+---
+
+<Property name="cocoon_migrate_check" type="MCP tool" required>
+  Runs the project's read-only `dart run cocoon_generator:migrate --check` and returns its captured output and exit code (1 = the models changed and a real migrate is needed). The interactive `cocoon migrate` menus are not exposed over MCP; output is captured rather than inherited because the server's stdio carries the MCP protocol.
+</Property>
+
+---
+
 ## Workspace verification cheatsheet
 
 When contributing to Butterfly or verifying your setup, use these commands from the repository root:
@@ -186,8 +279,8 @@ When contributing to Butterfly or verifying your setup, use these commands from 
 <Tabs>
   <TabItem label="CLI & Package Tests" value="test-cmds">
     ```bash
-    # Run the 65 CLI unit & command tests
-    cd butterfly_cli && dart analyze && dart test
+    # Run the 103 CLI unit & command tests
+    cd butterfly_cli && dart analyze --fatal-infos && dart test
 
     # Run auth & Riverpod bridge tests
     cd packages/auth_management && flutter test --no-pub

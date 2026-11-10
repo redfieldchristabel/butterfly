@@ -989,6 +989,38 @@ Cocoon talks to SQLite through `sqlite_async` and `package:sqlite3`.
   SQLite development package instead (`apt install libsqlite3-dev` or your
   platform's equivalent). Native platforms only; there is no web build.
 
+## Using the Butterfly CLI (optional)
+
+Cocoon works entirely without the Butterfly CLI — everything above is plain
+`build_runner` and `cocoon_generator`, pinned in your pubspec. If the CLI
+(`butterfly_cli`, installed once per machine) happens to be installed, it can
+save you some typing. It never generates or diffs anything itself: it only
+scaffolds a starter model from a template and delegates every codegen step to
+your project's own pinned tools, so a CLI one version behind your Cocoon
+cannot write mismatched code.
+
+```sh
+# Starter file for a @Collection model (lib/models/txn.dart, path txns)
+butterfly generate model Txn --cocoon
+
+# Same, with an explicit collection path ({param} segments kept as-is)
+butterfly generate model Txn --cocoon --collection accounts/{accountId}/txns
+
+# Then the two commands it prints, run from your project root:
+dart run build_runner build -d
+butterfly cocoon migrate
+```
+
+`butterfly cocoon migrate [args...]` forwards every argument verbatim to your
+project's `dart run cocoon_generator:migrate` with inherited stdio (the
+interactive rename/drop menus work exactly as when run directly) and exits
+with the same code; `butterfly cocoon build` runs `dart run build_runner
+build -d` the same way. Both check your pubspec for `cocoon_generator` and
+`build_runner` first and print the exact `dart pub add` lines when something
+is missing — the CLI never edits your pubspec. In a project without a
+`cocoon.lock.json` yet, the first migrate just writes the initial lock and
+exits 0.
+
 ## Development
 
 From the Butterfly workspace root:

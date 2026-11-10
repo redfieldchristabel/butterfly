@@ -41,7 +41,8 @@ class PubspecService implements IPubspecService {
       return;
     }
 
-    _logger.detail('Dependency not exist, asking to add ${iDependency.exists(name)}');
+    _logger.detail(
+        'Dependency not exist, asking to add ${iDependency.exists(name)}');
 
     _logger.detail('Add dependency $name');
 
@@ -71,6 +72,13 @@ class PubspecService implements IPubspecService {
       await process.exitCode;
     }
     return;
+  }
+
+  @override
+  bool hasDependency(String name) {
+    final pubspec = _pubspec;
+    return pubspec.dependencies.exists(name) ||
+        pubspec.devDependencies.exists(name);
   }
 
   @override

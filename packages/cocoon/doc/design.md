@@ -264,5 +264,6 @@ executor, so it is deferred.
 | Whole-database backups: `db.backupTo()` (`VACUUM INTO` snapshot, stamped `_cocoon_meta`), `Cocoon.inspectBackup()`, `Cocoon.restoreBackup()` (closed-target rule, compatibility before the swap, `.restoring`/`.before-restore` protocol) + database instance id (`db.instanceId`) | done |
 | Aggregates: `aggregate([count(), sum, average])` (+ `minOf`/`maxOf`), one-statement SQLite pushdown with the query index rule, typed overflow error; `groupBy` extension (`key`, `paramKey`, `bucket`, `year`/`month`/`day` at a fixed `utcOffset`, group `.limit`), watches and bulk-writer wait included | done |
 | `@Mirrored()` fields: an `f_` column (aggregates, groupBy) with no index; add-and-backfill / drop at open, lock round-trip, DevTools "mirrored (no index)" label; measured storage cost and backfill time at 1M in the README | done |
+| Butterfly CLI shortcuts (`butterfly generate model --cocoon`, `butterfly cocoon migrate`/`build`): scaffold + delegate only, the CLI never imports `cocoon_generator` or reimplements generation/diff | done |
 | Export/import streams (documents through the public API, NDJSON-shaped) | planned |
 | Incremental backups (change-log-tailed deltas on top of `backupTo`) | planned |

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:butterfly_cli/interfaces/interfaces.dart';
 import 'package:butterfly_cli/services/framework.dart';
 import 'package:test/test.dart';
@@ -7,6 +9,16 @@ import '../helpers/mocks.dart';
 void main() {
   group('FrameworkService', () {
     ILoggerService createLogger() => MockLoggerService();
+
+    // FrameworkService.changeWorkingDirectory mutates the process-wide
+    // working directory; restore it so other suites are not affected.
+    late Directory originalCurrent;
+    setUp(() {
+      originalCurrent = Directory.current;
+    });
+    tearDown(() {
+      Directory.current = originalCurrent;
+    });
 
     test('implements IDirectoryService', () {
       final service = FrameworkService(createLogger());

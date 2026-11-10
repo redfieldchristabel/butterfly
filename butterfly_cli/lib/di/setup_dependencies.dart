@@ -1,11 +1,14 @@
 import 'package:butterfly_cli/commands/commit.dart';
+import 'package:butterfly_cli/commands/cocoon.dart';
 import 'package:butterfly_cli/commands/generators/index.dart';
 import 'package:butterfly_cli/commands/init.dart';
 import 'package:butterfly_cli/commands/version.dart';
 import 'package:butterfly_cli/interfaces/interfaces.dart';
+import 'package:butterfly_cli/services/cocoon.dart';
 import 'package:butterfly_cli/services/framework.dart';
 import 'package:butterfly_cli/services/logger_service_impl.dart';
 import 'package:butterfly_cli/services/mason.dart';
+import 'package:butterfly_cli/services/process_runner.dart';
 import 'package:butterfly_cli/services/project_configuration.dart';
 import 'package:butterfly_cli/services/pubspec.dart';
 import 'package:get_it/get_it.dart';
@@ -27,6 +30,13 @@ void configureDependencies() {
   final masonService = MasonService(loggerService);
   getIt.registerSingleton<IMasonService>(masonService);
 
+  final processRunner = ProcessRunner();
+  getIt.registerSingleton<IProcessRunner>(processRunner);
+
+  final cocoonService =
+      CocoonService(loggerService, pubspecService, masonService, processRunner);
+  getIt.registerSingleton<ICocoonService>(cocoonService);
+
   final configService =
       ProjectConfigurationService(loggerService, directoryService);
   getIt.registerSingleton<IProjectConfigurationService>(configService);
@@ -35,7 +45,8 @@ void configureDependencies() {
   getIt.registerSingleton<VersionCommand>(VersionCommand());
   getIt.registerSingleton<CommitCommand>(CommitCommand());
   getIt.registerSingleton<GenerateCommand>(
-      GenerateCommand(masonService, pubspecService));
+      GenerateCommand(masonService, pubspecService, cocoonService));
+  getIt.registerSingleton<CocoonCommand>(CocoonCommand(cocoonService));
   getIt.registerSingleton<InitCommand>(
       InitCommand(pubspecService, configService, masonService));
   getIt.registerSingleton<McpServerCommand>(McpServerCommand());

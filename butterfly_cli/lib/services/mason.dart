@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:butterfly_cli/interfaces/interfaces.dart';
+import 'package:butterfly_cli/models/cocoon_model_gen_params.dart';
 import 'package:butterfly_cli/models/model_gen_params.dart';
 import 'package:butterfly_cli/models/project_configuration.dart';
 import 'package:dart_style/dart_style.dart';
@@ -87,6 +88,45 @@ class MasonService implements IMasonService {
     );
 
     _logger.info('model generated successfully');
+
+    final generatedFile = File(files.first.path);
+    String generatedFileRaw = generatedFile.readAsStringSync();
+
+    final formatedFile =
+        DartFormatter(languageVersion: DartFormatter.latestLanguageVersion)
+            .format(generatedFileRaw);
+
+    generatedFile.writeAsStringSync(formatedFile);
+  }
+
+  @override
+  Future<void> generateCocoonModel(CocoonModelGenParams params,
+      {bool overwrite = false}) async {
+    final targetFile = File('${params.path.path}/${params.fileName}.dart');
+    if (targetFile.existsSync() && !overwrite) {
+      throw FileAlreadyExistsException(targetFile.absolute.path);
+    }
+
+    final generator = await _getGenerator('mason/cocoon_model');
+
+    _logger.detail('generating directory to create this model');
+
+    if (!params.path.existsSync()) {
+      _logger.detail('Directory not exist, creating');
+      await params.path.create(recursive: true);
+    }
+    final target = DirectoryGeneratorTarget(params.path);
+    _logger.detail('generating cocoon model using mason');
+    final files = await generator.generate(
+      target,
+      vars: <String, dynamic>{
+        'name': params.name,
+        'fileName': params.fileName,
+        'collectionPath': params.collectionPath,
+      },
+    );
+
+    _logger.info('cocoon model generated successfully');
 
     final generatedFile = File(files.first.path);
     String generatedFileRaw = generatedFile.readAsStringSync();

@@ -17,41 +17,48 @@ CommandRunner<void> _runner() {
 
   final masonService = MockMasonService();
   final runner = CommandRunner<void>('test', 'Test runner');
-  runner.addCommand(GenerateCommand(masonService, MockPubspecService()));
+  runner.addCommand(
+      GenerateCommand(masonService, MockPubspecService(), MockCocoonService()));
   return runner;
 }
 
 void main() {
   group('ModelGeneratorCommand', () {
     test('has correct command name', () {
-      final cmd = ModelGeneratorCommand(MockMasonService());
+      final cmd =
+          ModelGeneratorCommand(MockMasonService(), MockCocoonService());
       expect(cmd.name, equals('model'));
     });
 
     test('has aliases', () {
-      final cmd = ModelGeneratorCommand(MockMasonService());
+      final cmd =
+          ModelGeneratorCommand(MockMasonService(), MockCocoonService());
       expect(cmd.aliases, containsAll(['m', 'mdl']));
     });
 
     test('description mentions model generation', () {
-      final cmd = ModelGeneratorCommand(MockMasonService());
+      final cmd =
+          ModelGeneratorCommand(MockMasonService(), MockCocoonService());
       expect(cmd.description, contains('model'));
       expect(cmd.description, contains('JsonSerializable'));
     });
 
     group('argument definitions', () {
       test('has --serializable flag', () {
-        final cmd = ModelGeneratorCommand(MockMasonService());
+        final cmd =
+            ModelGeneratorCommand(MockMasonService(), MockCocoonService());
         expect(cmd.argParser.options.containsKey('serializable'), isTrue);
       });
 
       test('has --immutable flag', () {
-        final cmd = ModelGeneratorCommand(MockMasonService());
+        final cmd =
+            ModelGeneratorCommand(MockMasonService(), MockCocoonService());
         expect(cmd.argParser.options.containsKey('immutable'), isTrue);
       });
 
       test('has --path option', () {
-        final cmd = ModelGeneratorCommand(MockMasonService());
+        final cmd =
+            ModelGeneratorCommand(MockMasonService(), MockCocoonService());
         expect(cmd.argParser.options.containsKey('path'), isTrue);
       });
     });
@@ -123,8 +130,8 @@ void main() {
       });
 
       test('short flags work: -s, -i, -p', () {
-        final results =
-            _runner().parse(['generate', 'model', 'Admin', '-s', '-i', '-p', 'system']);
+        final results = _runner()
+            .parse(['generate', 'model', 'Admin', '-s', '-i', '-p', 'system']);
         final modelResult = results.command!.command!;
         expect(modelResult['serializable'], isTrue);
         expect(modelResult['immutable'], isTrue);
@@ -139,14 +146,15 @@ void main() {
         getIt.registerSingleton<IDirectoryService>(MockDirectoryService());
       });
 
-      CommandRunner<void> _execRunner() {
+      CommandRunner<void> execRunner() {
         final runner = CommandRunner<void>('test', 'Test runner');
-        runner.addCommand(GenerateCommand(MockMasonService(), MockPubspecService()));
+        runner.addCommand(GenerateCommand(
+            MockMasonService(), MockPubspecService(), MockCocoonService()));
         return runner;
       }
 
       test('throws UsageException when no class name provided', () {
-        final runner = _execRunner();
+        final runner = execRunner();
         expect(
           () => runner.run(['generate', 'model']),
           throwsA(isA<UsageException>()),
@@ -154,7 +162,7 @@ void main() {
       });
 
       test('throws ReadableException when class name equals path', () {
-        final runner = _execRunner();
+        final runner = execRunner();
         expect(
           () => runner.run(['generate', 'model', 'Auth', '--path', 'auth']),
           throwsA(isA<ReadableException>()),

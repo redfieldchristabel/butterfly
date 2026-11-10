@@ -1,5 +1,4 @@
 import 'package:butterfly_cli/commands/commit.dart';
-import 'package:butterfly_cli/di/setup_dependencies.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -24,15 +23,18 @@ void main() {
 
     group('fromName', () {
       test('creates fix from "fix"', () {
-        expect(ConventionalCommit.fromName('fix'), equals(ConventionalCommit.fix));
+        expect(
+            ConventionalCommit.fromName('fix'), equals(ConventionalCommit.fix));
       });
 
       test('creates feat from "feat"', () {
-        expect(ConventionalCommit.fromName('feat'), equals(ConventionalCommit.feat));
+        expect(ConventionalCommit.fromName('feat'),
+            equals(ConventionalCommit.feat));
       });
 
       test('creates docs from "docs"', () {
-        expect(ConventionalCommit.fromName('docs'), equals(ConventionalCommit.docs));
+        expect(ConventionalCommit.fromName('docs'),
+            equals(ConventionalCommit.docs));
       });
 
       test('creates refactor from "refactor"', () {

@@ -1,16 +1,18 @@
 import 'package:args/command_runner.dart';
 import 'package:butterfly_cli/commands/generators/model.dart';
 import 'package:butterfly_cli/commands/generators/version.dart';
-import 'package:butterfly_cli/interfaces/interfaces.dart';
 import 'package:butterfly_cli/extensions/command_helper.dart';
+import 'package:butterfly_cli/interfaces/interfaces.dart';
 
 class GenerateCommand extends Command with ButterflyLogger {
   final IMasonService _masonService;
   final IPubspecService _pubspecService;
+  final ICocoonService _cocoonService;
 
-  GenerateCommand(this._masonService, this._pubspecService) {
+  GenerateCommand(
+      this._masonService, this._pubspecService, this._cocoonService) {
     addSubcommand(VersionGeneratorCommand(_pubspecService));
-    addSubcommand(ModelGeneratorCommand(_masonService));
+    addSubcommand(ModelGeneratorCommand(_masonService, _cocoonService));
   }
 
   @override

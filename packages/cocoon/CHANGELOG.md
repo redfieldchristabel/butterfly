@@ -1,5 +1,13 @@
 ## Unreleased
 
+- Butterfly CLI shortcuts (optional): `butterfly generate model <Name>
+  --cocoon [--collection <path>]` scaffolds a starter `@Collection` model,
+  and `butterfly cocoon migrate [args...]` / `butterfly cocoon build` run
+  your project's own `dart run cocoon_generator:migrate` and `dart run
+  build_runner build -d` for you (args and exit codes pass through
+  untouched, so the interactive rename/drop menus work). The CLI never
+  generates, diffs or installs anything — your pinned `cocoon_generator`
+  stays the only authority — and Cocoon works exactly as before without it.
 - `@Mirrored()`: totals over fields you don't filter on. Annotating a field
   `@Mirrored()` copies it into its own typed column — exactly like an index
   field's column — without creating an index, so `sum`/`average`/`minOf`/

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:args/command_runner.dart';
 import 'package:butterfly_cli/commands/commit.dart';
+import 'package:butterfly_cli/commands/cocoon.dart';
 import 'package:butterfly_cli/commands/generators/index.dart';
 import 'package:butterfly_cli/commands/init.dart';
 import 'package:butterfly_cli/commands/mcp_server.dart';
@@ -24,6 +25,7 @@ void main(List<String> arguments) {
   runner.addCommand(getIt<InitCommand>());
   runner.addCommand(getIt<CommitCommand>());
   runner.addCommand(getIt<GenerateCommand>());
+  runner.addCommand(getIt<CocoonCommand>());
   runner.addCommand(getIt<McpServerCommand>());
 
   final result = runner.parse(arguments);

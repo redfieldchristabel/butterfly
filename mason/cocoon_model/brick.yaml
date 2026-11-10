@@ -1,0 +1,26 @@
+name: cocoon_model
+description: A brick to create a Cocoon @Collection model class.
+
+version: 0.1.0+1
+
+environment:
+  mason: ^0.1.0
+
+vars:
+  name:
+    type: string
+    description: Model name
+    default: Txn
+    prompt: What is model name?
+
+  fileName:
+    type: string
+    description: Model file name
+    default: txn
+    prompt: What is model file name?
+
+  collectionPath:
+    type: string
+    description: Cocoon collection path ({param} segments allowed)
+    default: txns
+    prompt: What is the collection path?

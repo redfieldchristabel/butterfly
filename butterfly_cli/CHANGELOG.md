@@ -1,3 +1,15 @@
+## Unreleased
+
+ - **FEAT**: add `butterfly generate model <Name> --cocoon` (with
+   `--collection`) to scaffold a Cocoon `@Collection` model from a template,
+   and `butterfly cocoon migrate [args...]` / `butterfly cocoon build` to run
+   the project's own `dart run cocoon_generator:migrate` / `dart run
+   build_runner build -d` with inherited stdio and unchanged exit codes.
+ - **FEAT**: expose `generate_cocoon_model` and the read-only
+   `cocoon_migrate_check` tools on the MCP server.
+ - **FIX**: restore the process working directory after `FrameworkService`
+   tests change it.
+
 ## 0.2.0
 
 > Note: This release has breaking changes.
