@@ -1,3 +1,21 @@
+## Unreleased
+
+- **`db.getAll(refs)`: many documents by id in one trip.** Loading a set of
+  known ids — a split's participants, linked accounts, a sync batch — no
+  longer costs one round trip per document. `getAll` answers in refs order,
+  `null` where a document is missing, duplicates allowed, and mixes parents
+  and subcollections of one model freely. Documents the hot cache holds
+  come back without SQL; the misses are grouped per table and fetched with
+  one statement per 500 scope keys, all inside one read transaction, so the
+  whole call reads one consistent snapshot and populates the cache exactly
+  like `get()`. Measured on the 1M rivals dataset: 1,000 ids in 8.7 ms cold
+  (was 75 ms one-by-one; the rivals `gets` workload's shape) and 0.2 ms
+  warm, at parity with drift's single `isIn` statement
+  (`benchmarks/cocoon_rivals/GETALL.md`). Inside a transaction,
+  `tx.getAll(refs)` sees the transaction's own writes exactly like
+  `tx.get(ref)`; `collection.getAll(ids)` is the sugar when you already
+  have the collection in hand.
+
 ## 0.1.0
 
 Cocoon is a typed, disk-backed, Firestore-style local database for Dart and

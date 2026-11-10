@@ -99,6 +99,34 @@ CREATE TABLE txn (
   columns are declared nullable and the adapter's non-null invariant is
   enforced at write time.
 
+## Many documents by id
+
+`db.getAll(refs)` answers from the bounded cache where it can; only the
+misses reach SQLite, grouped per collection table and fetched in chunks of
+500 scope keys, with every chunk of one call inside one `BEGIN IMMEDIATE`
+read transaction on a reader connection — one consistent snapshot, one
+round trip per table per chunk (`BEGIN` + statements + `END` over
+sqlite_async's reader isolate). A subcollection keys by its full scope key
+with row values, the same shape the batch `update` existence check uses; a
+root collection keys by `id` alone:
+
+```sql
+-- accounts/{accountId}/txns, chunk of 500 refs:
+SELECT p_account_id, id, data FROM txn
+WHERE (p_account_id, id) IN (VALUES (?, ?), (?, ?) /* ... 500 tuples */)
+
+-- accounts (no path params):
+SELECT id, data FROM account WHERE id IN (?, ? /* ... 500 */)
+```
+
+Rows map back to their positions through the derived full path (the same
+one scope-key helper every other path consumer uses), decode per document,
+and populate the cache exactly like `get()` does. Missing documents are
+simply absent from the answer: `null` at their positions. The chunk size
+(500) is measured, not guessed — `benchmarks/cocoon_rivals/GETALL.md` has
+the table and the breakdown of where the remaining time goes (isolate
+round trips, not SQL).
+
 ## Canonical protobuf wire format
 
 The document body (`data`) is a protobuf blob encoded canonically by the

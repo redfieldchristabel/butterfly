@@ -620,6 +620,69 @@ final class Cocoon {
   Future<R> runTransaction<R>(Future<R> Function(CocoonTransaction tx) body) =>
       writeTx<R>((wtx) => body(CocoonTransaction(wtx)));
 
+  /// Every database of [refs] in as few trips as possible: results come
+  /// back in the same order as [refs], `null` at every position whose
+  /// document does not exist. Duplicate references are allowed — every
+  /// position is answered.
+  ///
+  /// All references must share one model type [T] (they may span different
+  /// parents and subcollections of it); passing `<DocRef<Object>>[...]`
+  /// mixes models at the cost of an untyped [DocSnapshot.data]. An empty
+  /// list answers immediately with an empty list, without SQL.
+  ///
+  /// Documents the bounded cache already holds answer without SQL; only the
+  /// misses go to SQLite, grouped per table and fetched with one statement
+  /// per [getAllChunkKeys] scope keys. Every chunk of one call runs inside
+  /// ONE read transaction, so the whole answer is one consistent snapshot,
+  /// and fetched documents populate the cache exactly like [DocRef.get]
+  /// does. Reads by id never wait for a bulk writer's deferred indexes (the
+  /// scope index is never deferred). Inside a transaction use
+  /// [CocoonTransaction.getAll] instead — it also sees the transaction's own
+  /// uncommitted writes.
+  ///
+  /// ```dart
+  /// final snaps = await db.getAll([
+  ///   for (final id in participantIds) a1.collection(txns).doc(id),
+  /// ]);
+  /// ```
+  Future<List<DocSnapshot<T>?>> getAll<T extends Object>(
+    List<DocRef<T>> refs,
+  ) async {
+    if (refs.isEmpty) {
+      return const [];
+    }
+    final snapshots = List<DocSnapshot<T>?>.filled(refs.length, null);
+    final pending = <String, _PendingDoc>{};
+    for (var i = 0; i < refs.length; i++) {
+      final ref = refs[i];
+      final entry = _registry.entryFor(ref.adapter);
+      final path = ref.path.path;
+      final cached = _cache.get(path);
+      if (cached != null) {
+        // A write cached the encoded bytes; decode once and promote the
+        // value, so what a later read sees is exactly what the stored bytes
+        // decode to — the same contract as [getDoc].
+        if (cached is EncodedDoc) {
+          final value = entry.adapter.decode(cached.bytes) as T;
+          _cache.put(path, value);
+          snapshots[i] = DocSnapshot<T>(ref, value);
+        } else {
+          snapshots[i] = DocSnapshot<T>(ref, cached as T);
+        }
+        continue;
+      }
+      _addPendingDoc(pending, entry, path, i);
+    }
+    if (pending.isEmpty) {
+      return snapshots;
+    }
+    await _executor.readTransaction(
+      (reader) =>
+          _fillFromTables<T>(reader, pending, refs, snapshots, cachePut: true),
+    );
+    return snapshots;
+  }
+
   /// How many documents the hot-document cache currently holds.
   @visibleForTesting
   int get debugCacheLength => _cache.length;
@@ -718,6 +781,42 @@ final class Cocoon {
     CocoonTx tx,
     DocRef<T> ref,
   ) => _readDoc<T>(tx, ref, cachePut: false);
+
+  /// Scope keys bound per `getAll` SELECT, per table per statement. Chosen
+  /// by measurement on the 1M rivals dataset
+  /// (`benchmarks/cocoon_rivals/GETALL.md`); the widest collections bind
+  /// a few thousand placeholders per statement, far under SQLite's variable
+  /// limit, and one chunk stays a single fast index scan.
+  @internal
+  static const int getAllChunkKeys = 500;
+
+  /// [getAll]'s engine inside a transaction: reads through [tx] — seeing the
+  /// transaction's own writes exactly like [readDocInTx] — never the cache,
+  /// and caches nothing (a transaction's cache updates stay staged until its
+  /// commit succeeds). Answers in [refs] order, `null` for missing
+  /// documents, duplicates allowed.
+  @internal
+  Future<List<DocSnapshot<T>?>> getAllDocsInTx<T extends Object>(
+    CocoonTx tx,
+    List<DocRef<T>> refs,
+  ) async {
+    if (refs.isEmpty) {
+      return const [];
+    }
+    final snapshots = List<DocSnapshot<T>?>.filled(refs.length, null);
+    final pending = <String, _PendingDoc>{};
+    for (var i = 0; i < refs.length; i++) {
+      final ref = refs[i];
+      _addPendingDoc(
+        pending,
+        _registry.entryFor(ref.adapter),
+        ref.path.path,
+        i,
+      );
+    }
+    await _fillFromTables<T>(tx, pending, refs, snapshots, cachePut: false);
+    return snapshots;
+  }
 
   @internal
   Future<void> putDoc<T extends Object>(DocRef<T> ref, T value) =>
@@ -1260,6 +1359,105 @@ final class Cocoon {
     return DocSnapshot<T>(ref, value);
   }
 
+  /// Records [path] (with result position [position]) as a document `getAll`
+  /// still needs from SQLite: validates the path against [entry]'s pattern
+  /// exactly like [_readDoc] does, and collapses duplicate references onto
+  /// one fetch whose snapshot every position shares.
+  void _addPendingDoc(
+    Map<String, _PendingDoc> pending,
+    RegistryEntry entry,
+    String path,
+    int position,
+  ) {
+    final existing = pending[path];
+    if (existing != null) {
+      existing.positions.add(position);
+      return;
+    }
+    final key = entry.scopeKeyOf(path);
+    if (key == null) {
+      throw ArgumentError.value(
+        path,
+        'ref',
+        'Not a document path of collection ${entry.adapter.pattern}',
+      );
+    }
+    pending[path] = _PendingDoc(entry, path, key)..positions.add(position);
+  }
+
+  /// Fetches every [pending] document from [reader] and fills [snapshots]:
+  /// documents grouped per table, one statement per chunk of
+  /// [getAllChunkKeys] scope keys — a 1,000-id call costs one round trip per
+  /// table per chunk instead of one per document. The caller runs all of a
+  /// call's statements inside one read transaction, so the chunks answer
+  /// from one snapshot. Rows decode per document and, with [cachePut],
+  /// populate the hot-document cache exactly like [_readDoc].
+  Future<void> _fillFromTables<T extends Object>(
+    CocoonRead reader,
+    Map<String, _PendingDoc> pending,
+    List<DocRef<T>> refs,
+    List<DocSnapshot<T>?> snapshots, {
+    required bool cachePut,
+  }) async {
+    final byTable = <RegistryEntry, List<_PendingDoc>>{};
+    for (final doc in pending.values) {
+      (byTable[doc.entry] ??= []).add(doc);
+    }
+    for (final entry in byTable.keys) {
+      final docs = byTable[entry]!;
+      final keyColumns = entry.keyColumns;
+      final keyCount = keyColumns.length;
+      for (var start = 0; start < docs.length; start += getAllChunkKeys) {
+        final chunk = docs.sublist(
+          start,
+          start + getAllChunkKeys > docs.length
+              ? docs.length
+              : start + getAllChunkKeys,
+        );
+        final args = <Object?>[];
+        for (final doc in chunk) {
+          args.addAll(doc.key.paramValues);
+          args.add(doc.key.id);
+        }
+        // A root collection keys by id alone (`id IN (...)`); a
+        // subcollection keys by the full scope key with row values — the
+        // statement shape the batch update's existence check uses.
+        final String sql;
+        if (keyCount == 1) {
+          sql =
+              'SELECT id, data FROM ${entry.table} '
+              'WHERE id IN (${List.filled(chunk.length, '?').join(', ')})';
+        } else {
+          final tuple = '(${List.filled(keyCount, '?').join(', ')})';
+          sql =
+              'SELECT ${keyColumns.join(', ')}, data FROM ${entry.table} '
+              'WHERE (${keyColumns.join(', ')}) IN (VALUES '
+              '${List.filled(chunk.length, tuple).join(', ')})';
+        }
+        final rows = await reader.getAll(sql, args);
+        final rowOfPath = {
+          for (final row in rows) entry.pathOfKeyRow(row): row,
+        };
+        for (final doc in chunk) {
+          final row = rowOfPath[doc.path];
+          if (row == null) {
+            continue; // a missing document answers null at its position
+          }
+          final value = entry.adapter.decode(row['data']! as Uint8List) as T;
+          if (cachePut) {
+            _cache.put(doc.path, value);
+          }
+          // Duplicate references share one snapshot: their refs are equal
+          // (a DocRef compares by path) and DocSnapshot is immutable.
+          final snapshot = DocSnapshot<T>(refs[doc.positions.first], value);
+          for (final position in doc.positions) {
+            snapshots[position] = snapshot;
+          }
+        }
+      }
+    }
+  }
+
   @internal
   List<String> paramValuesInOrder(RegistryEntry entry, CollectionPath path) {
     final values = entry.adapter.pattern.match(path.path);
@@ -1601,4 +1799,17 @@ final class Cocoon {
         Durability.full => SqliteSynchronous.full,
         Durability.normal => SqliteSynchronous.normal,
       };
+}
+
+/// One distinct document path a `getAll` call still needs from SQLite: its
+/// registry entry, its scope key, and every result position waiting for it.
+final class _PendingDoc {
+  _PendingDoc(this.entry, this.path, this.key);
+
+  final RegistryEntry entry;
+  final String path;
+  final ({List<String> paramValues, String id}) key;
+
+  /// Every [getAll] result position this path answers, duplicates included.
+  final List<int> positions = [];
 }

@@ -85,6 +85,22 @@ final class WriteTx {
     return _db.readDocInTx<T>(tx, ref);
   }
 
+  /// Reads many documents inside the transaction, seeing its own writes —
+  /// the buffer flushes first, exactly like [get]. Results come back in
+  /// [refs] order, `null` where a document does not exist; duplicates are
+  /// allowed. Never touches the hot-document cache: reads inside a
+  /// transaction go to SQLite, and cache updates stay staged until the
+  /// commit succeeds ([Cocoon.getAllDocsInTx]).
+  Future<List<DocSnapshot<T>?>> getAll<T extends Object>(
+    List<DocRef<T>> refs,
+  ) async {
+    if (refs.isEmpty) {
+      return const [];
+    }
+    await flush();
+    return _db.getAllDocsInTx<T>(tx, refs);
+  }
+
   /// Upserts [value] at [ref] (or, with [update], replaces an existing
   /// document and fails the transaction when it does not exist).
   Future<void> put<T extends Object>(

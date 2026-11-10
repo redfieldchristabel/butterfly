@@ -390,6 +390,41 @@ wrong parent. Deleting a document cascades to its whole subtree — and
 prefix-siblings are safe: deleting `accounts/a1` never touches
 `accounts/a10`.
 
+### Many documents by id: `getAll`
+
+When the app already knows the ids — a split's participants, linked
+accounts, a sync batch — fetch them in one call instead of one `get()` per
+document:
+
+```dart
+final snaps = await a1.collection(txns)
+    .getAll(['t1', 't2', 't3']); // List<DocSnapshot<Txn>?>
+
+// or across parents of the same collection, from the database directly:
+final snaps = await db.getAll([
+  for (final id in participantIds) a1.collection(txns).doc(id),
+  for (final id in linkedTxnIds) a2.collection(txns).doc(id),
+]);
+```
+
+Results come back in the same order as the ids/refs, `null` at every
+position whose document does not exist; duplicate ids are allowed and every
+position is answered. Documents the hot cache holds come back without SQL;
+only the misses go to SQLite, grouped per collection table and fetched with
+one statement per 500 scope keys, all inside one read transaction — one
+consistent snapshot for the whole call, and every fetched document lands in
+the cache exactly like `get()`. One call answers one model type (refs of
+different parents and subcollections of it mix freely); a
+`<DocRef<Object>>[...]` list mixes models at the cost of an untyped
+`.data`. An empty list answers immediately, without SQL.
+
+Reach for `getAll` instead of a query when the id set is known and the
+order is yours — a query would need an index that serves it and would
+re-sort what you already know. Reads by id never wait for a running
+`bulkWriter()` (the scope index is never deferred). Inside a transaction,
+`tx.getAll(refs)` sees the transaction's own writes exactly like
+`tx.get(ref)`.
+
 ## Queries
 
 Filters and sorts are built from the typed handles. Every query needs an
@@ -596,8 +631,10 @@ await db.runTransaction((tx) async {
 ```
 
 Reads inside the transaction see its own writes; an exception rolls back
-everything. `set`/`add`/`delete` outside a transaction each run in their own
-transaction.
+everything. `tx.getAll(refs)` fetches many documents under the same
+read-your-writes rules, with the same one-trip chunking as `db.getAll` —
+and caches nothing until the commit succeeds. `set`/`add`/`delete` outside
+a transaction each run in their own transaction.
 
 ## Bulk writes: WriteBatch
 

@@ -251,6 +251,23 @@ on the docs site under **Cocoon**:
   — and `BulkWriterOptions(logChanges: false)` skips the load's log rows
   entirely (sync consumers then resync). `lastChangeSeq` keeps its
   monotonicity guarantee: it reads the AUTOINCREMENT head, not `MAX(seq)`.
+- **Many documents by id are one trip, not one trip per document.**
+  `db.getAll(refs)` (plus `tx.getAll` and `collection.getAll(ids)`) answers
+  in refs order with `null` for missing documents and duplicates allowed.
+  The bounded cache answers what it holds without SQL; only the misses go
+  to SQLite, grouped per table and fetched with one statement per chunk of
+  500 scope keys (`(p_params, id) IN (VALUES ...)` for subcollections,
+  `id IN (...)` for root collections), every chunk of one call inside ONE
+  read transaction — the whole answer is one consistent snapshot. Measured
+  on the 1M rivals dataset (`benchmarks/cocoon_rivals/GETALL.md`): 1,000
+  ids in 8.7 ms cold vs 75 ms one-by-one (the rivals `gets` workload's
+  shape), 0.2 ms warm, at parity with drift's single `isIn`; the chunk-size
+  sweep puts 500 at the knee (within ~10% of the statement-size floor, a
+  few thousand placeholders per statement, far under SQLite's variable
+  limit). Coherence is exactly `get()`'s: fetched documents populate the
+  cache like `get()` does, reads never wait for deferred bulk indexes, and
+  a transaction's `getAll` sees its own writes and caches nothing until the
+  commit succeeds.
 - **Document ids**: time-ordered UUIDv7 (`newDocId()`); `validateDocId`
   enforces path-safe ids.
 
@@ -293,6 +310,7 @@ executor, so it is deferred.
 | Benchmark vs sembast (`packages/cocoon_bench`, finance-shaped data, `RESULTS.md`; memory measured against a harness-only baseline, write-durability and cache-size knobs measured) | done |
 | Rivals benchmark (`benchmarks/cocoon_rivals`, 7 engines incl. cocoon at `Durability.normal`, drift, Isar, ObjectBox, Hive CE, sembast; 10k-1M txns, 13 ops, `RESULTS.md` with per-workload verdicts) | done |
 | Bulk-write path: `WriteBatch` (`db.batch()`), buffered transaction writes, per-collection prebuilt write SQL, byte-caching hot entries | done |
+| Many-by-id reads: `db.getAll(refs)`, `tx.getAll(refs)`, `collection.getAll(ids)` — cache-first, misses grouped per table in one statement per 500 scope keys inside one read transaction; measured in `benchmarks/cocoon_rivals/GETALL.md` | done |
 | Bulk-load path: `BulkWriter` (`db.bulkWriter()`), chunked commits, deferred secondary indexes + crash recovery via `_cocoon_bulk` | done |
 | Import-performance knobs: `pageCacheMiB` (64 MiB page cache), `tempStoreInMemory`, sqlite_async `profileQueries` off; measurements in `benchmarks/cocoon_rivals/IMPORT.md` | done |
 | Whole-database backups: `db.backupTo()` (`VACUUM INTO` snapshot, stamped `_cocoon_meta`), `Cocoon.inspectBackup()`, `Cocoon.restoreBackup()` (closed-target rule, compatibility before the swap, `.restoring`/`.before-restore` protocol) + database instance id (`db.instanceId`) | done |

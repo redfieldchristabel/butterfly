@@ -135,6 +135,14 @@ final class CollectionRef<T extends Object> {
   /// document's reference.
   Future<DocRef<T>> add(T value) => _db.addDoc(this, value);
 
+  /// Reads many documents of this collection by id in one trip — sugar for
+  /// `db.getAll([for (final id in ids) doc(id)])` with this collection's
+  /// rules: results come back in [ids] order, `null` where a document does
+  /// not exist, duplicates allowed, cache-first with one statement per chunk
+  /// of scope keys. See [Cocoon.getAll].
+  Future<List<DocSnapshot<T>?>> getAll(Iterable<String> ids) =>
+      _db.getAll<T>([for (final id in ids) doc(id)]);
+
   /// Starts a query filtered by [filter].
   CocoonQuery<T> where(QueryFilter filter) => query().where(filter);
 
@@ -229,6 +237,15 @@ final class CocoonTransaction {
   /// Reads a document inside the transaction, seeing its own writes.
   Future<DocSnapshot<T>?> get<T extends Object>(DocRef<T> ref) =>
       _wtx.get<T>(ref);
+
+  /// Reads many documents inside the transaction, seeing its own writes —
+  /// the transaction's counterpart of [Cocoon.getAll]. Results come back in
+  /// [refs] order, `null` where a document does not exist; duplicates are
+  /// allowed. Reads never touch the hot-document cache, and the fetched
+  /// documents are cached only after the transaction commits.
+  Future<List<DocSnapshot<T>?>> getAll<T extends Object>(
+    List<DocRef<T>> refs,
+  ) => _wtx.getAll<T>(refs);
 
   /// Upserts a document inside the transaction.
   Future<void> set<T extends Object>(DocRef<T> ref, T value) =>
