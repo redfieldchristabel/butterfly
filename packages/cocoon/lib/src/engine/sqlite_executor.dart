@@ -5,6 +5,7 @@ import 'package:sqlite_async/native.dart' show NativeSqliteOpenFactory;
 import 'package:sqlite_async/sqlite_async.dart';
 import 'package:sqlite3/sqlite3.dart' as raw;
 
+import 'aggregate.dart' show AggregateOverflowException;
 import 'executor.dart';
 import 'naming.dart';
 
@@ -24,8 +25,25 @@ final class SqliteExecutor implements CocoonExecutor {
     String sql, [
     List<Object?> args = const [],
   ]) async {
-    final rows = await _db.getAll(sql, args);
-    return [for (final row in rows) Map<String, Object?>.of(row)];
+    List<Map<String, Object?>> rows;
+    try {
+      rows = [
+        for (final row in await _db.getAll(sql, args))
+          Map<String, Object?>.of(row),
+      ];
+    } on raw.SqliteException catch (error) {
+      // SQLite refuses to wrap: an aggregate SUM past ±2^63 aborts the
+      // statement with "integer overflow". Surface it as the typed error
+      // (no other Cocoon statement can legitimately produce that message).
+      if (error.message.contains('integer overflow')) {
+        throw AggregateOverflowException(
+          'A sum in this aggregate query exceeded the 64-bit integer '
+          'range: ${error.message}',
+        );
+      }
+      rethrow;
+    }
+    return rows;
   }
 
   @override

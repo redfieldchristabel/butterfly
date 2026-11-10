@@ -1,5 +1,34 @@
 ## Unreleased
 
+- Aggregates: your totals no longer decode documents. `query.aggregate([count(),
+  sum(Txn$.amountMinor), average(Txn$.rate)])` computes in one SQLite
+  statement over the mirrored columns — Firestore's aggregate API with
+  Firestore's semantics (empty sum = 0, average always a `double?`, nulls
+  skipped; integer sums exact, overflowing past ±2^63 throws a typed
+  `AggregateOverflowException` instead of wrapping), plus Cocoon's `minOf`/
+  `maxOf`. The filters follow the same index rule as `get()` (the same
+  `MissingIndexException` with the same suggested `Index([...])`, the same
+  `.allowFullScan()`, the same wait behind a running `bulkWriter()`), an
+  `orderBy` + `limit` aggregates the first N documents in that order, and
+  `query.count()` is now exactly `aggregate([count()])`. Aggregate fields
+  must be indexed (that is what mirrors them into a column) — anything else
+  throws an `UnmirroredFieldException` naming the declaration that would
+  mirror it. A Cocoon extension on top: `query.groupBy([key(Txn$.currency),
+  bucket(Txn$.bookedOn, width: 100), month(Txn$.bookedAt, utcOffset:
+  Duration(hours: 8))]).aggregate([...]).get()` returns one
+  `AggregateGroup` per key combination, ordered by the keys ascending, each
+  carrying its typed keys plus the same aggregates and `getMin`/`getMax`;
+  keys can be a field, a path param (one group per parent on a collection
+  group), a fixed-width numeric band, or a calendar year/month/day —
+  calendar buckets need a fixed `utcOffset` (no IANA zones, no DST; the
+  dartdoc explains what DST zones should do instead). Both kinds support
+  `watch()` with the query watch's invalidation and dedup. At 1M
+  transactions the groupBy path cut the rivals year report from 1,430 ms to
+  376 ms — drift's own SQL `GROUP BY` runs 358 ms, so the 3.6x gap is
+  closed — and one account's monthly totals from 185 ms (9,874 documents
+  read) to 35 ms (12 group rows)
+  (`benchmarks/cocoon_rivals/AGGREGATES.md`).
+
 - Backups and restores: `db.backupTo(path)` writes a consistent, compacted
   copy of the whole database while the app keeps reading and writing — one
   read snapshot (SQLite's `VACUUM INTO`), landed atomically as one file

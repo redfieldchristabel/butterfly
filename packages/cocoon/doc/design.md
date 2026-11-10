@@ -178,6 +178,30 @@ on the docs site under **Cocoon**:
   it. Maps stay inside the document blob (never columns), so they cannot be
   indexed; a map type change migrates like any other (fresh field number,
   `fromMap`/`toMap: MapWireType(key:, value:)` on the `FieldMigration`).
+- **Aggregates push the math into SQLite; grouping is a Cocoon extension.**
+  `query.aggregate([count(), sum(f), average(f)])` (plus Cocoon's `minOf`/
+  `maxOf`) runs ONE statement over the mirrored `f_` columns — the planner,
+  index rule, full-scan opt-out and bulk-writer wait are exactly the
+  query's, `count()` is sugar for it, and `orderBy` + `limit` aggregate the
+  first N rows as a subquery (no limit: the `ORDER BY` drops). Semantics
+  follow Firestore: integer sums are exact and an overflow past ±2^63
+  surfaces as a typed error (SQLite aborts the statement; the standard
+  executor maps it to `AggregateOverflowException`), empty sums are `0`,
+  averages are always `double?`, nulls are skipped by sum/average/min/max
+  and counted by count, and getters for unrequested functions throw.
+  Aggregatable fields are the mirrored ones — anything else throws
+  `UnmirroredFieldException` naming the `Index([...])` that would mirror
+  it (no new annotation: mirroring still means "indexed").
+  `query.groupBy([...])` (NOT in Firestore) buckets by `key` (a field or a
+  path param — one aggregate per parent for collection groups), `bucket`
+  (fixed-width numeric bands, `floor(v/w)*w` in exact integer arithmetic —
+  no floats, correct below epoch) and `year`/`month`/`day` calendar buckets
+  on `DateTime` fields, which REQUIRE a fixed `utcOffset` (no IANA/DST: the
+  dartdoc tells DST zones to run one range-filtered aggregate per period
+  instead). Up to 4 keys, groups ordered by the keys ascending with null
+  keys first, optional `.limit(n)`. Aggregate and group queries watch like
+  queries: first emission on listen, table-(and scope-)scoped re-runs,
+  coalesced, equal consecutive values suppressed.
 - **Document ids**: time-ordered UUIDv7 (`newDocId()`); `validateDocId`
   enforces path-safe ids.
 
@@ -223,5 +247,6 @@ executor, so it is deferred.
 | Bulk-load path: `BulkWriter` (`db.bulkWriter()`), chunked commits, deferred secondary indexes + crash recovery via `_cocoon_bulk` | done |
 | Import-performance knobs: `pageCacheMiB` (64 MiB page cache), `tempStoreInMemory`, sqlite_async `profileQueries` off; measurements in `benchmarks/cocoon_rivals/IMPORT.md` | done |
 | Whole-database backups: `db.backupTo()` (`VACUUM INTO` snapshot, stamped `_cocoon_meta`), `Cocoon.inspectBackup()`, `Cocoon.restoreBackup()` (closed-target rule, compatibility before the swap, `.restoring`/`.before-restore` protocol) + database instance id (`db.instanceId`) | done |
+| Aggregates: `aggregate([count(), sum, average])` (+ `minOf`/`maxOf`), one-statement SQLite pushdown with the query index rule, typed overflow error; `groupBy` extension (`key`, `paramKey`, `bucket`, `year`/`month`/`day` at a fixed `utcOffset`, group `.limit`), watches and bulk-writer wait included | done |
 | Export/import streams (documents through the public API, NDJSON-shaped) | planned |
 | Incremental backups (change-log-tailed deltas on top of `backupTo`) | planned |

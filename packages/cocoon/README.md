@@ -398,6 +398,88 @@ parent) is rejected with a `CursorMismatchException`. The page size is not
 part of a cursor's identity, so you may fetch a wide page after a narrow
 one.
 
+## Aggregates
+
+Totals run in SQLite, not in Dart. `query.aggregate([...])` — Firestore's
+aggregate API — computes `count`, `sum` and `average` (plus Cocoon's `minOf`
+and `maxOf`) in one statement over the mirrored columns, with no documents
+decoded:
+
+```dart
+final snapshot = await a1.collection(txns)
+    .where(txnBookedOn.isGreaterThanOrEqualTo(20260101))
+    .aggregate([count(), sum(txnAmountMinor), average(txnRate)])
+    .get();
+print(snapshot.count); // documents matched (nulls count too)
+print(snapshot.getSum(txnAmountMinor)); // int, nulls skipped, empty = 0
+print(snapshot.getAverage(txnRate)); // double?, null when nothing to average
+```
+
+The rules are the query rules: the same index requirement with the same
+`MissingIndexException` (and `.allowFullScan()`), the same wait behind a
+running `bulkWriter()`, and up to 5 functions per call. `orderBy` + `limit`
+aggregate the first N documents in that order; without a `limit` the order
+is irrelevant. `sum` of an `int` field is an `int` — exact, and summing
+past ±2^63 throws an `AggregateOverflowException` instead of wrapping.
+`average` is always a `double?`. Getters for functions you did not request
+throw. Only indexed fields can be aggregated (that is what mirrors them
+into columns); anything else throws an `UnmirroredFieldException` naming
+the `Index([...])` that would mirror it.
+
+`query.count()` is sugar for `aggregate([count()])` and behaves exactly the
+same as before.
+
+### groupBy: a Cocoon extension (not in Firestore)
+
+`query.groupBy([...]).aggregate([...])` buckets the results and aggregates
+per group, in one statement:
+
+```dart
+final monthKey = bucket(txnBookedOn, width: 100); // yyyymmdd -> yyyymm00
+final groups = await a1.collection(txns)
+    .where(txnBookedOn.isGreaterThanOrEqualTo(20260101))
+    .groupBy([key(txnCurrency), monthKey])
+    .aggregate([sum(txnAmountMinor), count()])
+    .get();
+for (final group in groups) {
+  final month = group.key(monthKey) ~/ 100; // yyyymm
+  print('${group.key(txnCurrency)} $month: ${group.getSum(txnAmountMinor)}');
+}
+```
+
+Four key kinds:
+
+- `key(field)` — the field's own value, converted back to its type
+  (`DateTime`, enum, ...). Nullable fields group their nulls into one
+  group, sorted first.
+- `paramKey(param)` — a path param, so a collection-group query can
+  aggregate one group per parent:
+  `db.collectionGroup(txns).groupBy([paramKey(txnAccountId)])`.
+- `bucket(field, width: w)` — fixed-width bands `floor(v / w) * w`:
+  `yyyymmdd` days into months (`width: 100`), prices into bands. Integer
+  fields with integer widths give `int` keys (exact floor division, no
+  floats); double fields give `double` keys.
+- `year(field, utcOffset:)`, `month(...)`, `day(...)` — calendar buckets on
+  `DateTime` fields, **at a fixed `utcOffset`**. There are no IANA zones
+  and no DST: for a DST zone a fixed offset silently buckets the wrong
+  wall-clock times around transitions, so run one aggregate per period
+  with range filters on the instant instead (or store the local date as a
+  `yyyymmdd` int and `bucket` it). Fixed-offset zones like UTC or `+08:00`
+  are exact — a 23:30 UTC txn lands in the next local day/month.
+
+Up to 4 keys, ordered by the keys ascending; `limit(n)` caps the groups;
+each group carries the same aggregates as a whole-result snapshot plus
+`getMin`/`getMax`. The filters follow the same index rule as `get()`.
+`minOf`/`maxOf` are also Cocoon extensions (named so they don't clash
+with `dart:math`) (Firestore has no min/max
+aggregates); they compare in SQL order and convert back to the field's
+type, and are null when no value exists.
+
+Both kinds have `watch()`: the first result on listen, re-computed when a
+commit touches the collection (a subcollection scope only re-runs for its
+own paths), coalesced like query watches, and an equal consecutive result
+is never re-emitted.
+
 ## Transactions
 
 ```dart
@@ -746,11 +828,16 @@ What holds at 1,000,000 transactions:
   went and what each change bought. The dedicated bulk-load path
   (`db.bulkWriter()`, the "Bulk loads" section) brings the 1M import to
   ~13 s.
+- Aggregates (since the `aggregate()` / `groupBy()` pushdown): the
+  aggregate workloads run in SQL now, and the "a document API has no
+  aggregate pushdown" loss is gone — the year report is 376 ms vs drift's
+  358 ms `GROUP BY` (was 1,430 ms, 3.6x behind), and one account's monthly
+  totals are 35 ms for 12 group rows (was 185 ms across 9,874
+  documents). See `benchmarks/cocoon_rivals/AGGREGATES.md`.
 - Where it loses, and by how much: bulk import is still 1.4x behind
   sembast (44.8 s), 2.6x behind Isar (24.9 s) and 8x behind Hive (8.0 s);
   files 388 MB vs drift's 224 MB (1.7x, measured with up to ~32 MiB of
-  un-checkpointed WAL); the year report is 3.6x behind drift's SQL GROUP BY (a
-  document API has no aggregate pushdown) at 1,377 ms vs 383 ms; gets by
+  un-checkpointed WAL); gets by
   id are 6x behind ObjectBox and 20x behind Hive's in-RAM lookups;
   the NDJSON restore is 3.7x behind Hive's 3.0 s; single writes trail
   Hive's fsync-less appends (112 µs) — `Durability.normal` (377 µs) is

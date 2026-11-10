@@ -6,6 +6,7 @@ library;
 export 'src/annotations.dart';
 export 'src/cursor.dart';
 export 'src/engine/adapter.dart';
+export 'src/engine/aggregate.dart';
 export 'src/engine/backup.dart'
     show
         BackupDamagedException,
@@ -20,7 +21,15 @@ export 'src/engine/naming.dart' show snakeCase, tableNameFor, validNamePattern;
 export 'src/engine/changes.dart' show Change, ChangeOp;
 export 'src/engine/cocoon.dart';
 export 'src/engine/query.dart'
-    show CocoonQuery, MissingIndexException, QueryPage;
+    show
+        AggregateGroupQuery,
+        AggregateQuery,
+        CocoonQuery,
+        GroupByQuery,
+        MissingIndexException,
+        QueryPage,
+        maxAggregatesPerCall,
+        maxGroupKeys;
 export 'src/engine/refs.dart';
 export 'src/id.dart';
 export 'src/migration.dart';

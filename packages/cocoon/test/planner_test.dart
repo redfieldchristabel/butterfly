@@ -334,7 +334,7 @@ void main() {
     expect(plan.fingerprint, matches(RegExp(r'^[0-9a-f]{16}$')));
   });
 
-  test('the count SQL shares the filters but drops order and keyset', () {
+  test('the count aggregate shares the filters but drops order and keyset', () {
     // A collection-group query: no parent params, so the declared
     // (status, bookedOn, id) index serves it.
     final plan = planQuery(
@@ -346,10 +346,20 @@ void main() {
       cursor: null,
       fullScan: false,
     );
-    expect(plan.countSql, 'SELECT count(*) AS c FROM txn WHERE f_status = ?');
-    expect(plan.countArgs, ['posted']);
+    // count() is aggregate([count()]): the same filters, no ORDER BY.
+    final countPlan = planAggregate(
+      entry: entry,
+      scopePath: null,
+      filters: [txnStatus.isEqualTo(TxnStatus.posted)],
+      orders: const [QueryOrder('bookedOn', descending: true)],
+      limit: null,
+      fullScan: false,
+      specs: [count<Object?>()],
+    );
+    expect(countPlan.sql, 'SELECT count(*) AS c FROM txn WHERE f_status = ?');
+    expect(countPlan.args, ['posted']);
 
-    // A valid cursor changes the page SQL but never the count SQL.
+    // A valid cursor changes the page SQL but never the aggregate SQL.
     final cursor = CursorCodec.encode(plan.fingerprint, [20260101, 'tx1']);
     final paged = planQuery(
       entry: entry,
@@ -360,8 +370,17 @@ void main() {
       cursor: cursor,
       fullScan: false,
     );
-    expect(paged.countSql, plan.countSql);
-    expect(paged.countArgs, plan.countArgs);
+    final pagedCountPlan = planAggregate(
+      entry: entry,
+      scopePath: null,
+      filters: [txnStatus.isEqualTo(TxnStatus.posted)],
+      orders: const [QueryOrder('bookedOn', descending: true)],
+      limit: null,
+      fullScan: false,
+      specs: [count<Object?>()],
+    );
+    expect(pagedCountPlan.sql, countPlan.sql);
+    expect(pagedCountPlan.args, countPlan.args);
     expect(paged.fingerprint, plan.fingerprint);
     expect(paged.sql, contains('AND (f_booked_on, id) < (?, ?)'));
   });

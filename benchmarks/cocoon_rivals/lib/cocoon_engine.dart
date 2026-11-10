@@ -182,31 +182,25 @@ final class CocoonBenchEngine implements BenchEngine {
     int year,
     String baseDir,
   ) async {
-    final totals = <int, int>{};
-    var scanned = 0;
+    // The aggregates step: one `GROUP BY` statement per account-year —
+    // `bucket(bookedOn, width: 100)` floors `yyyymmdd` into `yyyymm00`
+    // bands, so a group is a month, and SQLite sums the mirrored column.
+    // Before this, the op paged every matching document (9,874 reads at
+    // 1M) and added `amountMinor` up in Dart.
     final firstDay = year * 10000 + 101;
     final lastDay = year * 10000 + 1231;
-    CocoonQuery<Txn> queryFor() => _txnsOf(accountId)
+    final monthKey = bucket(Txn$.bookedOn, width: 100);
+    final groups = await _txnsOf(accountId)
         .where(Txn$.bookedOn.isGreaterThanOrEqualTo(firstDay))
         .where(Txn$.bookedOn.isLessThanOrEqualTo(lastDay))
-        .orderBy(Txn$.bookedOn)
-        .limit(monthlyPageSize);
-    var cursor = await queryFor().get();
-    while (true) {
-      for (final doc in cursor.docs) {
-        final bookedOn = doc.data.bookedOn;
-        final month = bookedOn ~/ 100 % 100;
-        totals[year * 100 + month] =
-            (totals[year * 100 + month] ?? 0) + doc.data.amountMinor;
-        scanned++;
-      }
-      final next = cursor.nextCursor;
-      if (next == null) {
-        break;
-      }
-      cursor = await queryFor().startAfter(next).get();
-    }
-    return (totals: totals, scanned: scanned);
+        .groupBy([monthKey])
+        .aggregate([sum(Txn$.amountMinor)])
+        .get();
+    final totals = <int, int>{
+      for (final group in groups)
+        group.key(monthKey) ~/ 100: group.getSum(Txn$.amountMinor),
+    };
+    return (totals: totals, scanned: groups.length);
   }
 
   @override
@@ -306,20 +300,29 @@ final class CocoonBenchEngine implements BenchEngine {
 
   @override
   Future<(int, Map<String, int>, int)> yearReport(String baseDir) async {
+    // The aggregates step: one groupBy statement per account (the same
+    // shape as [monthlyTotalsMap]); 20 statements instead of paging the
+    // whole year's 200k txns through the document API.
     final sums = <String, int>{};
     var accountsCovered = 0;
     final sw = Stopwatch()..start();
+    final monthKey = bucket(Txn$.bookedOn, width: 100);
     for (final accountId in benchAccountIds()) {
-      final (:totals, scanned: _) = await monthlyTotalsMap(
-        accountId,
-        reportYear,
-        baseDir,
-      );
-      if (totals.isNotEmpty) {
+      final firstDay = reportYear * 10000 + 101;
+      final lastDay = reportYear * 10000 + 1231;
+      final groups = await _txnsOf(accountId)
+          .where(Txn$.bookedOn.isGreaterThanOrEqualTo(firstDay))
+          .where(Txn$.bookedOn.isLessThanOrEqualTo(lastDay))
+          .groupBy([monthKey])
+          .aggregate([sum(Txn$.amountMinor)])
+          .get();
+      if (groups.isNotEmpty) {
         accountsCovered++;
       }
-      for (final entry in totals.entries) {
-        sums['$accountId|${entry.key}'] = entry.value;
+      for (final group in groups) {
+        sums['$accountId|${group.key(monthKey) ~/ 100}'] = group.getSum(
+          Txn$.amountMinor,
+        );
       }
     }
     sw.stop();

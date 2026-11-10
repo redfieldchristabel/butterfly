@@ -2,6 +2,7 @@ import 'package:meta/meta.dart';
 
 import '../path.dart';
 import 'adapter.dart';
+import 'aggregate.dart';
 import 'cocoon.dart';
 import 'query.dart';
 import 'write_buffer.dart';
@@ -144,6 +145,16 @@ final class CollectionRef<T extends Object> {
     bool descending = false,
   }) => query().orderBy(column, descending: descending);
 
+  /// Computes aggregates over this collection's documents — sugar for
+  /// `query().aggregate(specs)`; see [CocoonQuery.aggregate].
+  AggregateQuery<T> aggregate(List<AggregateFunction<T>> specs) =>
+      query().aggregate(specs);
+
+  /// Starts a group-by query over this collection — sugar for
+  /// `query().groupBy(keys)`; see [CocoonQuery.groupBy].
+  GroupByQuery<T> groupBy(List<GroupKeySpec<T, Object?>> keys) =>
+      query().groupBy(keys);
+
   @override
   bool operator ==(Object other) =>
       other is CollectionRef && other.path == path;
@@ -178,6 +189,17 @@ final class CollectionGroupRef<T extends Object> {
     FieldColumn<T, Object?> column, {
     bool descending = false,
   }) => query().orderBy(column, descending: descending);
+
+  /// Computes aggregates over the whole collection group — sugar for
+  /// `query().aggregate(specs)`; see [CocoonQuery.aggregate].
+  AggregateQuery<T> aggregate(List<AggregateFunction<T>> specs) =>
+      query().aggregate(specs);
+
+  /// Starts a group-by query over the collection group — sugar for
+  /// `query().groupBy(keys)`; see [CocoonQuery.groupBy]. Group by a parent
+  /// with [paramKey] to aggregate one group per parent.
+  GroupByQuery<T> groupBy(List<GroupKeySpec<T, Object?>> keys) =>
+      query().groupBy(keys);
 
   @override
   String toString() => 'collectionGroup(${_adapter.pattern})';

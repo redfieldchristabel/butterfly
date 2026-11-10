@@ -212,6 +212,73 @@ Cocoon stores integers exactly — use that for money:
 - **never** `TOTAL()` or `AVG()` for money — they return REAL;
 - never sum across currencies; convert first, then sum.
 
+## Aggregates
+
+`query.aggregate([...])` and `query.groupBy([...])` compute in SQLite over
+the mirrored `f_` columns — the document blob is never decoded, and one
+`get()` is exactly one read statement. The filters are planned by the same
+code as `get()`: same index rule, same `MissingIndexException`, same
+`.allowFullScan()`, and the same wait when a bulk writer has the serving
+index deferred.
+
+The count statement is the plain aggregate shape — `query.count()` is
+`aggregate([count()])`:
+
+```sql
+SELECT count(*) AS c, COALESCE(SUM(f_amount_minor), 0) AS a0,
+       AVG(f_rate) AS a1
+FROM txn WHERE p_account_id = ? AND f_status = ?
+```
+
+- `sum` of an integer column is `COALESCE(SUM(col), 0)`: never null, exact,
+  and an overflow past ±2^63 aborts the statement — surfaced as
+  `AggregateOverflowException`, never as a wrapped value. A real column
+  coalesces to `0.0`.
+- `average` is plain `AVG`: always REAL, `null` when no row has a value.
+- nulls are skipped by `SUM`/`AVG`/`MIN`/`MAX` and counted by `count(*)`.
+
+A query with `orderBy` + `limit` aggregates the first N rows in that order,
+as a subquery (a top-level `LIMIT` would apply to the single result row and
+do nothing); without a limit the `ORDER BY` is dropped:
+
+```sql
+SELECT count(*) AS c, COALESCE(SUM(f_amount_minor), 0) AS a0
+FROM (SELECT f_amount_minor FROM txn
+      WHERE p_account_id = ? ORDER BY f_booked_on DESC, id DESC LIMIT ?)
+```
+
+The group-by extension emits one key expression per `groupBy` key, a
+`GROUP BY` over their aliases and an ascending `ORDER BY` (SQLite sorts
+NULLs first, so null keys form their own first group):
+
+```sql
+SELECT (f_booked_on - (((f_booked_on % ?) + ?) % ?)) AS k0,
+       count(*) AS c,
+       COALESCE(SUM(f_amount_minor), 0) AS a0, MIN(f_booked_on) AS a1
+FROM txn WHERE p_account_id = ?
+GROUP BY k0 ORDER BY k0 ASC LIMIT ?
+```
+
+Key expressions, per key kind:
+
+- **`key(field)` / `paramKey(param)`**: the `f_`/`p_` column itself.
+- **`bucket(field, width: w)`** on an integer field with an integer width:
+  `field - ((field % w) + w) % w` — floor division in pure integer
+  arithmetic (no floats, correct for negative amounts). On a real field:
+  `FLOOR(field / w) * w`.
+- **`year`/`month`/`day(field, utcOffset:)`** on a `DateTime` column: shift
+  the stored UTC microseconds by the offset, take the containing day with
+  the same integer floor-mod (`floorDiv(micros + offset, 86400000000)`),
+  multiply back to the local midnight's UTC seconds and read the calendar
+  off it — `date(..., 'unixepoch')` plus `strftime('%Y%m')`, cast to
+  INTEGER. Fixed offsets only: a DST zone would silently bucket wall-clock
+  times around transitions wrong, so for those run one aggregate per period
+  with range filters on the instant instead (see the `month` dartdoc).
+
+Aggregates read only columns that exist: an `AggregateFunction` or
+`GroupKeySpec` over a field without an `f_` column throws an
+`UnmirroredFieldException` naming the `Index([...])` that would mirror it.
+
 ## Benchmarks
 
 The storage contract above is measured in `packages/cocoon_bench` — full

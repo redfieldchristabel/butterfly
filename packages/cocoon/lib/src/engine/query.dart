@@ -5,6 +5,7 @@ import 'package:meta/meta.dart';
 import '../cursor.dart';
 import '../path.dart';
 import 'adapter.dart';
+import 'aggregate.dart';
 import 'cocoon.dart';
 import 'naming.dart';
 import 'refs.dart';
@@ -152,8 +153,6 @@ final class PlannedQuery {
   const PlannedQuery({
     required this.sql,
     required this.args,
-    required this.countSql,
-    required this.countArgs,
     required this.fingerprint,
     required this.cursorColumns,
     required this.servingIndex,
@@ -164,12 +163,6 @@ final class PlannedQuery {
 
   /// Arguments for [sql], in placeholder order.
   final List<Object?> args;
-
-  /// The `SELECT count(*)` statement with the same filters and index rule.
-  final String countSql;
-
-  /// Arguments for [countSql].
-  final List<Object?> countArgs;
 
   /// Fingerprint of the canonical query description; cursors carry it and a
   /// cursor from another query is rejected.
@@ -187,19 +180,46 @@ final class PlannedQuery {
   final String? servingIndex;
 }
 
-/// Builds the SQL for a query: filters, index check, sort order, keyset
-/// pagination and count. Pure function over the registry entry.
+/// The shared front half of query planning: the scope param filters plus the
+/// user filters, the effective sort order (the id tiebreaker appended), the
+/// WHERE fragments with their bound values, and the first index that serves
+/// the shape — `null` when the query opted out with `.allowFullScan()`.
 ///
-/// Throws a [MissingIndexException] when no index serves the query and it
-/// was not marked as a full scan, and an [InvalidCursorException] or
-/// [CursorMismatchException] when [cursor] does not belong to this query.
-PlannedQuery planQuery({
+/// [planQuery], [planAggregate] and [planGroupAggregate] share it, so the
+/// index rule is decided once and identically for reads, counts and
+/// aggregates.
+final class ResolvedFilters {
+  ResolvedFilters._(
+    this.allFilters,
+    this.effectiveOrders,
+    this.whereFragments,
+    this.whereArgs,
+    this.servingIndex,
+  );
+
+  /// Every filter the statement applies: the scope's path params first, then
+  /// the user's.
+  final List<QueryFilter> allFilters;
+
+  /// The sort keys with the document id appended as the final tiebreaker.
+  final List<QueryOrder> effectiveOrders;
+
+  /// SQL fragments for [allFilters], ANDed together.
+  final List<String> whereFragments;
+
+  /// Bound values for [whereFragments], in placeholder order.
+  final List<Object?> whereArgs;
+
+  /// The physical index the planner selected, or `null` for a full scan.
+  /// The engine holds the read while a bulk writer has this index deferred.
+  final String? servingIndex;
+}
+
+ResolvedFilters resolveQueryFilters({
   required RegistryEntry entry,
   required CollectionPath? scopePath,
   required List<QueryFilter> filters,
   required List<QueryOrder> orders,
-  required int? limit,
-  required String? cursor,
   required bool fullScan,
 }) {
   final scopeValues = scopePath == null
@@ -230,7 +250,6 @@ PlannedQuery planQuery({
   for (final filter in allFilters) {
     (filter.isEqualityClass ? equalityNames : rangeNames).add(filter.name);
   }
-  final fingerprint = _fingerprint(entry, scopePath, filters, effectiveOrders);
 
   // Which index serves the query (or none, for a full scan). The engine
   // holds the query while that index is deferred by a bulk writer.
@@ -252,10 +271,44 @@ PlannedQuery planQuery({
     for (final filter in allFilters) ...filter.sqlValues,
   ];
 
-  // Keyset predicate for the next page, bound after the filter values. The
-  // count statement deliberately never sees it.
+  return ResolvedFilters._(
+    allFilters,
+    effectiveOrders,
+    filterWhere,
+    whereArgs,
+    serving?.name,
+  );
+}
+
+/// Builds the SQL for a query: filters, index check, sort order, keyset
+/// pagination and count. Pure function over the registry entry.
+///
+/// Throws a [MissingIndexException] when no index serves the query and it
+/// was not marked as a full scan, and an [InvalidCursorException] or
+/// [CursorMismatchException] when [cursor] does not belong to this query.
+PlannedQuery planQuery({
+  required RegistryEntry entry,
+  required CollectionPath? scopePath,
+  required List<QueryFilter> filters,
+  required List<QueryOrder> orders,
+  required int? limit,
+  required String? cursor,
+  required bool fullScan,
+}) {
+  final resolved = resolveQueryFilters(
+    entry: entry,
+    scopePath: scopePath,
+    filters: filters,
+    orders: orders,
+    fullScan: fullScan,
+  );
+  final effectiveOrders = resolved.effectiveOrders;
+  final fingerprint = _fingerprint(entry, scopePath, filters, effectiveOrders);
+  final filterWhere = resolved.whereFragments;
+
+  // Keyset predicate for the next page, bound after the filter values.
+  final args = <Object?>[...resolved.whereArgs];
   var keysetWhere = '';
-  final args = <Object?>[...whereArgs];
   if (cursor != null) {
     final keys = CursorCodec.decode(cursor, expectedFingerprint: fingerprint);
     if (keys.length != effectiveOrders.length) {
@@ -274,10 +327,6 @@ PlannedQuery planQuery({
   if (pageWhere.isNotEmpty) {
     sql = '$sql WHERE ${pageWhere.join(' AND ')}';
   }
-  var countSql = 'SELECT count(*) AS c FROM ${entry.table}';
-  if (filterWhere.isNotEmpty) {
-    countSql = '$countSql WHERE ${filterWhere.join(' AND ')}';
-  }
 
   final orderSql = [
     for (final order in effectiveOrders)
@@ -295,13 +344,433 @@ PlannedQuery planQuery({
   return PlannedQuery(
     sql: sql,
     args: args,
-    countSql: countSql,
-    countArgs: [...whereArgs],
     fingerprint: fingerprint,
     cursorColumns: _cursorColumns(entry, effectiveOrders),
-    servingIndex: serving?.name,
+    servingIndex: resolved.servingIndex,
   );
 }
+
+/// Firestore's limit of aggregate functions per `.aggregate([...])` call.
+const int maxAggregatesPerCall = 5;
+
+/// The most keys one `.groupBy([...])` call may list.
+const int maxGroupKeys = 4;
+
+/// The planned SQL of an aggregate or groupBy query: one statement, its
+/// bound arguments, and the physical index the filters' plan needs (which a
+/// running bulk writer may have deferred).
+final class PlannedAggregate {
+  const PlannedAggregate({
+    required this.sql,
+    required this.args,
+    required this.servingIndex,
+  });
+
+  /// The aggregate `SELECT`, bound to [args].
+  final String sql;
+
+  /// Arguments for [sql], in placeholder order.
+  final List<Object?> args;
+
+  /// The physical index the planner selected for the filters, or `null`
+  /// when the query runs without an index guarantee (`.allowFullScan()`).
+  final String? servingIndex;
+}
+
+/// Builds the SQL for an aggregate query: one statement computing every
+/// requested [count]/[sum]/[average]/[min]/[max] over the query's filtered
+/// rows (the first [limit] rows in the query's order when it has both a
+/// limit and sort keys — a subquery, because a top-level `LIMIT` would
+/// apply to the single result row and do nothing; without a limit the
+/// `ORDER BY` is dropped). Pure function over the registry entry.
+///
+/// Throws the same [MissingIndexException] [planQuery] throws — the index
+/// rule is the query rule — and an [UnmirroredFieldException] for a field
+/// without an `f_` column.
+PlannedAggregate planAggregate({
+  required RegistryEntry entry,
+  required CollectionPath? scopePath,
+  required List<QueryFilter> filters,
+  required List<QueryOrder> orders,
+  required int? limit,
+  required bool fullScan,
+  required List<AggregateFunction<Object?>> specs,
+}) {
+  if (specs.isEmpty) {
+    throw ArgumentError.value(
+      specs,
+      'specs',
+      'Needs at least one aggregate function',
+    );
+  }
+  if (specs.length > maxAggregatesPerCall) {
+    throw ArgumentError.value(
+      specs.length,
+      'specs',
+      'At most $maxAggregatesPerCall aggregations per call',
+    );
+  }
+  final resolved = resolveQueryFilters(
+    entry: entry,
+    scopePath: scopePath,
+    filters: filters,
+    orders: orders,
+    fullScan: fullScan,
+  );
+  final where = resolved.whereFragments.isEmpty
+      ? ''
+      : ' WHERE ${resolved.whereFragments.join(' AND ')}';
+  final selectParts = <String>['count(*) AS c'];
+  for (var i = 0; i < specs.length; i++) {
+    final fragment = _aggregateSelectSql(specs[i], entry, 'a$i');
+    if (fragment.isNotEmpty) {
+      selectParts.add(fragment);
+    }
+  }
+  final args = <Object?>[...resolved.whereArgs];
+  String sql;
+  if (limit != null) {
+    // Aggregate the first `limit` rows in the query's order: a subquery so
+    // LIMIT applies to the rows before the aggregation.
+    final columns = <String>[];
+    for (final spec in specs) {
+      final column = spec.column;
+      if (column != null) {
+        final name = _mirroredColumnName(column, entry);
+        if (!columns.contains(name)) {
+          columns.add(name);
+        }
+      }
+    }
+    final orderSql = [
+      for (final order in resolved.effectiveOrders)
+        '${_orderSqlName(entry, order.name)} '
+            '${order.descending ? 'DESC' : 'ASC'}',
+    ].join(', ');
+    final inner =
+        'SELECT ${columns.isEmpty ? '1' : columns.join(', ')} '
+        'FROM ${entry.table}$where ORDER BY $orderSql LIMIT ?';
+    args.add(limit);
+    sql = 'SELECT ${selectParts.join(', ')} FROM ($inner)';
+  } else {
+    sql = 'SELECT ${selectParts.join(', ')} FROM ${entry.table}$where';
+  }
+  return PlannedAggregate(
+    sql: sql,
+    args: args,
+    servingIndex: resolved.servingIndex,
+  );
+}
+
+/// Builds the SQL for a group-by query: one statement computing the keys and
+/// every requested aggregate per group, ordered by the keys ascending (null
+/// keys first), optionally capped with `LIMIT ?`. Pure function over the
+/// registry entry.
+///
+/// Throws the same [MissingIndexException] [planQuery] throws — the filters
+/// follow the query index rule — and [ArgumentError] for empty or oversized
+/// key/function lists.
+PlannedAggregate planGroupAggregate({
+  required RegistryEntry entry,
+  required CollectionPath? scopePath,
+  required List<QueryFilter> filters,
+  required List<QueryOrder> orders,
+  required int? limit,
+  required bool fullScan,
+  required List<GroupKeySpec<Object?, Object?>> keys,
+  required List<AggregateFunction<Object?>> specs,
+}) {
+  if (keys.isEmpty) {
+    throw ArgumentError.value(keys, 'keys', 'Needs at least one key');
+  }
+  if (keys.length > maxGroupKeys) {
+    throw ArgumentError.value(
+      keys.length,
+      'keys',
+      'At most $maxGroupKeys keys per group-by query',
+    );
+  }
+  if (specs.isEmpty) {
+    throw ArgumentError.value(
+      specs,
+      'specs',
+      'Needs at least one aggregate function',
+    );
+  }
+  if (specs.length > maxAggregatesPerCall) {
+    throw ArgumentError.value(
+      specs.length,
+      'specs',
+      'At most $maxAggregatesPerCall aggregations per call',
+    );
+  }
+  final resolved = resolveQueryFilters(
+    entry: entry,
+    scopePath: scopePath,
+    filters: filters,
+    orders: orders,
+    fullScan: fullScan,
+  );
+  final where = resolved.whereFragments.isEmpty
+      ? ''
+      : ' WHERE ${resolved.whereFragments.join(' AND ')}';
+  final selectParts = <String>[];
+  final keyAliases = <String>[];
+  final keyArgs = <Object?>[];
+  for (var i = 0; i < keys.length; i++) {
+    final (expr, args) = _keySql(keys[i], entry);
+    final alias = 'k$i';
+    selectParts.add('$expr AS $alias');
+    keyAliases.add(alias);
+    keyArgs.addAll(args);
+  }
+  selectParts.add('count(*) AS c');
+  for (var i = 0; i < specs.length; i++) {
+    final fragment = _aggregateSelectSql(specs[i], entry, 'a$i');
+    if (fragment.isNotEmpty) {
+      selectParts.add(fragment);
+    }
+  }
+  var sql =
+      'SELECT ${selectParts.join(', ')} FROM ${entry.table}$where '
+      'GROUP BY ${keyAliases.join(', ')} '
+      'ORDER BY ${keyAliases.map((alias) => '$alias ASC').join(', ')}';
+  // Placeholder order follows the SQL text: the key expressions sit in the
+  // SELECT list, ahead of the WHERE clause.
+  final args = <Object?>[...keyArgs, ...resolved.whereArgs];
+  if (limit != null) {
+    sql = '$sql LIMIT ?';
+    args.add(limit);
+  }
+  return PlannedAggregate(
+    sql: sql,
+    args: args,
+    servingIndex: resolved.servingIndex,
+  );
+}
+
+/// The SELECT fragment of one aggregate function, bound under [alias].
+/// `count(*)` is not re-emitted: the statement always computes `count(*)`
+/// under `c`, and a [CountAggregate] reads that.
+String _aggregateSelectSql(
+  AggregateFunction<Object?> spec,
+  RegistryEntry entry,
+  String alias,
+) => switch (spec) {
+  CountAggregate() => '',
+  SumAggregate(:final column) =>
+    'COALESCE(SUM(${_numericColumnName(column, spec, entry)}), '
+        '${column.type == ColumnType.integer ? 0 : 0.0}) AS $alias',
+  AverageAggregate(:final column) =>
+    'AVG(${_numericColumnName(column, spec, entry)}) AS $alias',
+  MinAggregate(:final column) =>
+    'MIN(${_mirroredColumnName(column, entry)}) AS $alias',
+  MaxAggregate(:final column) =>
+    'MAX(${_mirroredColumnName(column, entry)}) AS $alias',
+};
+
+/// The SQL column of a mirrored field, after checking it IS mirrored and
+/// numeric for [spec].
+String _numericColumnName(
+  FieldColumn<Object?, Object?> column,
+  AggregateFunction<Object?> spec,
+  RegistryEntry entry,
+) {
+  if (column.type != ColumnType.integer && column.type != ColumnType.real) {
+    throw ArgumentError.value(
+      column.name,
+      'column',
+      '${spec.label} needs a numeric (int/double) field',
+    );
+  }
+  return _mirroredColumnName(column, entry);
+}
+
+/// The SQL column of a mirrored field, throwing an
+/// [UnmirroredFieldException] for a field without an `f_` column: aggregates
+/// run in SQLite, which reads only the mirrored columns, never the document
+/// blob.
+String _mirroredColumnName(
+  FieldColumn<Object?, Object?> column,
+  RegistryEntry entry,
+) {
+  final mirrored = entry.fieldColumns.any(
+    (declared) => declared.name == column.name,
+  );
+  if (!mirrored) {
+    final declaration = "Index(['${column.name}'])";
+    throw UnmirroredFieldException(
+      'Field "${column.name}" of ${entry.adapter.model} '
+      '(${entry.adapter.pattern}) is not mirrored into a column: only '
+      'indexed fields are copied into f_ columns, and aggregates read '
+      'columns, never the document blob. Add $declaration to its '
+      '@Collection declaration (or the FieldColumn to a hand-written '
+      "adapter's columns) to mirror it, or read the documents and "
+      'aggregate in Dart.',
+      suggestedDeclaration: declaration,
+    );
+  }
+  return fieldColumnName(column.name);
+}
+
+/// The SELECT/GROUP BY fragment of one group key, with its bound arguments.
+(String, List<Object?>) _keySql(
+  GroupKeySpec<Object?, Object?> key,
+  RegistryEntry entry,
+) => switch (key) {
+  FieldKey(:final column) => (_mirroredColumnName(column, entry), const []),
+  ParamKey(:final column) => (_paramKeyName(column, entry), const []),
+  BucketKey(:final column, :final width) => _bucketSql(column, width, entry),
+  CalendarKey(:final column, :final period, :final utcOffset) => _calendarSql(
+    column,
+    period,
+    utcOffset,
+    entry,
+  ),
+};
+
+/// The SQL column of a path param key, after checking the param belongs to
+/// this collection's pattern.
+String _paramKeyName(ParamColumn column, RegistryEntry entry) {
+  if (column.pattern != entry.adapter.pattern) {
+    throw ArgumentError.value(
+      column.name,
+      'column',
+      'paramKey needs a path param of ${entry.adapter.pattern}',
+    );
+  }
+  return column.sqlName;
+}
+
+/// The SQL expression of a [bucket] key: exact integer floor-mod arithmetic
+/// for an integer field with an integer width (value - floorMod(value,
+/// width) = floor(value / width) * width, no floating point), `FLOOR`
+/// division for double fields.
+(String, List<Object?>) _bucketSql(
+  FieldColumn<Object?, Object?> column,
+  num width,
+  RegistryEntry entry,
+) {
+  if (width <= 0) {
+    throw ArgumentError.value(width, 'width', 'Must be positive');
+  }
+  final name = _mirroredColumnName(column, entry);
+  if (column.type == ColumnType.integer && width is int) {
+    final expr = '($name - ((($name % ?) + ?) % ?))';
+    return (expr, [width, width, width]);
+  }
+  if (column.type == ColumnType.real) {
+    // The column identifier is inlined (never a bound parameter); only the
+    // width is bound.
+    final expr = 'FLOOR($name / ?) * ?';
+    return (expr, [width, width]);
+  }
+  throw ArgumentError.value(
+    width,
+    'width',
+    'A fractional width on integer field "${column.name}" would produce '
+        'double keys; use an integer width',
+  );
+}
+
+/// The SQL expression of a [year]/[month]/[day] key: shift the stored UTC
+/// microseconds by the fixed offset, take the containing UTC day with exact
+/// integer floor division (no floating point, correct before 1970), and read
+/// the calendar off the local midnight — so `+08:00` moves a 23:30 UTC
+/// instant into the next local day.
+(String, List<Object?>) _calendarSql(
+  FieldColumn<Object?, Object?> column,
+  CalendarPeriod period,
+  Duration utcOffset,
+  RegistryEntry entry,
+) {
+  if (column.type != ColumnType.integer) {
+    throw ArgumentError.value(
+      column.name,
+      'column',
+      'Calendar keys need a DateTime field',
+    );
+  }
+  final name = _mirroredColumnName(column, entry);
+  // floorDiv(micros + offset, 86400000000) * 86400 = the local midnight's
+  // UTC seconds; date(.., 'unixepoch') reads its calendar date.
+  const dayMicros = 86400000000;
+  final shifted = '($name + ?)';
+  final daySeconds =
+      '((($shifted - ((($shifted % $dayMicros) + $dayMicros) '
+      '% $dayMicros)) / $dayMicros) * 86400)';
+  final format = switch (period) {
+    CalendarPeriod.year => '%Y',
+    CalendarPeriod.month => '%Y%m',
+    CalendarPeriod.day => '%Y%m%d',
+  };
+  final offsetMicros = utcOffset.inMicroseconds;
+  final expr =
+      "CAST(strftime('$format', date($daySeconds, 'unixepoch')) "
+      'AS INTEGER)';
+  return (expr, [offsetMicros, offsetMicros]);
+}
+
+/// Converts one aggregate SELECT row into an [AggregateQuerySnapshot]: the
+/// `c` column is the count, `a<i>` the value of specs[i].
+@internal
+AggregateQuerySnapshot<S> aggregateSnapshotFromRow<S extends Object>(
+  List<AggregateFunction<S>> specs,
+  Map<String, Object?> row,
+) {
+  final values = <Object?>[
+    for (var i = 0; i < specs.length; i++) _aggregateValueOf(specs[i], row, i),
+  ];
+  return AggregateQuerySnapshot<S>(specs, values, row['c']! as int);
+}
+
+/// Converts group-by SELECT rows into [AggregateGroup]s: `k<i>` is key[i]'s
+/// value, `c` the group's document count, `a<i>` the value of specs[i].
+@internal
+List<AggregateGroup<S>> aggregateGroupsFromRows<S extends Object>(
+  List<GroupKeySpec<S, Object?>> keys,
+  List<AggregateFunction<S>> specs,
+  List<Map<String, Object?>> rows,
+) => [
+  for (final row in rows)
+    AggregateGroup<S>(
+      keys,
+      [for (var i = 0; i < keys.length; i++) _keyValueOf(keys[i], row['k$i'])],
+      specs,
+      [
+        for (var i = 0; i < specs.length; i++)
+          _aggregateValueOf(specs[i], row, i),
+      ],
+      row['c']! as int,
+    ),
+];
+
+/// The Dart value of one aggregate column: counts and integer sums are
+/// `int`s, double sums `double`s, averages `double?`, and min/max values are
+/// converted back to the field's type by its own `fromSql`.
+Object? _aggregateValueOf(
+  AggregateFunction<Object?> spec,
+  Map<String, Object?> row,
+  int index,
+) => switch (spec) {
+  CountAggregate() => row['c'],
+  SumAggregate() => row['a$index'],
+  AverageAggregate() => (row['a$index'] as num?)?.toDouble(),
+  MinAggregate(:final column) || MaxAggregate(:final column) =>
+    row['a$index'] == null ? null : column.fromSql(row['a$index']),
+};
+
+/// The Dart value of one group key column, converted back to the key's type.
+Object? _keyValueOf(GroupKeySpec<Object?, Object?> key, Object? raw) =>
+    switch (key) {
+      FieldKey(:final column) => raw == null ? null : column.fromSql(raw),
+      ParamKey() => raw as String?,
+      BucketKey(:final column, :final width) =>
+        column.type == ColumnType.integer && width is int
+            ? raw as int?
+            : (raw as num?)?.toDouble(),
+      CalendarKey() => raw as int?,
+    };
 
 /// The first index that can serve the query, throwing a
 /// [MissingIndexException] when none does.
@@ -666,9 +1135,85 @@ final class CocoonQuery<T extends Object> {
   Stream<QueryPage<T>> watchFrom(String? cursor) =>
       (cursor == null ? this : startAfter(cursor)).watch();
 
-  /// Counts the matching documents (`SELECT count(*)`), under the same index
-  /// rule as [get].
+  /// Counts the matching documents, under the same index rule as [get].
+  /// Sugar for `aggregate([count()])` — one `SELECT count(*)` statement.
   Future<int> count() => _db.runCount(this);
+
+  /// Computes aggregates over this query's results in one SQLite statement:
+  /// Firestore's [count]/[sum]/[average], plus Cocoon's [min]/[max].
+  ///
+  /// ```dart
+  /// final snapshot = await a1.collection(txns)
+  ///     .where(txnBookedOn.isGreaterThanOrEqualTo(20260101))
+  ///     .aggregate([count(), sum(txnAmountMinor), average(txnAmountMinor)])
+  ///     .get();
+  /// print(snapshot.count); // documents matched
+  /// print(snapshot.getSum(txnAmountMinor)); // int, nulls skipped
+  /// ```
+  ///
+  /// The filters follow the same index rule as [get] (a
+  /// [MissingIndexException] names the `Index([...])` to declare;
+  /// `.allowFullScan()` opts out). An `orderBy` + `limit` on this query
+  /// aggregate the first [limit] documents in that order; without a limit
+  /// the sort order is irrelevant and dropped from the SQL. A `startAfter`
+  /// cursor is ignored: aggregates always run over the whole filtered set.
+  /// Nulls are skipped by [sum]/[average]/[min]/[max] and counted by
+  /// [count]. At most [maxAggregatesPerCall] functions per call, like
+  /// Firestore. Only mirrored (indexed) fields can be aggregated — a field
+  /// without an `f_` column throws an [UnmirroredFieldException] naming the
+  /// declaration that would mirror it.
+  AggregateQuery<T> aggregate(List<AggregateFunction<T>> specs) {
+    if (specs.isEmpty) {
+      throw ArgumentError.value(
+        specs,
+        'specs',
+        'Needs at least one aggregate function',
+      );
+    }
+    if (specs.length > maxAggregatesPerCall) {
+      throw ArgumentError.value(
+        specs.length,
+        'specs',
+        'At most $maxAggregatesPerCall aggregations per call',
+      );
+    }
+    return AggregateQuery<T>(this, List.unmodifiable(specs));
+  }
+
+  /// Starts a group-by query (a Cocoon extension, not in Firestore):
+  /// buckets this query's results by [keys] and aggregates per group.
+  ///
+  /// ```dart
+  /// final groups = await a1.collection(txns)
+  ///     .groupBy([key(txnCurrency), bucket(txnBookedOn, width: 100)])
+  ///     .aggregate([sum(txnAmountMinor), count()])
+  ///     .get();
+  /// for (final group in groups) {
+  ///   print('${group.key(txnCurrency)}: ${group.getSum(txnAmountMinor)}');
+  /// }
+  /// ```
+  ///
+  /// Key kinds: [key] (a field's own value), [paramKey] (a path param, so a
+  /// collection-group query can group one aggregate per parent), [bucket]
+  /// (fixed-width numeric bands) and [year]/[month]/[day] (calendar buckets
+  /// on `DateTime` fields at a fixed `utcOffset` — see their dartdoc for
+  /// the DST rule). At most [maxGroupKeys] keys; up to
+  /// [maxAggregatesPerCall] functions per `.aggregate` call; groups come
+  /// ordered by the keys ascending, null keys first. The filters follow the
+  /// same index rule as [get].
+  GroupByQuery<T> groupBy(List<GroupKeySpec<T, Object?>> keys) {
+    if (keys.isEmpty) {
+      throw ArgumentError.value(keys, 'keys', 'Needs at least one key');
+    }
+    if (keys.length > maxGroupKeys) {
+      throw ArgumentError.value(
+        keys.length,
+        'keys',
+        'At most $maxGroupKeys keys per group-by query',
+      );
+    }
+    return GroupByQuery<T>._(this, List.unmodifiable(keys));
+  }
 
   /// The engine-facing view of this query.
   @internal
@@ -709,5 +1254,144 @@ final class CocoonQuery<T extends Object> {
         'Unknown field or path param for collection ${_adapter.pattern}',
       );
     }
+  }
+}
+
+/// An aggregate query: computes the requested [count]/[sum]/[average]/
+/// [min]/[max] over a [CocoonQuery]'s results in one SQLite statement —
+/// Firestore's aggregate queries, pushdown included. Build with
+/// [CocoonQuery.aggregate].
+///
+/// ```dart
+/// final snapshot = await a1.collection(txns)
+///     .aggregate([count(), sum(txnAmountMinor)])
+///     .get();
+/// print('${snapshot.count} documents, ${snapshot.getSum(txnAmountMinor)} total');
+/// ```
+final class AggregateQuery<T extends Object> {
+  @internal
+  AggregateQuery(this.query, this.specs);
+
+  /// The query whose filters (and, with a limit, the first-N window) shape
+  /// the aggregation.
+  final CocoonQuery<T> query;
+
+  /// The requested aggregate functions.
+  final List<AggregateFunction<T>> specs;
+
+  /// Runs the aggregation: one statement, no documents decoded.
+  Future<AggregateQuerySnapshot<T>> get() => _db.runAggregate(this);
+
+  /// Watches the aggregates.
+  ///
+  /// The stream starts work on the first listen and stops when the last
+  /// listener cancels (the watcher unregisters; re-listening restarts it).
+  /// It emits the current snapshot on listen, then re-runs only when a
+  /// committed transaction touched this query's collection — and, for
+  /// subcollection queries, a path inside the parent scope; writes to other
+  /// tables or other parents never re-run it. Re-runs are coalesced like a
+  /// query watch's, and a snapshot whose values equal the previous one is
+  /// not emitted. Closing the database completes the stream.
+  Stream<AggregateQuerySnapshot<T>> watch() => _db.watchAggregate(this);
+
+  Cocoon get _db => query._db;
+}
+
+/// The builder a [CocoonQuery.groupBy] call returns: the group keys, ready
+/// for `.aggregate([...])` (and an optional `.limit()` on groups).
+final class GroupByQuery<T extends Object> {
+  GroupByQuery._(this._query, this._keys);
+
+  final CocoonQuery<T> _query;
+  final List<GroupKeySpec<T, Object?>> _keys;
+
+  /// Caps how many groups come back: the first [maxGroups] in key order.
+  GroupByQuery<T> limit(int maxGroups) {
+    _requirePositiveLimit(maxGroups);
+    return GroupByQuery<T>._(_query, _keys).._limit = maxGroups;
+  }
+
+  /// Requests the aggregates each group carries — the same functions as
+  /// [CocoonQuery.aggregate]. At most [maxAggregatesPerCall] per call.
+  AggregateGroupQuery<T> aggregate(List<AggregateFunction<T>> specs) {
+    if (specs.isEmpty) {
+      throw ArgumentError.value(
+        specs,
+        'specs',
+        'Needs at least one aggregate function',
+      );
+    }
+    if (specs.length > maxAggregatesPerCall) {
+      throw ArgumentError.value(
+        specs.length,
+        'specs',
+        'At most $maxAggregatesPerCall aggregations per call',
+      );
+    }
+    return AggregateGroupQuery<T>._(
+      _query,
+      _keys,
+      _limit,
+      List.unmodifiable(specs),
+    );
+  }
+
+  int? _limit;
+}
+
+/// A group-by query ready to run: the keys, the requested aggregates and an
+/// optional group cap. Build with [CocoonQuery.groupBy] and
+/// [GroupByQuery.aggregate].
+///
+/// ```dart
+/// final groups = await a1.collection(txns)
+///     .groupBy([bucket(txnBookedOn, width: 100)])
+///     .aggregate([sum(txnAmountMinor), count()])
+///     .get();
+/// ```
+final class AggregateGroupQuery<T extends Object> {
+  AggregateGroupQuery._(this.query, this.keys, this.maxGroups, this.specs);
+
+  /// The query whose filters shape the groups.
+  @internal
+  final CocoonQuery<T> query;
+
+  /// The group keys, in the order they were given.
+  @internal
+  final List<GroupKeySpec<T, Object?>> keys;
+
+  /// The group cap, or `null` for every group.
+  @internal
+  final int? maxGroups;
+
+  /// The requested aggregate functions.
+  @internal
+  final List<AggregateFunction<T>> specs;
+
+  /// Caps how many groups come back: the first [maxGroups] in key order.
+  AggregateGroupQuery<T> limit(int maxGroups) {
+    _requirePositiveLimit(maxGroups);
+    return AggregateGroupQuery<T>._(query, keys, maxGroups, specs);
+  }
+
+  /// Runs the group-by: one statement, no documents decoded. Groups come
+  /// ordered by the keys ascending; groups whose key values are null sort
+  /// first.
+  Future<List<AggregateGroup<T>>> get() => _db.runGroupAggregate(this);
+
+  /// Watches the groups.
+  ///
+  /// Behaves like [AggregateQuery.watch] — first emission on listen,
+  /// table-(and scope-)scoped re-runs, coalescing, and no re-emission while
+  /// the group list is equal to the previous one (same keys, same counts,
+  /// same values).
+  Stream<List<AggregateGroup<T>>> watch() => _db.watchGroupAggregate(this);
+
+  Cocoon get _db => query._db;
+}
+
+void _requirePositiveLimit(int maxGroups) {
+  if (maxGroups < 1) {
+    throw ArgumentError.value(maxGroups, 'maxGroups', 'Must be at least 1');
   }
 }

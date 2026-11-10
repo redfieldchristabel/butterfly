@@ -13,6 +13,7 @@ import '../migration.dart';
 import '../path.dart';
 import '../schema.dart';
 import 'adapter.dart';
+import 'aggregate.dart';
 import 'backup.dart';
 import 'batch.dart';
 import 'bulk_writer.dart';
@@ -721,20 +722,108 @@ final class Cocoon {
 
   @internal
   Future<int> runCount<T extends Object>(CocoonQuery<T> query) async {
-    final spec = query.spec;
+    // Sugar for `aggregate([count()])`: the same planner, the same index
+    // rule, the same one-statement execution, identical results.
+    final snapshot = await runAggregate<T>(
+      AggregateQuery<T>(query, [count<T>()]),
+    );
+    return snapshot.count;
+  }
+
+  /// Runs an [AggregateQuery]: one statement over the mirrored columns, no
+  /// documents decoded.
+  ///
+  /// A plan whose serving index a bulk writer currently has deferred waits
+  /// until the writer rebuilds it, then runs — exactly like a query.
+  @internal
+  Future<AggregateQuerySnapshot<T>> runAggregate<T extends Object>(
+    AggregateQuery<T> aggregate,
+  ) async {
+    final spec = aggregate.query.spec;
     final entry = _registry.entryFor(spec.adapter);
-    final plan = planQuery(
+    final plan = planAggregate(
       entry: entry,
       scopePath: spec.scopePath,
       filters: spec.filters,
       orders: spec.orders,
-      limit: null,
-      cursor: null,
+      limit: spec.limit,
       fullScan: spec.fullScan,
+      specs: aggregate.specs,
     );
     await waitForBulkIndexes(plan.servingIndex);
-    final rows = await _executor.getAll(plan.countSql, plan.countArgs);
-    return rows.first['c']! as int;
+    final rows = await _executor.getAll(plan.sql, plan.args);
+    return aggregateSnapshotFromRow<T>(aggregate.specs, rows.single);
+  }
+
+  /// Runs a group-by query: one statement, one [AggregateGroup] per row.
+  ///
+  /// Waits for deferred bulk-writer indexes exactly like [runAggregate].
+  @internal
+  Future<List<AggregateGroup<T>>> runGroupAggregate<T extends Object>(
+    AggregateGroupQuery<T> aggregate,
+  ) async {
+    final spec = aggregate.query.spec;
+    final entry = _registry.entryFor(spec.adapter);
+    final plan = planGroupAggregate(
+      entry: entry,
+      scopePath: spec.scopePath,
+      filters: spec.filters,
+      orders: spec.orders,
+      limit: aggregate.maxGroups,
+      fullScan: spec.fullScan,
+      keys: aggregate.keys,
+      specs: aggregate.specs,
+    );
+    await waitForBulkIndexes(plan.servingIndex);
+    final rows = await _executor.getAll(plan.sql, plan.args);
+    return aggregateGroupsFromRows<T>(aggregate.keys, aggregate.specs, rows);
+  }
+
+  /// The live stream behind [AggregateQuery.watch].
+  @internal
+  Stream<AggregateQuerySnapshot<T>> watchAggregate<T extends Object>(
+    AggregateQuery<T> aggregate,
+  ) {
+    final spec = aggregate.query.spec;
+    final entry = _registry.entryFor(spec.adapter);
+    return ComputedWatch<AggregateQuerySnapshot<T>>(
+      this,
+      entry.table,
+      spec.scopePath,
+      () => runAggregate(aggregate),
+      (previous, next) => previous == next,
+    ).stream;
+  }
+
+  /// The live stream behind [AggregateGroupQuery.watch].
+  @internal
+  Stream<List<AggregateGroup<T>>> watchGroupAggregate<T extends Object>(
+    AggregateGroupQuery<T> aggregate,
+  ) {
+    final spec = aggregate.query.spec;
+    final entry = _registry.entryFor(spec.adapter);
+    return ComputedWatch<List<AggregateGroup<T>>>(
+      this,
+      entry.table,
+      spec.scopePath,
+      () => runGroupAggregate(aggregate),
+      (previous, next) => _sameGroups(previous, next),
+    ).stream;
+  }
+
+  static bool _sameGroups<T extends Object>(
+    List<AggregateGroup<T>> previous,
+    List<AggregateGroup<T>> next,
+  ) {
+    if (previous.length != next.length) {
+      return false;
+    }
+    for (var i = 0; i < previous.length; i++) {
+      if (previous[i] != next[i]) {
+        return false;
+      }
+    }
+    return true;
   }
 
   // -- Bulk-writer deferred indexes ----------------------------------------

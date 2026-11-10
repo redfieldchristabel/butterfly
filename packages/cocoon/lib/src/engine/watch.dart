@@ -278,6 +278,112 @@ final class QueryWatch<T extends Object> implements CommitListener {
   }
 }
 
+/// A live watch over any computed read — aggregate queries and groupBy
+/// queries: re-runs [read] when a commit touched [table] (and, for scoped
+/// queries, a path inside [scopePath]), and skips emissions that [same] the
+/// previous one.
+///
+/// Commits landing while a re-run is in flight are coalesced into at most
+/// one more re-run, exactly like [QueryWatch]; the first emission is always
+/// forced.
+final class ComputedWatch<R extends Object> implements CommitListener {
+  ComputedWatch(this._db, this._table, this._scopePath, this._read, this._same);
+
+  final Cocoon _db;
+  final String _table;
+
+  /// The parent collection path of a scoped query, or `null` for a
+  /// collection-group query (every path of the table then matches).
+  final CollectionPath? _scopePath;
+  final Future<R> Function() _read;
+  final bool Function(R previous, R next) _same;
+
+  late final StreamController<R> _controller = StreamController<R>.broadcast(
+    onListen: _onListen,
+    onCancel: _onCancel,
+  );
+
+  /// The stream; work starts on the first listen and stops when the last
+  /// listener cancels.
+  Stream<R> get stream => _controller.stream;
+
+  R? _lastEmitted;
+  bool _hasEmitted = false;
+  bool _registered = false;
+  bool _pumping = false;
+  bool _dirty = false;
+
+  void _onListen() {
+    if (!_registered) {
+      _db.watchHub.add(this);
+      _registered = true;
+    }
+    _pump(force: true);
+  }
+
+  void _onCancel() {
+    if (_registered) {
+      _db.watchHub.remove(this);
+      _registered = false;
+    }
+  }
+
+  @override
+  void onCommit(CommitEvent event) {
+    for (final (table, path, _) in event.touched) {
+      if (table != _table) {
+        continue;
+      }
+      final scope = _scopePath;
+      if (scope == null || path.startsWith('${scope.path}/')) {
+        _dirty = true;
+        _pump();
+        return;
+      }
+    }
+  }
+
+  @override
+  void shutdown() {
+    _controller.close();
+  }
+
+  /// Re-runs and emits, coalescing commits that arrive mid-flight: at most
+  /// one more re-run happens after the current one finishes.
+  Future<void> _pump({bool force = false}) async {
+    if (_controller.isClosed) {
+      return;
+    }
+    if (_pumping) {
+      // Already re-running; _dirty makes it loop once more afterwards.
+      return;
+    }
+    _pumping = true;
+    var mustEmit = force;
+    try {
+      while (!_controller.isClosed && (mustEmit || _dirty)) {
+        _dirty = false;
+        final result = await _read();
+        if (_controller.isClosed) {
+          return;
+        }
+        if (mustEmit || !_hasEmitted || !_same(_lastEmitted as R, result)) {
+          _lastEmitted = result;
+          _hasEmitted = true;
+          _controller.add(result);
+        }
+        mustEmit = false;
+      }
+    } on Object catch (error, stackTrace) {
+      if (!_controller.isClosed) {
+        _controller.addError(error, stackTrace);
+      }
+    } finally {
+      _pumping = false;
+    }
+  }
+}
+
 /// Byte equality over canonical wire bytes; `null` means "document absent".
 bool _bytesEqual(Uint8List? a, Uint8List? b) {
   if (identical(a, b)) {
