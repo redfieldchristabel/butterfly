@@ -23,6 +23,7 @@ final _collectionChecker = TypeChecker.typeNamed(
 );
 final _embeddedChecker = TypeChecker.typeNamed(Embedded, inPackage: 'cocoon');
 final _ignoreChecker = TypeChecker.typeNamed(Ignore, inPackage: 'cocoon');
+final _mirroredChecker = TypeChecker.typeNamed(Mirrored, inPackage: 'cocoon');
 
 /// A user source problem: the generator reports [message] as a build error.
 class CocoonBuildError implements Exception {
@@ -55,6 +56,9 @@ String describeCollectionDiff(CollectionDiff diff) {
     if (diff.typeChanged.isNotEmpty)
       'type changed: ${diff.typeChanged.map((c) => '${c.$1.name}: ${c.$1.type} -> ${c.$2.type}').join(', ')}',
     if (diff.indexesChanged) 'indexes changed',
+    if (diff.mirroredChanged)
+      'mirrored fields changed: '
+          '${diff.declared.mirrored.join(', ')}',
   ];
   return parts.join('; ');
 }
@@ -77,13 +81,18 @@ String describeEmbeddedDiff(EmbeddedDiff diff) {
 
 /// One stored field of an extracted class: a name and a canonical type.
 final class ExtractedField {
-  const ExtractedField(this.name, this.type);
+  const ExtractedField(this.name, this.type, {this.mirrored = false});
 
   /// The field name, e.g. `bookedOn`.
   final String name;
 
   /// The canonical lock type, e.g. `int`, `String?`, `List<embedded:Address>`.
   final String type;
+
+  /// Whether the field carries `@Mirrored()`: a column without an index.
+  /// Only meaningful on `@Collection` model fields; the extraction rejects
+  /// the annotation on `@Embedded` fields.
+  final bool mirrored;
 
   @override
   String toString() => '$name: $type';
@@ -165,6 +174,10 @@ final class ExtractedModel {
       for (final field in clazz.fields) DeclaredField(field.name, field.type),
     ],
     indexes: [for (final index in indexes) index.fields],
+    mirrored: [
+      for (final field in clazz.fields)
+        if (field.mirrored) field.name,
+    ],
   );
 }
 
@@ -273,7 +286,7 @@ ExtractedModel _extractModel(
     }
   }
 
-  final clazz = _extractClass(element, extraction);
+  final clazz = _extractClass(element, extraction, allowMirrored: true);
   try {
     tableNameFor(name);
   } on ArgumentError catch (error) {
@@ -287,7 +300,11 @@ ExtractedModel _extractModel(
   );
 }
 
-ExtractedClass _extractClass(ClassElement element, _Extraction extraction) {
+ExtractedClass _extractClass(
+  ClassElement element,
+  _Extraction extraction, {
+  required bool allowMirrored,
+}) {
   final name = element.name!;
   if (element.isAbstract) {
     throw CocoonBuildError(
@@ -386,7 +403,16 @@ ExtractedClass _extractClass(ClassElement element, _Extraction extraction) {
         'parameter is $parameterCanonical; they must match',
       );
     }
-    fields.add(ExtractedField(fieldName, fieldType));
+    final mirrored = _mirroredChecker.hasAnnotationOf(field);
+    fields.add(ExtractedField(fieldName, fieldType, mirrored: mirrored));
+    if (mirrored && !allowMirrored) {
+      throw CocoonBuildError(
+        'Field "$fieldName" of $name cannot be @Mirrored: the annotation is '
+        'only allowed on @Collection model fields. Embedded fields live '
+        'inside the document blob and have no column, so there is nothing '
+        'to mirror',
+      );
+    }
   }
 
   final fieldNames = {for (final field in fields) field.name};
@@ -509,7 +535,7 @@ String _canonicalBase(DartType type, String context, _Extraction extraction) {
         extraction.extracting.add(className);
         try {
           extraction.embedded[className] = ExtractedEmbedded(
-            clazz: _extractClass(element, extraction),
+            clazz: _extractClass(element, extraction, allowMirrored: false),
           );
         } finally {
           extraction.extracting.remove(className);

@@ -38,10 +38,12 @@ class DeclaredCollection {
     required this.path,
     required List<DeclaredField> fields,
     List<List<String>> indexes = const [],
+    List<String> mirrored = const [],
   }) : fields = List.unmodifiable(fields),
        indexes = List<List<String>>.unmodifiable(
          indexes.map(List<String>.unmodifiable),
-       );
+       ),
+       mirrored = List<String>.unmodifiable(mirrored);
 
   /// The model class name; the lock is keyed by it.
   final String model;
@@ -55,6 +57,10 @@ class DeclaredCollection {
 
   /// Index field lists, `-` prefix for descending.
   final List<List<String>> indexes;
+
+  /// Field names annotated `@Mirrored()`: stored in their own `f_` column
+  /// (aggregates read it) without an index.
+  final List<String> mirrored;
 }
 
 /// An embedded class as the models declare it, read from `@Embedded`.
@@ -109,6 +115,7 @@ class CollectionSpec {
     required List<FieldSpec> fields,
     Set<int> reserved = const {},
     List<List<String>> indexes = const [],
+    List<String> mirrored = const [],
   }) : fields = List<FieldSpec>.unmodifiable(
          List<FieldSpec>.of(fields)
            ..sort((FieldSpec a, FieldSpec b) => a.number.compareTo(b.number)),
@@ -116,7 +123,8 @@ class CollectionSpec {
        reserved = Set<int>.unmodifiable(reserved),
        indexes = List<List<String>>.unmodifiable(
          indexes.map(List<String>.unmodifiable),
-       );
+       ),
+       mirrored = List<String>.unmodifiable(mirrored);
 
   factory CollectionSpec.fromJson(String model, Map<String, Object?> json) {
     final fields = (json['fields']! as Map<String, Object?>).entries.map((e) {
@@ -138,6 +146,10 @@ class CollectionSpec {
         for (final index in json['indexes'] as List<Object?>? ?? const [])
           (index! as List<Object?>).cast<String>(),
       ],
+      mirrored: [
+        for (final name in json['mirrored'] as List<Object?>? ?? const [])
+          name! as String,
+      ],
     );
   }
 
@@ -152,6 +164,12 @@ class CollectionSpec {
   final Set<int> reserved;
 
   final List<List<String>> indexes;
+
+  /// Field names annotated `@Mirrored()`: their `f_` column exists but no
+  /// index does. Recorded so a later diff sees mirrored changes (the
+  /// on-device open backfills or drops the column) and the DevTools
+  /// inspector can label them.
+  final List<String> mirrored;
 
   FieldSpec? field(String name) {
     for (final f in fields) {
@@ -169,6 +187,9 @@ class CollectionSpec {
     'fields': {for (final f in fields) f.name: f.toJson()},
     'reserved': [...reserved]..sort(),
     'indexes': indexes,
+    // Omitted when empty, so locks written before mirroring existed still
+    // round-trip byte-for-byte through this format.
+    if (mirrored.isNotEmpty) 'mirrored': mirrored,
   };
 }
 
@@ -406,6 +427,13 @@ class CollectionDiff {
       previous == null ||
       jsonEncode(previous!.indexes) != jsonEncode(declared.indexes);
 
+  /// Whether the `@Mirrored()` set changed: the on-device open adds and
+  /// backfills, or drops, the mirrored `f_` columns, so the schema version
+  /// moves with it exactly like an index change.
+  bool get mirroredChanged =>
+      previous == null ||
+      jsonEncode(previous!.mirrored) != jsonEncode(declared.mirrored);
+
   /// Whether the generator has to ask before it can resolve this diff:
   /// something was removed while something else appeared.
   bool get needsRenameDecisions =>
@@ -417,7 +445,8 @@ class CollectionDiff {
       removed.isEmpty &&
       added.isEmpty &&
       !pathChanged &&
-      !indexesChanged;
+      !indexesChanged &&
+      !mirroredChanged;
 
   /// Rename suggestions for [field], best first: same type, then most similar
   /// name. `staffId` -> `staffUid` ranks high; the CLI preselects the top one.
@@ -507,6 +536,7 @@ class CollectionDiff {
         fields: fields,
         reserved: reserved,
         indexes: declared.indexes,
+        mirrored: declared.mirrored,
       ),
       upgrades: List.unmodifiable(upgrades),
     );
@@ -544,6 +574,19 @@ class CollectionDiff {
             'fields are stored inside the document blob and have no column',
           );
         }
+      }
+    }
+    for (final name in declared.mirrored) {
+      if (!indexable.contains(name)) {
+        throw ArgumentError(
+          '@Mirrored on unknown field "$name" in ${declared.model}',
+        );
+      }
+      if (typesByName[name]?.startsWith('Map<') ?? false) {
+        throw ArgumentError(
+          'Field "$name" of ${declared.model} cannot be mirrored: Map fields '
+          'are stored inside the document blob and have no column',
+        );
       }
     }
   }

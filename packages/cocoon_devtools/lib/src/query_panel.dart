@@ -345,7 +345,11 @@ class _QueryPanelState extends State<QueryPanel> {
                         for (final field in fields)
                           DropdownMenuItem(
                             value: field.name,
-                            child: Text(field.name),
+                            child: Text(
+                              field.mirrored
+                                  ? '${field.name} (mirrored)'
+                                  : field.name,
+                            ),
                           ),
                       ],
                       onChanged: (value) =>
@@ -441,7 +445,11 @@ class _QueryPanelState extends State<QueryPanel> {
                         for (final field in fields)
                           DropdownMenuItem(
                             value: field.name,
-                            child: Text(field.name),
+                            child: Text(
+                              field.mirrored
+                                  ? '${field.name} (mirrored)'
+                                  : field.name,
+                            ),
                           ),
                       ],
                       onChanged: (value) =>

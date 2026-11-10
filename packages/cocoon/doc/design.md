@@ -190,8 +190,8 @@ on the docs site under **Cocoon**:
   averages are always `double?`, nulls are skipped by sum/average/min/max
   and counted by count, and getters for unrequested functions throw.
   Aggregatable fields are the mirrored ones — anything else throws
-  `UnmirroredFieldException` naming the `Index([...])` that would mirror
-  it (no new annotation: mirroring still means "indexed").
+  `UnmirroredFieldException` naming the declaration that would mirror it
+  (see the `@Mirrored()` decision below).
   `query.groupBy([...])` (NOT in Firestore) buckets by `key` (a field or a
   path param — one aggregate per parent for collection groups), `bucket`
   (fixed-width numeric bands, `floor(v/w)*w` in exact integer arithmetic —
@@ -202,6 +202,21 @@ on the docs site under **Cocoon**:
   keys first, optional `.limit(n)`. Aggregate and group queries watch like
   queries: first emission on listen, table-(and scope-)scoped re-runs,
   coalesced, equal consecutive values suppressed.
+- **`@Mirrored()`: a column without an index, so totals don't buy an index.**
+  Step 17 made "aggregatable" mean "indexed", which forced an `Index([...])`
+  a pure-total app never uses. `@Mirrored()` on a field stores it in its own
+  `f_` column — same type mapping, nullability and CHECK as an index field,
+  same add-and-backfill (one pass, in the open transaction) and drop path as
+  an index column — but creates no index. Aggregates and `groupBy` accept
+  it; a `where`/`orderBy` on it still follows the index rule
+  (`MissingIndexException` suggesting the `Index`, or `allowFullScan()`),
+  and the "field has no column" error names both fixes. A field that is both
+  mirrored and indexed is just indexed (one column, one index); the
+  annotation is refused on the types index fields refuse (lists, maps,
+  embedded classes) and inside `@Embedded` classes (no column exists).
+  `bulkWriter()` writes mirrored columns like any other; index deferral has
+  nothing to defer for them. The lock records mirrored fields additively
+  (omitted when empty, so pre-step-18 locks round-trip byte-for-byte).
 - **Document ids**: time-ordered UUIDv7 (`newDocId()`); `validateDocId`
   enforces path-safe ids.
 
@@ -248,5 +263,6 @@ executor, so it is deferred.
 | Import-performance knobs: `pageCacheMiB` (64 MiB page cache), `tempStoreInMemory`, sqlite_async `profileQueries` off; measurements in `benchmarks/cocoon_rivals/IMPORT.md` | done |
 | Whole-database backups: `db.backupTo()` (`VACUUM INTO` snapshot, stamped `_cocoon_meta`), `Cocoon.inspectBackup()`, `Cocoon.restoreBackup()` (closed-target rule, compatibility before the swap, `.restoring`/`.before-restore` protocol) + database instance id (`db.instanceId`) | done |
 | Aggregates: `aggregate([count(), sum, average])` (+ `minOf`/`maxOf`), one-statement SQLite pushdown with the query index rule, typed overflow error; `groupBy` extension (`key`, `paramKey`, `bucket`, `year`/`month`/`day` at a fixed `utcOffset`, group `.limit`), watches and bulk-writer wait included | done |
+| `@Mirrored()` fields: an `f_` column (aggregates, groupBy) with no index; add-and-backfill / drop at open, lock round-trip, DevTools "mirrored (no index)" label; measured storage cost and backfill time at 1M in the README | done |
 | Export/import streams (documents through the public API, NDJSON-shaped) | planned |
 | Incremental backups (change-log-tailed deltas on top of `backupTo`) | planned |

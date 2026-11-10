@@ -296,6 +296,9 @@ final class CocoonInspectorService {
               'name': column.name,
               'type': column.type.name,
               'nullable': column.nullable,
+              // Mirrored (no index): the column exists for aggregates and
+              // group-by, but no declared index covers it.
+              'mirrored': !_indexedFieldNames(entry).contains(column.name),
             },
         ],
         'indexes': [
@@ -559,6 +562,8 @@ final class CocoonInspectorService {
               'type': column['type']! as String,
               'notNull': (column['notnull']! as int) != 0,
               'isPrimaryKey': (column['pk']! as int) != 0,
+              // Mirrored (no index): an f_ column no declared index covers.
+              'mirrored': _isMirroredColumn(entry, column['name']! as String),
             },
         ],
         'indexes': [
@@ -651,6 +656,26 @@ final class CocoonInspectorService {
       [schemaVersionMetaKey],
     );
     return row == null ? null : int.tryParse(row['value']! as String);
+  }
+
+  /// The model-level field names at least one declared index covers.
+  static Set<String> _indexedFieldNames(RegistryEntry entry) => {
+    for (final index in entry.adapter.indexes)
+      for (final part in index.parts) part.name,
+  };
+
+  /// Whether [sqlName] is a mirrored-only `f_` column: a field column no
+  /// declared index covers (an `@Mirrored()` field, in generated adapters).
+  /// Non-`f_` columns (path, id, params, data) are never mirrored.
+  static bool _isMirroredColumn(RegistryEntry entry, String sqlName) {
+    if (!sqlName.startsWith('f_')) {
+      return false;
+    }
+    final indexed = <String>{
+      for (final index in entry.indexes)
+        for (final part in index.parts) part.name,
+    };
+    return !indexed.contains(sqlName);
   }
 
   /// The document's JSON the way the inspector shows it: the adapter's

@@ -15,9 +15,11 @@ import 'adapter.dart';
 /// column.
 ///
 /// Only mirrored fields can be aggregated: aggregates run inside SQLite,
-/// which cannot read the protobuf document blob. A field is mirrored
-/// exactly when it is indexed, so the fix is to index it (or to read the
-/// documents and aggregate in Dart).
+/// which cannot read the protobuf document blob. A field is mirrored when an
+/// `Index([...])` lists it or it carries `@Mirrored()`, so the fix is one of
+/// those two declarations (or reading the documents and aggregating in
+/// Dart): `@Mirrored()` for totals and group keys, an `Index([...])` when
+/// the query also filters or sorts on the field.
 class UnmirroredFieldException implements Exception {
   /// Builds the exception with a human-readable [message] and, when there
   /// is something to declare, the ready-to-paste [suggestedDeclaration].
@@ -26,8 +28,9 @@ class UnmirroredFieldException implements Exception {
   /// Explains which field failed and how to mirror it.
   final String message;
 
-  /// The `Index([...])` declaration that would mirror the field, or `null`
-  /// when there is nothing to declare.
+  /// The declaration that would mirror the field (`@Mirrored()` on the
+  /// field, or an `Index([...])` on the `@Collection`), or `null` when
+  /// there is nothing to declare.
   final String? suggestedDeclaration;
 
   @override

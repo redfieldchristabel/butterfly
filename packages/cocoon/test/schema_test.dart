@@ -4,11 +4,13 @@ import 'package:test/test.dart';
 DeclaredCollection staff(
   List<DeclaredField> fields, {
   List<List<String>> indexes = const [],
+  List<String> mirrored = const [],
 }) => DeclaredCollection(
   model: 'Staff',
   path: 'staff',
   fields: fields,
   indexes: indexes,
+  mirrored: mirrored,
 );
 
 void main() {
@@ -364,6 +366,124 @@ void main() {
       ]);
       expect(diff.embedded.single.typeChanged, hasLength(1));
       expect(diff.isEmpty, isFalse);
+    });
+  });
+
+  group('mirrored fields', () {
+    test('the lock records them and round-trips; empty omits the key', () {
+      final locked = SchemaDiff.compute(SchemaLock.empty(), [
+        staff(
+          const [
+            DeclaredField('name', 'String'),
+            DeclaredField('total', 'int'),
+          ],
+          indexes: [
+            ['name'],
+          ],
+          mirrored: ['total'],
+        ),
+      ]).resolve().lock;
+      expect(locked.collections['Staff']!.mirrored, ['total']);
+      expect(locked.toSource(), contains('"mirrored"'));
+
+      final parsed = SchemaLock.parse(locked.toSource());
+      expect(parsed.collections['Staff']!.mirrored, ['total']);
+
+      // A collection without mirrored fields keeps the old lock shape.
+      final plain = SchemaDiff.compute(SchemaLock.empty(), [
+        staff(const [DeclaredField('name', 'String')]),
+      ]).resolve().lock;
+      expect(plain.toSource(), isNot(contains('"mirrored"')));
+    });
+
+    test('a lock written before mirroring parses with none', () {
+      final source = '''
+{
+  "format": 1,
+  "version": 3,
+  "collections": {
+    "Staff": {
+      "path": "staff",
+      "fields": {"name": {"number": 1, "type": "String"}},
+      "reserved": [],
+      "indexes": [["name"]]
+    }
+  }
+}
+''';
+      final lock = SchemaLock.parse(source);
+      expect(lock.collections['Staff']!.mirrored, isEmpty);
+      // Re-serializing keeps the shape (the key stays absent).
+      expect(lock.toSource(), isNot(contains('"mirrored"')));
+    });
+
+    test('adding @Mirrored() changes the diff and bumps the version', () {
+      final before = SchemaDiff.compute(SchemaLock.empty(), [
+        staff(
+          const [
+            DeclaredField('name', 'String'),
+            DeclaredField('total', 'int'),
+          ],
+          indexes: [
+            ['name'],
+          ],
+        ),
+      ]).resolve().lock;
+
+      final diff = SchemaDiff.compute(before, [
+        staff(
+          const [
+            DeclaredField('name', 'String'),
+            DeclaredField('total', 'int'),
+          ],
+          indexes: [
+            ['name'],
+          ],
+          mirrored: ['total'],
+        ),
+      ]);
+      expect(diff.collections.single.mirroredChanged, isTrue);
+      expect(diff.isEmpty, isFalse);
+
+      final resolved = diff.resolve();
+      expect(resolved.lock.version, 2);
+      expect(resolved.lock.collections['Staff']!.mirrored, ['total']);
+      // No field moved and no rewrite is needed: the column backfills at open.
+      expect(resolved.upgrades, isEmpty);
+      expect(resolved.lock.collections['Staff']!.field('total')!.number, 2);
+    });
+
+    test('removing @Mirrored() changes the diff back', () {
+      final before = SchemaDiff.compute(SchemaLock.empty(), [
+        staff(const [DeclaredField('name', 'String')], mirrored: ['name']),
+      ]).resolve().lock;
+      expect(before.collections['Staff']!.mirrored, ['name']);
+
+      final diff = SchemaDiff.compute(before, [
+        staff(const [DeclaredField('name', 'String')]),
+      ]);
+      expect(diff.isEmpty, isFalse);
+      expect(diff.resolve().lock.collections['Staff']!.mirrored, isEmpty);
+    });
+
+    test('mirroring an unknown field or a Map field is refused', () {
+      expect(
+        () => CollectionDiff.compute(
+          null,
+          staff(const [DeclaredField('name', 'String')], mirrored: ['nope']),
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => CollectionDiff.compute(
+          null,
+          staff(
+            const [DeclaredField('meta', 'Map<String,int>')],
+            mirrored: ['meta'],
+          ),
+        ),
+        throwsArgumentError,
+      );
     });
   });
 }

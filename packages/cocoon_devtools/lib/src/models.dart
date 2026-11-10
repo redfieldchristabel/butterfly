@@ -105,12 +105,14 @@ final class InspectorDatabase {
 /// at a glance.
 String closedSuffix(bool open, String text) => open ? text : '(closed) $text';
 
-/// One column of a collection's SQL table: an indexed field or a path param.
+/// One column of a collection's SQL table: an indexed or mirrored field, or
+/// a path param.
 final class CollectionColumn {
   const CollectionColumn({
     required this.name,
     required this.type,
     required this.nullable,
+    this.mirrored = false,
   });
 
   /// Parses one entry of `listCollections`'s `columns`.
@@ -120,6 +122,7 @@ final class CollectionColumn {
       name: _stringOf(map['name'], 'name'),
       type: _stringOf(map['type'], 'type'),
       nullable: map['nullable'] == true,
+      mirrored: map['mirrored'] == true,
     );
   }
 
@@ -131,6 +134,10 @@ final class CollectionColumn {
 
   /// Whether the field can be absent; nullable columns cannot be sorted.
   final bool nullable;
+
+  /// Whether the column is mirrored without an index (`@Mirrored()`):
+  /// aggregates and group-by read it, filters and sorts need an index.
+  final bool mirrored;
 }
 
 /// One declared index of a collection, as the planner serves queries with.
@@ -600,6 +607,7 @@ final class TableColumn {
     required this.type,
     required this.notNull,
     required this.isPrimaryKey,
+    this.mirrored = false,
   });
 
   /// Parses one entry of the `schema` result's `columns`.
@@ -610,6 +618,7 @@ final class TableColumn {
       type: _stringOf(map['type'], 'type'),
       notNull: map['notNull'] == true,
       isPrimaryKey: map['isPrimaryKey'] == true,
+      mirrored: map['mirrored'] == true,
     );
   }
 
@@ -624,6 +633,10 @@ final class TableColumn {
 
   /// Whether the column is (part of) the primary key.
   final bool isPrimaryKey;
+
+  /// Whether the column is mirrored without an index (`f_` column no
+  /// declared index covers — an `@Mirrored()` field).
+  final bool mirrored;
 }
 
 /// One live SQL index, as `sqlite_master` reports it.

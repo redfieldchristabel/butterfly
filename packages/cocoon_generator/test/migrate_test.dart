@@ -151,6 +151,33 @@ final staffV1Lock = lockText(
   },
 );
 
+/// `total` newly carries `@Mirrored()`: a pure mirrored change, no field
+/// add or remove — the version bumps, no migration file is written.
+const staffMirroredModels = '''
+import 'package:cocoon/cocoon.dart';
+
+@Collection('staff', indexes: [Index(['name'])])
+class Staff {
+  const Staff({required this.name, required this.total});
+  final String name;
+  @Mirrored()
+  final int total;
+}
+''';
+
+final staffMirroredLock = lockText(
+  version: 1,
+  collections: {
+    'Staff': TestCollection(
+      'staff',
+      {'name': 'String', 'total': 'int'},
+      indexes: [
+        ['name'],
+      ],
+    ),
+  },
+);
+
 /// `staffId` renamed to `staffUid`, same type: the canonical rename prompt.
 const staffRenamedModels = '''
 import 'package:cocoon/cocoon.dart';
@@ -265,6 +292,30 @@ void main() {
     );
     expect(migrationDirExists(pkg), isFalse);
     expect(lockFileOf(pkg), staffV1Lock);
+  });
+
+  test('a new @Mirrored field: --check reports it, the run bumps the version '
+      'and records it without a migration file', () async {
+    final pkg = await tempPackage(
+      models: staffMirroredModels,
+      lock: staffMirroredLock,
+    );
+    final checked = await migrate(pkg, args: ['--check']);
+    expect(checked, 1);
+    expect(lastIo.out.toString(), contains('mirrored fields changed: total'));
+    expect(lockFileOf(pkg), staffMirroredLock); // --check never writes
+
+    final exit = await migrate(pkg);
+    expect(exit, 0);
+    final lock = SchemaLock.parse(lockFileOf(pkg));
+    expect(lock.version, 2);
+    final staff = lock.collections['Staff']!;
+    expect(staff.mirrored, ['total']);
+    // The field number is untouched: mirroring adds no wire change.
+    expect(staff.field('total')!.number, 2);
+    expect(staff.reserved, isEmpty);
+    // The on-device open backfills the column; there is no data rewrite.
+    expect(migrationDirExists(pkg), isFalse);
   });
 
   test(
@@ -595,9 +646,7 @@ class Ledger {
       );
       expect(
         source,
-        contains(
-          '(value! as Map<Object?, Object?>).cast<String, int>(),',
-        ),
+        contains('(value! as Map<Object?, Object?>).cast<String, int>(),'),
       );
     },
   );
@@ -631,10 +680,7 @@ class Ledger {
           }),
         },
       );
-      final pkg = await tempPackage(
-        models: listsV1Models,
-        lock: ledgerV1Lock,
-      );
+      final pkg = await tempPackage(models: listsV1Models, lock: ledgerV1Lock);
       File('${pkg.path}/lib/models.dart').writeAsStringSync(listsV2Models);
       final exit = await migrate(pkg);
       expect(exit, 1);
@@ -995,11 +1041,7 @@ class Ledger {
 /// output.
 String exampleV2Lock() {
   final committed =
-      jsonDecode(
-            File(
-              '../cocoon_example/cocoon.lock.json',
-            ).readAsStringSync(),
-          )
+      jsonDecode(File('../cocoon_example/cocoon.lock.json').readAsStringSync())
           as Map<String, Object?>;
   final collections = committed['collections']! as Map<String, Object?>;
   final txn = collections['Txn']! as Map<String, Object?>;

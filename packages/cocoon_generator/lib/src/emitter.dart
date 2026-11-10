@@ -81,11 +81,16 @@ final class _FieldEmit {
     required this.number,
     required this.type,
     required this.defaultCode,
+    this.mirrored = false,
   });
 
   final String name;
   final int number;
   final _Type type;
+
+  /// Whether the field carries `@Mirrored()`: it gets its `f_` column even
+  /// when no index lists it.
+  final bool mirrored;
 
   /// The constructor default value's source code, or `null`.
   final String? defaultCode;
@@ -132,6 +137,7 @@ List<_FieldEmit> _fieldsOf(
         number: fieldSpec.number,
         type: _parseType(field.type),
         defaultCode: defaults[field.name],
+        mirrored: field.mirrored,
       ),
     );
   }
@@ -194,14 +200,10 @@ void _writeMapField(
   final valueType = field.type.element!;
   String sortedLoop(String mapExpr) {
     final buffer = StringBuffer()
-      ..writeln(
-        '${indent}final $entries = $mapExpr.entries.toList()',
-      )
+      ..writeln('${indent}final $entries = $mapExpr.entries.toList()')
       ..writeln("$indent  ..sort((\$a, \$b) => \$a.key.compareTo(\$b.key));")
       ..writeln('${indent}for (final $entry in $entries) {')
-      ..writeln(
-        '$indent  $writerName.writeMessage(${field.number}, (entry) {',
-      );
+      ..writeln('$indent  $writerName.writeMessage(${field.number}, (entry) {');
     if (field.type.keyType == 'int') {
       buffer.writeln('$indent    entry.writeSint64(1, $entry.key);');
     } else {
@@ -583,9 +585,25 @@ String _emitModel(
   final instanceName = CollectionPattern.parse(model.path).collectionId;
   final fields = _fieldsOf(model.clazz, spec.fields, model.clazz.defaults);
 
-  // Only fields that appear in some index (or are path params) get columns;
-  // every field lives in the blob either way.
+  // Only fields that appear in some index, or carry `@Mirrored()`, get
+  // columns; every field lives in the blob either way. Index fields come
+  // first (in index-declaration order, as before), then the mirrored-only
+  // fields in declaration order; a field that is both is added once.
   final columns = <_FieldEmit>[];
+  void addColumn(_FieldEmit field, String kind) {
+    if (!columns.any((f) => f.name == field.name)) {
+      if (!field.type.isColumnable) {
+        throw CocoonBuildError(
+          'Field "${field.name}" of ${model.clazz.name} cannot be $kind: '
+          '${field.type.original} has no column. Only int, double, bool, '
+          'String, DateTime, Uint8List and enums can be $kind; lists, maps '
+          'and embedded classes live inside the document blob',
+        );
+      }
+      columns.add(field);
+    }
+  }
+
   for (final index in model.indexes) {
     for (final part in index.fields) {
       final name = part.startsWith('-') ? part.substring(1) : part;
@@ -599,17 +617,12 @@ String _emitModel(
           'param',
         );
       }
-      if (!columns.any((f) => f.name == name)) {
-        if (!field.type.isColumnable) {
-          throw CocoonBuildError(
-            'Field "$name" of ${model.clazz.name} cannot be indexed: '
-            '${field.type.original} has no column. Only int, double, bool, '
-            'String, DateTime, Uint8List and enums can be indexed; lists, '
-            'maps and embedded classes live inside the document blob',
-          );
-        }
-        columns.add(field);
-      }
+      addColumn(field, 'indexed');
+    }
+  }
+  for (final field in fields) {
+    if (field.mirrored) {
+      addColumn(field, 'mirrored');
     }
   }
 

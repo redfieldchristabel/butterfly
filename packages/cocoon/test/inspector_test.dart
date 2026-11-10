@@ -230,6 +230,7 @@ void main() {
         'name': 'bookedOn',
         'type': 'integer',
         'nullable': false,
+        'mirrored': false,
       });
       final memo = columns
           .map((c) => c! as Map<String, Object?>)
@@ -739,6 +740,46 @@ void main() {
       'databaseId': id,
     });
     expect(result['lock'], isNull);
+  });
+
+  test('mirrored columns are reported as mirrored (no index)', () async {
+    final db = await openDatabase(
+      collections: [accounts, txnsWithCategory, splits],
+    );
+    final id = await databaseIdOf(db);
+
+    final schema = await CocoonInspectorService.dispatch('schema', {
+      'databaseId': id,
+    });
+    final txn = (schema['tables']! as List<Object?>)
+        .map((t) => t! as Map<String, Object?>)
+        .firstWhere((t) => t['table'] == 'txn');
+    final columns = txn['columns']! as List<Object?>;
+    bool mirroredOf(String name) =>
+        (columns
+                .map((c) => c! as Map<String, Object?>)
+                .firstWhere((c) => c['name'] == name)['mirrored']!
+            as bool);
+    expect(mirroredOf('f_category'), isTrue); // mirrored, no index
+    expect(mirroredOf('f_booked_on'), isFalse); // indexed
+    expect(mirroredOf('p_account_id'), isFalse); // params never are
+    expect(mirroredOf('path'), isFalse);
+
+    final listing = await CocoonInspectorService.dispatch('listCollections', {
+      'databaseId': id,
+    });
+    final txnListing = (listing['collections']! as List<Object?>)
+        .map((c) => c! as Map<String, Object?>)
+        .firstWhere((c) => c['model'] == 'Txn');
+    final listedColumns = txnListing['columns']! as List<Object?>;
+    final category = listedColumns
+        .map((c) => c! as Map<String, Object?>)
+        .firstWhere((c) => c['name'] == 'category');
+    expect(category['mirrored'], isTrue);
+    final bookedOn = listedColumns
+        .map((c) => c! as Map<String, Object?>)
+        .firstWhere((c) => c['name'] == 'bookedOn');
+    expect(bookedOn['mirrored'], isFalse);
   });
 
   test('every handler answers an error for a closed database', () async {

@@ -58,13 +58,20 @@ Future<TestReaderWriter> _freshReaderWriter() async {
 }
 
 /// One `@Collection` entry of a test lock: path, fields (name -> canonical
-/// lock type) and indexes (field lists, `-` prefix for descending).
+/// lock type), indexes (field lists, `-` prefix for descending) and mirrored
+/// field names.
 final class TestCollection {
-  const TestCollection(this.path, this.fields, {this.indexes = const []});
+  const TestCollection(
+    this.path,
+    this.fields, {
+    this.indexes = const [],
+    this.mirrored = const [],
+  });
 
   final String path;
   final Map<String, String> fields;
   final List<List<String>> indexes;
+  final List<String> mirrored;
 }
 
 /// Builds `cocoon.lock.json` text. Fields are numbered 1..n in map order.
@@ -87,6 +94,7 @@ String lockText({
           },
           'reserved': <int>[],
           'indexes': collection.indexes,
+          if (collection.mirrored.isNotEmpty) 'mirrored': collection.mirrored,
         },
     },
     if (embedded.isNotEmpty)

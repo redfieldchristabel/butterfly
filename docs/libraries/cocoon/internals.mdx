@@ -50,7 +50,10 @@ CREATE TABLE txn (
   better than JSON generated columns: real integers, no silent
   REAL-vs-INTEGER drift, real indexes. `integer`/`real`/`text` columns carry
   a `typeof` CHECK (NULL allowed when the field is nullable); blob columns
-  are unchecked.
+  are unchecked. A `@Mirrored()` field gets the same column with no index
+  over it (aggregates and group-by read the column; filters and sorts still
+  follow the index rule). The DevTools schema view labels such columns
+  "mirrored (no index)".
 - **Large binaries** (receipts, statements) stay as files; documents store
   paths.
 - **No in-memory copy of the database.** A bounded LRU cache of recently
@@ -277,7 +280,10 @@ Key expressions, per key kind:
 
 Aggregates read only columns that exist: an `AggregateFunction` or
 `GroupKeySpec` over a field without an `f_` column throws an
-`UnmirroredFieldException` naming the `Index([...])` that would mirror it.
+`UnmirroredFieldException` naming both fixes — `@Mirrored()` on the field
+when you only total or group by it, an `Index([...])` when a query also
+filters or sorts on it (a mirrored-only column passes the aggregate rule;
+the index rule still refuses filters on it).
 
 ## Benchmarks
 

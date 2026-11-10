@@ -318,7 +318,8 @@ void main() {
                 .having(
                   (error) => error.suggestedDeclaration,
                   'suggestedDeclaration',
-                  "Index(['phantom'])",
+                  "@Mirrored() on the field, or Index(['phantom']) on its "
+                      '@Collection declaration',
                 )
                 .having(
                   (error) => error.message,

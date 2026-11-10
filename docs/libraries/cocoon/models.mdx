@@ -33,6 +33,21 @@ All annotations come from `package:cocoon/cocoon.dart`:
   creates a `UNIQUE` index.
 </Property>
 
+<Property
+  name="@Mirrored()"
+  type="field/getter annotation"
+>
+  Copies the field into its own typed `f_` column **without creating an
+  index**, so aggregates (`sum`, `average`, `minOf`, `maxOf`) and `groupBy`
+  can read it while `where`/`orderBy` stay index-only. Same column type,
+  nullability and CHECK as an index field; allowed on exactly the types an
+  index field allows. A field that is both mirrored and indexed is just
+  indexed — one column, one index. Adding the annotation to an existing
+  collection adds and backfills the column on the next open; removing it
+  drops the column. Use it for fields you total or group by but never
+  filter or sort on.
+</Property>
+
 <Property name="@Embedded()" type="class annotation">
   Marks a class as embeddable: it is stored inline inside a collection
   model's document, encoded as a nested protobuf message. Embedded classes
@@ -191,6 +206,12 @@ Build errors say exactly what to fix:
   list, empty map, epoch UTC, first enum value).
 - Maps cannot be indexed: an `Index([...])` naming a map field is a build
   error.
+- `@Mirrored()` is allowed on exactly the types an index field allows
+  (`int`, `double`, `bool`, `String`, `DateTime`, `Uint8List`, enums) and
+  inside `@Embedded` classes only as an error: embedded fields live inside
+  the document blob and have no column, so there is nothing to mirror.
+  Anything else — a list, a map, an embedded class — is a build error
+  naming the field and the supported types.
 - **Subcollection indexes start with the path params** (`accountId` above):
   a scoped query always filters them, so an index without them can't serve
   it. An index without params serves collection-group queries.

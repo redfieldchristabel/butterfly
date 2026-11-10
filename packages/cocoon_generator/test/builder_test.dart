@@ -182,6 +182,113 @@ void main() {
       );
     });
 
+    test('a mirrored field gets a column and a handle but no index', () async {
+      const model = '''
+@Collection('accounts/{accountId}/txns', indexes: [
+  Index(['accountId', '-bookedOn']),
+])
+class Txn {
+  const Txn({required this.bookedOn, required this.amountMinor, required this.rate});
+
+  final int bookedOn;
+  @Mirrored()
+  final int amountMinor;
+  final double rate;
+}
+''';
+      final lock = lockText(
+        collections: {
+          'Txn': TestCollection(
+            'accounts/{accountId}/txns',
+            const {'bookedOn': 'int', 'amountMinor': 'int', 'rate': 'double'},
+            indexes: const [
+              ['accountId', '-bookedOn'],
+            ],
+            mirrored: const ['amountMinor'],
+          ),
+        },
+      );
+      final run = await runCocoonBuilder(_head + model, lock);
+      expect(run.succeeded, isTrue, reason: run.errors.join('\n'));
+      // Mirrored fields emit the same column factory as indexed ones, in
+      // handle order: index fields first, then the mirrored-only one.
+      expect(run.code, contains('FieldColumn.integer<Txn, int>('));
+      expect(run.code, contains("'amountMinor',"));
+      expect(run.code, contains('Txn\$.amountMinor'));
+      expect(
+        run.code.indexOf('Txn\$.bookedOn'),
+        lessThan(run.code.indexOf('Txn\$.amountMinor')),
+      );
+      // And no index: only the declared one is emitted.
+      expect(
+        run.code,
+        contains("IndexDef.fromFields(const ['accountId', '-bookedOn']),"),
+      );
+      expect(
+        run.code,
+        isNot(contains("IndexDef.fromFields(const ['amountMinor'])")),
+      );
+    });
+
+    test('mirrored and indexed is one column, not two', () async {
+      const model = '''
+@Collection('accounts/{accountId}/txns', indexes: [
+  Index(['accountId', 'amountMinor']),
+])
+class Txn {
+  const Txn({required this.bookedOn, required this.amountMinor});
+
+  final int bookedOn;
+  @Mirrored()
+  final int amountMinor;
+}
+''';
+      final lock = lockText(
+        collections: {
+          'Txn': TestCollection(
+            'accounts/{accountId}/txns',
+            const {'bookedOn': 'int', 'amountMinor': 'int'},
+            indexes: const [
+              ['accountId', 'amountMinor'],
+            ],
+            mirrored: const ['amountMinor'],
+          ),
+        },
+      );
+      final run = await runCocoonBuilder(_head + model, lock);
+      expect(run.succeeded, isTrue, reason: run.errors.join('\n'));
+      // One column (the index's), one handle: the mirrored flag adds
+      // nothing the index did not already provide.
+      expect(run.code, contains("'amountMinor',"));
+      expect(run.code, contains('Txn\$.amountMinor'));
+      expect("'amountMinor',".allMatches(run.code), hasLength(1));
+    });
+
+    test('a mirrored nullable column carries its nullability', () async {
+      const model = '''
+@Collection('notes')
+class Note {
+  const Note({this.tag});
+  @Mirrored()
+  final String? tag;
+}
+''';
+      final lock = lockText(
+        collections: {
+          'Note': TestCollection(
+            'notes',
+            const {'tag': 'String?'},
+            mirrored: const ['tag'],
+          ),
+        },
+      );
+      final run = await runCocoonBuilder(_head + model, lock);
+      expect(run.succeeded, isTrue, reason: run.errors.join('\n'));
+      expect(run.code, contains('FieldColumn.text<Note, String?>('));
+      expect(run.code, contains("'tag',"));
+      expect(run.code, contains('nullable: true'));
+    });
+
     test('constructor defaults survive decode of old documents', () async {
       const model = '''
 @Collection('things')
@@ -424,11 +531,9 @@ class Thing {
       expect(run.code, contains('const cocoonSchemaVersion = 12;'));
     });
 
-    test(
-      'map fields encode as sorted entry messages and decode into '
-      'accumulators',
-      () async {
-        const model = '''
+    test('map fields encode as sorted entry messages and decode into '
+        'accumulators', () async {
+      const model = '''
 @Collection('txns')
 class Txn {
   const Txn({required this.meta, this.extra, this.byDay = const {}});
@@ -437,108 +542,94 @@ class Txn {
   final Map<int, bool> byDay;
 }
 ''';
-        final lock = lockText(
-          collections: {
-            'Txn': TestCollection('txns', const {
-              'meta': 'Map<String,String>',
-              'extra': 'Map<String,List<int>>?',
-              'byDay': 'Map<int,bool>',
-            }),
-          },
-        );
-        final run = await runCocoonBuilder(_head + model, lock);
-        expect(run.succeeded, isTrue, reason: run.errors.join('\n'));
-        // Encode: entries sorted by key, key at field 1, value at field 2,
-        // so equal maps always give equal bytes.
-        expect(
-          run.code,
-          contains('final \$metaEntries = value.meta.entries.toList()'),
-        );
-        expect(
-          run.code,
-          contains("..sort((\$a, \$b) => \$a.key.compareTo(\$b.key));"),
-        );
-        expect(
-          run.code,
-          contains('writer.writeMessage(1, (entry) {'),
-        );
-        expect(run.code, contains("entry.writeString(1, \$metaEntry.key);"));
-        expect(run.code, contains("entry.writeString(2, \$metaEntry.value);"));
-        // Nullable maps go through the null check first.
-        expect(run.code, contains('final \$extra = value.extra;'));
-        expect(run.code, contains('if (\$extra != null) {'));
-        // List values nest one level deeper inside the entry message.
-        expect(
-          run.code,
-          contains('entry.writeMessage(2, (nested) {'),
-        );
-        expect(
-          run.code,
-          contains('nested.writeSint64(\$i, \$element);'),
-        );
-        // int keys are zigzag varints, bools varints.
-        expect(run.code, contains("entry.writeSint64(1, \$byDayEntry.key);"));
-        expect(run.code, contains('entry.writeBool(2, \$byDayEntry.value);'));
-        // Decode: one accumulator per map field, entries parsed key/value.
-        expect(
-          run.code,
-          contains(
-            'final Map<String, String> \$metaEntries = <String, String>{};',
+      final lock = lockText(
+        collections: {
+          'Txn': TestCollection('txns', const {
+            'meta': 'Map<String,String>',
+            'extra': 'Map<String,List<int>>?',
+            'byDay': 'Map<int,bool>',
+          }),
+        },
+      );
+      final run = await runCocoonBuilder(_head + model, lock);
+      expect(run.succeeded, isTrue, reason: run.errors.join('\n'));
+      // Encode: entries sorted by key, key at field 1, value at field 2,
+      // so equal maps always give equal bytes.
+      expect(
+        run.code,
+        contains('final \$metaEntries = value.meta.entries.toList()'),
+      );
+      expect(
+        run.code,
+        contains("..sort((\$a, \$b) => \$a.key.compareTo(\$b.key));"),
+      );
+      expect(run.code, contains('writer.writeMessage(1, (entry) {'));
+      expect(run.code, contains("entry.writeString(1, \$metaEntry.key);"));
+      expect(run.code, contains("entry.writeString(2, \$metaEntry.value);"));
+      // Nullable maps go through the null check first.
+      expect(run.code, contains('final \$extra = value.extra;'));
+      expect(run.code, contains('if (\$extra != null) {'));
+      // List values nest one level deeper inside the entry message.
+      expect(run.code, contains('entry.writeMessage(2, (nested) {'));
+      expect(run.code, contains('nested.writeSint64(\$i, \$element);'));
+      // int keys are zigzag varints, bools varints.
+      expect(run.code, contains("entry.writeSint64(1, \$byDayEntry.key);"));
+      expect(run.code, contains('entry.writeBool(2, \$byDayEntry.value);'));
+      // Decode: one accumulator per map field, entries parsed key/value.
+      expect(
+        run.code,
+        contains(
+          'final Map<String, String> \$metaEntries = <String, String>{};',
+        ),
+      );
+      expect(
+        run.code,
+        contains(
+          'final Map<String, List<int>> \$extraEntries = <String, List<int>>{};',
+        ),
+      );
+      expect(run.code, contains('\$metaKey = \$metaReader.readString();'));
+      expect(run.code, contains('\$byDayKey = \$byDayReader.readSint64();'));
+      expect(run.code, contains('\$metaEntries[\$metaKey] = \$metaValue;'));
+      // The field locals resolve after the decode loop: constructor
+      // default, else null when nullable, else the accumulated map. The
+      // fragments are matched wrap-tolerantly: dart format may split a
+      // long conditional across lines.
+      expect(run.code, contains('Map<String, String> \$meta = \$metaEntries;'));
+      expect(
+        run.code,
+        matches(
+          RegExp(r'\$extraEntries\.isEmpty\s*\?\s*null\s*:\s*\$extraEntries'),
+        ),
+      );
+      expect(
+        run.code,
+        matches(
+          RegExp(
+            r'\$byDayEntries\.isEmpty\s*\?\s*const \{\}\s*:\s*\$byDayEntries',
           ),
-        );
-        expect(
-          run.code,
-          contains(
-            'final Map<String, List<int>> \$extraEntries = <String, List<int>>{};',
-          ),
-        );
-        expect(run.code, contains('\$metaKey = \$metaReader.readString();'));
-        expect(run.code, contains('\$byDayKey = \$byDayReader.readSint64();'));
-        expect(
-          run.code,
-          contains('\$metaEntries[\$metaKey] = \$metaValue;'),
-        );
-        // The field locals resolve after the decode loop: constructor
-        // default, else null when nullable, else the accumulated map. The
-        // fragments are matched wrap-tolerantly: dart format may split a
-        // long conditional across lines.
-        expect(
-          run.code,
-          contains('Map<String, String> \$meta = \$metaEntries;'),
-        );
-        expect(
-          run.code,
-          matches(
-            RegExp(
-              r'\$extraEntries\.isEmpty\s*\?\s*null\s*:\s*\$extraEntries',
-            ),
-          ),
-        );
-        expect(
-          run.code,
-          matches(
-            RegExp(
-              r'\$byDayEntries\.isEmpty\s*\?\s*const \{\}\s*:\s*\$byDayEntries',
-            ),
-          ),
-        );
-        // toInspectorJson: a JSON object; String keys are JSON keys as they
-        // are, int keys become their decimal string form.
-        expect(
-          run.code,
-          contains(
-            "for (final \$entry in value.meta.entries) \$entry.key: \$entry.value",
-          ),
-        );
-        expect(
-          run.code,
-          contains("for (final \$entry in value.byDay.entries) '\${\$entry.key}'"),
-        );
-      },
-    );
+        ),
+      );
+      // toInspectorJson: a JSON object; String keys are JSON keys as they
+      // are, int keys become their decimal string form.
+      expect(
+        run.code,
+        contains(
+          "for (final \$entry in value.meta.entries) \$entry.key: \$entry.value",
+        ),
+      );
+      expect(
+        run.code,
+        contains(
+          "for (final \$entry in value.byDay.entries) '\${\$entry.key}'",
+        ),
+      );
+    });
 
-    test('map values of every supported kind encode through the entry', () async {
-      const model = '''
+    test(
+      'map values of every supported kind encode through the entry',
+      () async {
+        const model = '''
 @Embedded()
 class Line {
   const Line({required this.text});
@@ -586,7 +677,10 @@ class Record {
         );
         final run = await runCocoonBuilder(_head + model, lock);
         expect(run.succeeded, isTrue, reason: run.errors.join('\n'));
-        expect(run.code, contains('entry.writeSint64(2, \$countsEntry.value);'));
+        expect(
+          run.code,
+          contains('entry.writeSint64(2, \$countsEntry.value);'),
+        );
         expect(run.code, contains('entry.writeDouble(2, \$ratesEntry.value);'));
         expect(run.code, contains('entry.writeBool(2, \$flagsEntry.value);'));
         expect(
@@ -846,6 +940,75 @@ class Thing {
       expect(
         run.errors.join('\n'),
         contains('field "grid" of Thing: nested lists'),
+      );
+    });
+
+    test(
+      'mirroring a list field fails naming the field and the types',
+      () async {
+        const model = '''
+@Collection('things')
+class Thing {
+  const Thing({required this.tags});
+  @Mirrored()
+  final List<String> tags;
+}
+''';
+        final run = await runCocoonBuilder(
+          _head + model,
+          lockText(
+            collections: {
+              'Thing': TestCollection(
+                'things',
+                const {'tags': 'List<String>'},
+                mirrored: const ['tags'],
+              ),
+            },
+          ),
+        );
+        expect(run.succeeded, isFalse);
+        final message = run.errors.join('\n');
+        expect(message, contains('Field "tags" of Thing cannot be mirrored'));
+        expect(message, contains('List<String> has no column'));
+        expect(message, contains('Only int, double, bool, String, DateTime,'));
+      },
+    );
+
+    test('a @Mirrored field inside an @Embedded class fails', () async {
+      const model = '''
+@Collection('things')
+class Thing {
+  const Thing({required this.address});
+  final Address address;
+}
+
+@Embedded()
+class Address {
+  const Address({required this.city});
+  @Mirrored()
+  final String city;
+}
+''';
+      final run = await runCocoonBuilder(
+        _head + model,
+        lockText(
+          collections: {
+            'Thing': TestCollection('things', const {
+              'address': 'embedded:Address',
+            }),
+          },
+          embedded: {
+            'Address': const {'city': 'String'},
+          },
+        ),
+      );
+      expect(run.succeeded, isFalse);
+      expect(
+        run.errors.join('\n'),
+        contains(
+          'Field "city" of Address cannot be @Mirrored: the annotation is '
+          'only allowed on @Collection model fields',
+        ),
       );
     });
 

@@ -589,7 +589,8 @@ String _numericColumnName(
 /// The SQL column of a mirrored field, throwing an
 /// [UnmirroredFieldException] for a field without an `f_` column: aggregates
 /// run in SQLite, which reads only the mirrored columns, never the document
-/// blob.
+/// blob. The error names both fixes: `@Mirrored()` on the field for totals
+/// and groups, an `Index([...])` when the query also filters or sorts on it.
 String _mirroredColumnName(
   FieldColumn<Object?, Object?> column,
   RegistryEntry entry,
@@ -598,15 +599,16 @@ String _mirroredColumnName(
     (declared) => declared.name == column.name,
   );
   if (!mirrored) {
-    final declaration = "Index(['${column.name}'])";
+    final declaration =
+        "@Mirrored() on the field, or Index(['${column.name}']) on its "
+        '@Collection declaration';
     throw UnmirroredFieldException(
       'Field "${column.name}" of ${entry.adapter.model} '
       '(${entry.adapter.pattern}) is not mirrored into a column: only '
-      'indexed fields are copied into f_ columns, and aggregates read '
-      'columns, never the document blob. Add $declaration to its '
-      '@Collection declaration (or the FieldColumn to a hand-written '
-      "adapter's columns) to mirror it, or read the documents and "
-      'aggregate in Dart.',
+      'indexed and @Mirrored fields are copied into f_ columns, and '
+      'aggregates read columns, never the document blob. Add $declaration '
+      "to mirror it (or the FieldColumn to a hand-written adapter's "
+      'columns), or read the documents and aggregate in Dart.',
       suggestedDeclaration: declaration,
     );
   }
@@ -1159,9 +1161,9 @@ final class CocoonQuery<T extends Object> {
   /// cursor is ignored: aggregates always run over the whole filtered set.
   /// Nulls are skipped by [sum]/[average]/[min]/[max] and counted by
   /// [count]. At most [maxAggregatesPerCall] functions per call, like
-  /// Firestore. Only mirrored (indexed) fields can be aggregated — a field
-  /// without an `f_` column throws an [UnmirroredFieldException] naming the
-  /// declaration that would mirror it.
+  /// Firestore. Only mirrored fields can be aggregated — an `Index([...])`
+  /// member or a `@Mirrored()` field; anything else throws an
+  /// [UnmirroredFieldException] naming the declaration that would mirror it.
   AggregateQuery<T> aggregate(List<AggregateFunction<T>> specs) {
     if (specs.isEmpty) {
       throw ArgumentError.value(

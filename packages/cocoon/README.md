@@ -125,6 +125,13 @@ Rules the generator enforces (build errors say exactly what to fix):
   list, empty map, epoch UTC, first enum value).
 - Maps cannot be indexed: an `Index([...])` naming a map field is a build
   error ("lists, maps and embedded classes live inside the document blob").
+- `@Mirrored()` on a field copies it into its own `f_` column — aggregates
+  and `groupBy` read it — without creating an index. Allowed on the types an
+  index field allows (`int`, `double`, `bool`, `String`, `DateTime`,
+  `Uint8List`, enums); a list, map, embedded class or an `@Embedded`-class
+  field is a build error naming the field and the supported types. A field
+  that is both mirrored and indexed is just indexed. See the Aggregates
+  section's `@Mirrored()` subsection for the storage and backfill costs.
 - **Subcollection indexes start with the path params** (`accountId` above):
   a scoped query always filters them, so an index without them can't serve
   it. An index without params serves collection-group queries.
@@ -355,7 +362,10 @@ prefix-siblings are safe: deleting `accounts/a1` never touches
 Filters and sorts are built from the typed handles. Every query needs an
 index that serves it (the implicit `(params..., id)` index counts) —
 otherwise `get()` throws a `MissingIndexException` whose message spells the
-`Index([...])` to declare. `.allowFullScan()` opts out explicitly.
+`Index([...])` to declare. `.allowFullScan()` opts out explicitly. A
+`@Mirrored()` field (see the Aggregates section below) has a column but no
+index: filtering or sorting on one throws the same `MissingIndexException`
+— the annotation mirrors it for totals, it does not serve queries.
 
 ```dart
 final q = a1.collection(txns)
@@ -422,12 +432,74 @@ aggregate the first N documents in that order; without a `limit` the order
 is irrelevant. `sum` of an `int` field is an `int` — exact, and summing
 past ±2^63 throws an `AggregateOverflowException` instead of wrapping.
 `average` is always a `double?`. Getters for functions you did not request
-throw. Only indexed fields can be aggregated (that is what mirrors them
-into columns); anything else throws an `UnmirroredFieldException` naming
-the `Index([...])` that would mirror it.
+throw. Only mirrored fields can be aggregated — an `Index([...])` member or
+a `@Mirrored()` field; either copies the field into an `f_` column. Anything
+else throws an `UnmirroredFieldException` naming both fixes: `@Mirrored()`
+for totals and groups, an `Index([...])` when a query also filters or sorts
+on the field.
 
 `query.count()` is sugar for `aggregate([count()])` and behaves exactly the
 same as before.
+
+### Totals over fields you don't filter on: `@Mirrored()`
+
+A field only gets a column when some `Index([...])` lists it — but a field
+you only total or group by doesn't need an index. Annotate it `@Mirrored()`
+and it gets the same `f_` column (same type mapping, nullability and CHECK
+as an index field) with no index over it:
+
+```dart
+@Collection('accounts/{accountId}/txns', indexes: [
+  Index(['accountId', '-bookedOn']),
+])
+class Txn {
+  @Mirrored()
+  final int amountMinor; // sum(...) works; where(amountMinor > x) needs an Index
+  final int bookedOn; // yyyymmdd
+  ...
+}
+```
+
+Aggregates and `groupBy` read a mirrored column exactly like an indexed one.
+A `where`/`orderBy` on it still follows the index rule —
+`MissingIndexException` suggests the `Index([...])`, `.allowFullScan()`
+opts out — and the "field has no column" error names both fixes:
+`@Mirrored()` for totals and groups, an `Index([...])` when a query also
+filters or sorts on the field. A field that is both mirrored and indexed is
+just indexed: one column, one index, no duplicate. `bulkWriter()` fills
+mirrored columns like any other; there is no index to defer, so
+`deferIndexes` doesn't affect them.
+
+Adding `@Mirrored()` to an existing collection adds and backfills the
+column on the next open — one pass over the stored documents, in the open
+transaction, crash-safe like the index backfill; removing the annotation
+drops the column the same way.
+
+Measured on the rivals dataset at 1,000,000 transactions (Cocoon only; a
+scratch copy of the schema with the amount index dropped, measured 2026-11-10
+while an Android-emulator job was running on the same host — byte counts are
+exact, the timings are +/-):
+
+| Schema variant | File size | Bytes per row |
+|---|---|---|
+| `Index(['amountMinor'])` (indexed) | 394,452,992 B | 394.5 |
+| `@Mirrored()` only (column, no index) | 371,388,416 B | 371.4 |
+| neither (no amount column) | 367,202,304 B | 367.2 |
+
+So the amount column costs ~4.2 B/row and the index over it another
+~23.1 B/row at 1M — mirroring instead of indexing a field you only total
+saves ~6% of this table's bytes per row. Adding `@Mirrored()` to an existing
+1M database backfills the column at the next open in ~12 s (one pass over
+1M documents, in the open transaction; the second open skips it — 3 ms).
+The in-place backfill leaves the file ~11% above its compacted form (403.1
+vs 364.5 B/row — page fragmentation from the column add and the row
+updates); `db.backupTo()` writes the compacted form (0.98 s at 1M), so a
+backup or any `VACUUM` reclaims it.
+
+When to pick `Index` instead: the moment any query filters or sorts on the
+field, it needs the index anyway — and an index field is already mirrored
+(one column, one index), so `@Mirrored()` on top of an `Index([...])` adds
+nothing.
 
 ### groupBy: a Cocoon extension (not in Firestore)
 

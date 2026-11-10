@@ -45,6 +45,7 @@ class Txn {
     required this.status,
     required this.createdAt,
     this.memo,
+    this.category = 'misc',
   });
 
   final int bookedOn; // yyyymmdd, so sort keys tie often
@@ -55,6 +56,10 @@ class Txn {
   final DateTime createdAt;
   final String? memo;
 
+  /// A field the tests mirror without indexing: aggregated and grouped but
+  /// never filtered.
+  final String category;
+
   Txn copyWith({
     int? bookedOn,
     int? amountMinor,
@@ -63,6 +68,7 @@ class Txn {
     TxnStatus? status,
     DateTime? createdAt,
     String? memo,
+    String? category,
   }) => Txn(
     bookedOn: bookedOn ?? this.bookedOn,
     amountMinor: amountMinor ?? this.amountMinor,
@@ -71,6 +77,7 @@ class Txn {
     status: status ?? this.status,
     createdAt: createdAt ?? this.createdAt,
     memo: memo ?? this.memo,
+    category: category ?? this.category,
   );
 
   @override
@@ -160,6 +167,10 @@ final txnMemo = FieldColumn.text<Txn, String?>(
   read: (t) => t.memo,
   nullable: true,
 );
+final txnCategory = FieldColumn.text<Txn, String>(
+  'category',
+  read: (t) => t.category,
+);
 
 final splitLabel = FieldColumn.text<Split, String>(
   'label',
@@ -230,10 +241,15 @@ final class AccountAdapter extends CollectionAdapter<Account> {
 
 final class TxnAdapter extends CollectionAdapter<Txn> {
   /// [withMemo] models a schema evolution: a `memo` field column (and its
-  /// index) added or removed after documents already exist.
-  TxnAdapter({this.withMemo = true});
+  /// index) added or removed after documents already exist. [withMirroredCategory]
+  /// models `@Mirrored()`: the `category` column exists but no index does —
+  /// added to (backfilled) or dropped from an existing database exactly like
+  /// an index column, minus the index.
+  TxnAdapter({this.withMemo = true, this.withMirroredCategory = false});
 
   final bool withMemo;
+
+  final bool withMirroredCategory;
 
   @override
   String get model => 'Txn';
@@ -250,6 +266,7 @@ final class TxnAdapter extends CollectionAdapter<Txn> {
     txnStatus,
     txnCreatedAt,
     if (withMemo) txnMemo,
+    if (withMirroredCategory) txnCategory,
   ];
 
   @override
@@ -276,6 +293,7 @@ final class TxnAdapter extends CollectionAdapter<Txn> {
     if (memo != null) {
       writer.writeString(7, memo);
     }
+    writer.writeString(8, value.category);
     return writer.toBytes();
   }
 
@@ -289,6 +307,7 @@ final class TxnAdapter extends CollectionAdapter<Txn> {
     var status = TxnStatus.pending;
     var createdAt = DateTime.utc(1970);
     String? memo;
+    var category = 'misc';
     while (!reader.isAtEnd) {
       final tag = reader.readTag();
       switch (tag.field) {
@@ -309,6 +328,8 @@ final class TxnAdapter extends CollectionAdapter<Txn> {
           );
         case 7:
           memo = reader.readString();
+        case 8:
+          category = reader.readString();
         default:
           reader.skip(tag.type);
       }
@@ -321,6 +342,7 @@ final class TxnAdapter extends CollectionAdapter<Txn> {
       status: status,
       createdAt: createdAt,
       memo: memo,
+      category: category,
     );
   }
 }
@@ -380,6 +402,7 @@ final class SplitAdapter extends CollectionAdapter<Split> {
 final accounts = AccountAdapter();
 final txns = TxnAdapter();
 final txnsWithoutMemo = TxnAdapter(withMemo: false);
+final txnsWithCategory = TxnAdapter(withMirroredCategory: true);
 final splits = SplitAdapter();
 
 final txnAccountId = ParamColumn(txns.pattern, 'accountId');

@@ -48,6 +48,12 @@ void main() {
             'columns': [
               {'name': 'bookedOn', 'type': 'integer', 'nullable': false},
               {'name': 'memo', 'type': 'text', 'nullable': true},
+              {
+                'name': 'amountMinor',
+                'type': 'integer',
+                'nullable': false,
+                'mirrored': true,
+              },
             ],
             'indexes': [
               {
@@ -69,6 +75,12 @@ void main() {
       expect(collection.documentCount, 42);
       expect(collection.columns[0].name, 'bookedOn');
       expect(collection.columns[1].nullable, isTrue);
+      // `mirrored` is optional in the payload and defaults to false: an
+      // indexed column parses as not mirrored, an `@Mirrored()` column as
+      // mirrored.
+      expect(collection.columns[0].mirrored, isFalse);
+      expect(collection.columns[2].name, 'amountMinor');
+      expect(collection.columns[2].mirrored, isTrue);
       final index = collection.indexes.single;
       expect(index.name, 'cx_txn_ab12cd34');
       expect(index.parts, [

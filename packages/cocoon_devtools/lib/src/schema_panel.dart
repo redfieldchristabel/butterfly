@@ -174,6 +174,12 @@ class _SchemaPanelState extends State<SchemaPanel> {
     final fields = spec['fields'];
     final reserved = spec['reserved'];
     final indexes = spec['indexes'];
+    final mirrored = spec['mirrored'];
+    final mirroredNames = [
+      if (mirrored is List<Object?>)
+        for (final name in mirrored)
+          if (name is String) name,
+    ];
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Column(
@@ -193,7 +199,11 @@ class _SchemaPanelState extends State<SchemaPanel> {
                     final type = value is Map<String, Object?>
                         ? value['type']
                         : '?';
-                    return Text('field $number: ${field.key} ($type)');
+                    final isMirrored = mirroredNames.contains(field.key);
+                    return Text(
+                      'field $number: ${field.key} ($type)'
+                      '${isMirrored ? ' — mirrored (no index)' : ''}',
+                    );
                   },
                 ),
               ),
@@ -254,10 +264,14 @@ class _SchemaPanelState extends State<SchemaPanel> {
                     Tooltip(
                       message: column.isPrimaryKey
                           ? 'primary key'
+                          : column.mirrored
+                          ? 'mirrored (no index): aggregates read it, '
+                                'filters and sorts need an Index'
                           : (column.notNull ? 'NOT NULL' : 'nullable'),
                       child: Chip(
                         label: Text(
-                          '${column.name}: ${column.type}',
+                          '${column.name}: ${column.type}'
+                          '${column.mirrored ? ' (mirrored)' : ''}',
                           style: const TextStyle(fontSize: 12),
                         ),
                       ),

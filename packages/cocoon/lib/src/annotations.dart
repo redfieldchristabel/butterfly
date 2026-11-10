@@ -38,6 +38,44 @@ class Index {
   final bool unique;
 }
 
+/// Copies a field into its own typed `f_` column WITHOUT creating an index,
+/// so aggregates and group-by can read it while filters and sorts stay
+/// index-only.
+///
+/// Aggregates (`query.aggregate([sum(...)])`, `query.groupBy([key(...)])`)
+/// run inside SQLite, which reads only the mirrored `f_` columns — never the
+/// protobuf document blob. Without this annotation a field gets a column
+/// only when some `Index([...])` lists it, so a total over a field the app
+/// never filters on would force an index the app never uses. `@Mirrored()`
+/// keeps the column (same type mapping, nullability and CHECK as an index
+/// field) and skips the index: sums, averages and group keys work, while a
+/// `where()` or `orderBy()` on the field still follows the index rule and
+/// throws a `MissingIndexException` (or `.allowFullScan()` opts out).
+///
+/// ```dart
+/// @Collection('accounts/{accountId}/txns', indexes: [
+///   Index(['accountId', '-bookedOn']),
+/// ])
+/// class Txn {
+///   @Mirrored()
+///   final int amountMinor; // sum() works; where(amountMinor > x) needs an Index
+///   ...
+/// }
+/// ```
+///
+/// Allowed on the field types an index field allows (`int`, `double`,
+/// `bool`, `String`, `DateTime`, `Uint8List`, enums); anything else is a
+/// generator error. Not allowed inside `@Embedded` classes: embedded fields
+/// live inside the document blob and have no column. A field that is both
+/// mirrored and indexed is just indexed — one column, one index, no
+/// duplicate. Adding the annotation to an existing collection adds and
+/// backfills the column on the next open (one pass, in a transaction);
+/// removing it drops the column the same way.
+@Target({TargetKind.field, TargetKind.getter})
+class Mirrored {
+  const Mirrored();
+}
+
 /// Excludes a field from storage. It is neither encoded nor tracked by the lock.
 @Target({TargetKind.field, TargetKind.getter})
 class Ignore {
