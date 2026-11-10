@@ -1,5 +1,23 @@
 ## Unreleased
 
+- Backups and restores: `db.backupTo(path)` writes a consistent, compacted
+  copy of the whole database while the app keeps reading and writing — one
+  read snapshot (SQLite's `VACUUM INTO`), landed atomically as one file
+  (0.8-1.0 s for a 388 MB, 1M-transaction database); an existing file
+  refuses unless `overwrite: true`. `Cocoon.inspectBackup(path)` verifies a
+  backup (Cocoon marker + `PRAGMA integrity_check`) and reads its metadata,
+  with typed errors for "not a Cocoon backup", "damaged" and "written by a
+  newer app". `Cocoon.restoreBackup(backup:, path:, collections:)` swaps a
+  CLOSED database file for a verified backup: schema compatibility is
+  checked before the current file is touched, the replaced database is kept
+  as `<path>.before-restore`, and a failure at any point leaves the original
+  database usable — then open as usual. The engine owns these two
+  primitives and the file protocol; the app owns the policy (when, where,
+  compression, encryption, files outside the database). Restores re-roll the
+  database's new `instanceId`, so sync consumers must compare it against the
+  one saved next to their change-log watermark before trusting it (a
+  restored database's change log is the backup's — a saved watermark can be
+  ahead of the data). See the README's "Backup and restore".
 - Bulk loads: `db.bulkWriter()` — a Firestore-style BulkWriter for
   import-shaped work too big for one transaction. Queue
   `set`/`update`/`delete` synchronously; the writer commits every 10,000

@@ -163,6 +163,44 @@ declared by the current schema and living on an existing table is recreated
 from its recorded DDL, then all rows are deleted. An index the app no longer
 declares is not resurrected — the reconciler's decision wins.
 
+### How backups and restores move files
+
+`db.backupTo()` runs SQLite's `VACUUM INTO` against the source file inside
+`Isolate.run` (raw connections in `sqlite_executor.dart`, the only file that
+imports the SQLite packages): the statement takes one read snapshot of the
+database and writes a fresh, compacted, single-file copy in
+rollback-journal mode — the open database and its WAL are untouched, which
+is what makes the copy consistent while writers keep committing. The copy
+lands at `<path>.partial` (a leftover from a crashed backup is removed
+first), is fsynced, then stamped in its `_cocoon_meta`: the backup format
+version, the created-at in UTC microseconds, the copy's own change-log head
+(as `backup_last_change_seq`) and the Cocoon version. Stamping also replaces
+the instance id with a throwaway, so a backup never carries the source's
+identity. The stamped file is renamed onto `path`; a failure anywhere before
+the rename deletes the partial, so `path` never holds a half-written backup.
+
+`Cocoon.inspectBackup()` opens the file on a raw connection:
+`PRAGMA integrity_check` first, then the `_cocoon_meta` rows. The typed
+errors separate "not ours" (`NotCocoonBackupException` — no `_cocoon_meta`,
+or no backup marker; a live Cocoon database file reports this too), "broken"
+(`BackupDamagedException` — failed integrity check, unreadable bytes, or a
+metadata row that does not parse) and "newer app"
+(`BackupFormatTooNewException` — an unknown backup format version).
+
+`Cocoon.restoreBackup()` refuses while any `Cocoon` in the isolate holds the
+target open (open/close register the absolute paths), validates the backup,
+and applies `open`'s schema rule to its stored `schema_version` BEFORE
+touching the target — a newer schema refuses, an older one migrates at the
+next open. Only then do files move: copy to `<path>.restoring` + fsync,
+re-roll the copy's instance id (a restored database is a new instance),
+move the current database with its `-wal`/`-journal` sidecars to
+`<path>.before-restore` (the `-shm` is a rebuildable index over the WAL and
+is dropped), delete any sidecars left at the target path, rename the copy
+onto the target, fsync. Every step has a failure-injection seam
+(`BackupOperations.debugFailBeforeStep`, test-only); a failure at any step
+undoes the steps before it — the original database ends the run where it
+started.
+
 ## Money guidance
 
 Cocoon stores integers exactly — use that for money:

@@ -1,7 +1,12 @@
+import 'dart:io';
+import 'dart:isolate';
+
 import 'package:sqlite_async/native.dart' show NativeSqliteOpenFactory;
 import 'package:sqlite_async/sqlite_async.dart';
+import 'package:sqlite3/sqlite3.dart' as raw;
 
 import 'executor.dart';
+import 'naming.dart';
 
 /// [CocoonExecutor] on a `SqliteDatabase` (package:sqlite_async, WAL by
 /// default).
@@ -159,3 +164,203 @@ final class _SqliteReadTx implements CocoonRead {
     return row == null ? null : Map<String, Object?>.of(row);
   }
 }
+
+// -- Raw file work behind the backup primitives -----------------------------
+//
+// Backup copies, metadata stamping and integrity inspection work on FILES
+// (the backup, the copy, the restored database), not on the open
+// `CocoonExecutor`, so they run raw `package:sqlite3` connections inside
+// `Isolate.run`: a large file is read off the calling isolate, the source
+// database's own connections are untouched (SQLite happily serves one more
+// read-only workload next to sqlite_async's writer in WAL mode), and a copy
+// keeps the journal mode `VACUUM INTO` produced instead of being re-headered
+// to WAL by a sqlite_async open.
+
+/// The internal metadata and health of a Cocoon SQLite file, read raw.
+final class RawFileMeta {
+  RawFileMeta({
+    required this.integrity,
+    required this.hasCocoonMeta,
+    required this.values,
+    required this.lastChangeSeq,
+  });
+
+  /// The `PRAGMA integrity_check` messages, exactly `['ok']` when the file
+  /// is healthy. Empty when the caller asked to skip the check (a file this
+  /// process just wrote).
+  final List<String> integrity;
+
+  /// Whether the file has a `_cocoon_meta` table.
+  final bool hasCocoonMeta;
+
+  /// The `_cocoon_meta` rows, empty when the table is absent.
+  final Map<String, String> values;
+
+  /// The change log's AUTOINCREMENT head (`sqlite_sequence` of
+  /// `_cocoon_changes`), `0` when the log was never written.
+  final int lastChangeSeq;
+
+  /// The parsed `schema_version` meta value, `null` when absent.
+  int? get schemaVersion => int.tryParse(values[schemaVersionMetaKey] ?? '');
+}
+
+/// Writes a consistent, compacted copy of the SQLite file at [sourcePath]
+/// to [targetPath] with `VACUUM INTO` (the statement takes one read snapshot
+/// of the source and creates a fresh, compacted, single-file database in
+/// rollback-journal mode; the source must exist and is only read).
+///
+/// [targetPath] must not exist — SQLite refuses to overwrite, which is what
+/// makes the partial-file protocol in `BackupOperations` safe.
+Future<void> vacuumInto({
+  required String sourcePath,
+  required String targetPath,
+}) {
+  return Isolate.run(() => _vacuumIntoSync(sourcePath, targetPath));
+}
+
+void _vacuumIntoSync(String sourcePath, String targetPath) {
+  if (!File(sourcePath).existsSync()) {
+    throw FileSystemException('No such file', sourcePath);
+  }
+  final db = raw.sqlite3.open(sourcePath);
+  try {
+    db.execute('PRAGMA busy_timeout = 10000');
+    db.execute('VACUUM INTO ${_sqlString(targetPath)}');
+  } finally {
+    db.close();
+  }
+}
+
+/// Reads a Cocoon SQLite file's structure and `_cocoon_meta` rows raw, with
+/// `PRAGMA integrity_check` when [withIntegrity] is set (an integrity check
+/// reads every page; the caller decides whether the file warrants it).
+///
+/// A file SQLite cannot read (garbage, truncated) makes the first statement
+/// throw; the caller maps that to a typed backup error.
+Future<RawFileMeta> readCocoonMeta(String path, {required bool withIntegrity}) {
+  return Isolate.run(() => _readCocoonMetaSync(path, withIntegrity));
+}
+
+RawFileMeta _readCocoonMetaSync(String path, bool withIntegrity) {
+  final db = raw.sqlite3.open(path);
+  try {
+    db.execute('PRAGMA busy_timeout = 10000');
+    final integrity = withIntegrity
+        ? [
+            for (final row in db.select('PRAGMA integrity_check'))
+              '${row.values.first}',
+          ]
+        : const <String>[];
+    final hasMeta =
+        db
+                .select(
+                  "SELECT count(*) AS c FROM sqlite_master WHERE type = 'table' "
+                  'AND name = ?',
+                  [metaTableName],
+                )
+                .first
+                .values
+                .first
+            as int >
+        0;
+    final values = <String, String>{
+      if (hasMeta)
+        for (final row in db.select('SELECT key, value FROM $metaTableName'))
+          row['key']! as String: row['value']! as String,
+    };
+    return RawFileMeta(
+      integrity: integrity,
+      hasCocoonMeta: hasMeta,
+      values: values,
+      lastChangeSeq: _changeSeqHeadOf(db),
+    );
+  } finally {
+    db.close();
+  }
+}
+
+/// Writes [values] into a file's `_cocoon_meta` (creating the table when it
+/// is missing) and replaces the instance id with [instanceId], in one
+/// transaction. Also records the file's own change-log head under
+/// `backup_last_change_seq` — by construction it matches `sqlite_sequence`.
+///
+/// Used on backup copies (stamping backup metadata, re-rolling the throwaway
+/// instance id) and on restored databases (the final instance id). Returns
+/// the file's metadata as it is after the write.
+Future<RawFileMeta> stampCocoonMeta({
+  required String path,
+  required Map<String, String> values,
+  required String instanceId,
+}) {
+  return Isolate.run(() => _stampCocoonMetaSync(path, values, instanceId));
+}
+
+RawFileMeta _stampCocoonMetaSync(
+  String path,
+  Map<String, String> values,
+  String instanceId,
+) {
+  final db = raw.sqlite3.open(path);
+  try {
+    db.execute('PRAGMA busy_timeout = 10000');
+    db.execute('BEGIN IMMEDIATE');
+    var committed = false;
+    try {
+      db.execute(
+        'CREATE TABLE IF NOT EXISTS $metaTableName '
+        '(key TEXT PRIMARY KEY, value TEXT NOT NULL)',
+      );
+      final all = {
+        ...values,
+        backupLastChangeSeqMetaKey: '${_changeSeqHeadOf(db)}',
+        instanceIdMetaKey: instanceId,
+      };
+      for (final MapEntry(key: key, value: value) in all.entries) {
+        db.execute(
+          'INSERT OR REPLACE INTO $metaTableName (key, value) VALUES (?, ?)',
+          [key, value],
+        );
+      }
+      db.execute('COMMIT');
+      committed = true;
+    } finally {
+      if (!committed) {
+        try {
+          db.execute('ROLLBACK');
+        } on Object {
+          // A statement error may have rolled the transaction back already.
+        }
+      }
+    }
+  } finally {
+    db.close();
+  }
+  return _readCocoonMetaSync(path, false);
+}
+
+/// The change log's AUTOINCREMENT head, `0` when the log was never written
+/// (the `sqlite_sequence` table itself may not exist yet).
+int _changeSeqHeadOf(raw.Database db) {
+  final hasSequence =
+      db
+              .select(
+                "SELECT count(*) AS c FROM sqlite_master WHERE type = 'table' "
+                "AND name = 'sqlite_sequence'",
+              )
+              .first
+              .values
+              .first
+          as int >
+      0;
+  if (!hasSequence) {
+    return 0;
+  }
+  final row = db.select('SELECT seq FROM sqlite_sequence WHERE name = ?', [
+    changesTableName,
+  ]).firstOrNull;
+  return row == null ? 0 : row['seq']! as int;
+}
+
+/// Quotes [value] as a SQL string literal (the only place Cocoon inlines a
+/// runtime value into SQL: `VACUUM INTO` takes no bound parameters).
+String _sqlString(String value) => "'${value.replaceAll("'", "''")}'";

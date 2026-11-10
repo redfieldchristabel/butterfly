@@ -560,6 +560,12 @@ await db.pruneChanges(upToSeq: watermark);
 only need the in-process watches; notifications are unaffected, and
 `changesSince` simply returns nothing.
 
+Save `db.instanceId` durably next to the watermark, and compare the two
+after every open (see "Backup and restore"): the guarantee that
+`lastChangeSeq` never goes backwards holds within one database instance —
+restoring a backup rewinds the change log to the backup's, and the re-rolled
+instance id is how you detect it.
+
 ## Opening and options
 
 ```dart
@@ -588,6 +594,98 @@ applies every pending schema migration.
 One `Cocoon` instance must own its database file: do not open the same file
 from two instances or two processes — SQLite's write lock and the hot-cache
 both assume a single writer.
+
+## Backup and restore
+
+Cocoon owns two engine primitives — a consistent whole-file copy and a safe
+swap of a database file for one of those copies. Everything else is the app's
+policy: when to back up and where the file lives, which collections matter,
+compression, encryption, files stored outside the database (they are not part
+of any backup — copy them alongside and restore them yourself), extra
+validation, UI. There is deliberately no app-level backup file format and no
+bundled cryptography.
+
+```dart
+// A consistent, compacted copy of the whole database while the app keeps
+// reading and writing: one read snapshot (SQLite's VACUUM INTO). Refuses an
+// existing path unless overwrite: true.
+final info = await db.backupTo('/backups/cocoon-2026-11-10.db');
+
+// Read a backup back: is it a Cocoon backup, does it pass integrity_check,
+// and what does it carry. Never modifies the file.
+final known = await Cocoon.inspectBackup('/backups/cocoon-2026-11-10.db');
+print('${known.bytes} bytes, schema v${known.schemaVersion}, '
+    'seq #${known.lastChangeSeq}, Cocoon ${known.cocoonVersion}');
+
+// Swap the (closed!) database file for a verified backup. The database at
+// `path` must not be open in this isolate — close it first.
+await db.close();
+await Cocoon.restoreBackup(
+  backup: '/backups/cocoon-2026-11-10.db',
+  path: file,
+  collections: [accounts, txns],
+  schemaVersion: 1, // the same value you pass to Cocoon.open
+  keepPrevious: true, // keep the replaced database as <path>.before-restore
+);
+final db = await Cocoon.open(file, collections: [accounts, txns]);
+```
+
+What the engine guarantees:
+
+- **Consistent under writes.** The copy is one read snapshot: a write that
+  commits while the backup runs is either fully in the copy or not at all,
+  and the copy's change log, `lastChangeSeq`, schema version and
+  bulk-writer state (deferred indexes included — opening a restored copy
+  rebuilds them, like any crash mid-load) are exactly the snapshot's.
+- **Atomic on failure.** `backupTo` writes `<path>.partial`, fsyncs it and
+  renames it onto `path`; a failure leaves no file at `path` and removes the
+  partial. `restoreBackup` verifies and compatibility-checks the backup
+  before touching the target, then copies to `<path>.restoring` and swaps;
+  a failure at any point puts the previous database back where it was.
+- **Compatibility checked like `open`.** A backup written by a NEWER schema
+  version is refused before the target is touched; an older one is fine —
+  the normal migrations run at the next `open`.
+- **Typed errors.** `inspectBackup` throws `NotCocoonBackupException` (the
+  file is not a Cocoon backup — a live database file isn't one either),
+  `BackupDamagedException` (unreadable bytes or a failed
+  `PRAGMA integrity_check`), `BackupFormatTooNewException` (a newer app's
+  format version wrote it).
+- **`keepChanges: false` databases back up too** — the copy's change log is
+  simply empty, like the source's.
+
+Restore safety: with `keepPrevious` (the default) the replaced database
+moves to `<path>.before-restore` — a same-folder safety copy you keep until
+you have validated the restore, deleted automatically when `keepPrevious` is
+false. Stale `-wal`/`-shm`/`-journal` sidecars of the target are removed:
+they belong to the replaced bytes and must never pair with the restored one.
+The app then calls `Cocoon.open` as usual.
+
+**Sync consumers: the instance id.** Every database gets a random instance
+id when it is created (`db.instanceId`). A restore replaces the change log
+with the backup's, so a watermark you saved can now be AHEAD of the
+database — the guarantee that `lastChangeSeq` never goes backwards holds
+within one instance, not across a restore. Save the instance id next to the
+watermark and compare after the next open: a different id means the
+watermark must be discarded (or reconciled). `restoreBackup` re-rolls the
+id, so a restored database is always detected.
+
+Wrap the file yourself: a backup is a plain SQLite file, so the app
+compresses (gzip the bytes before uploading) or encrypts (before the file
+leaves the device) as it likes; decompress/decrypt into a file and hand it
+to `inspectBackup`/`restoreBackup`. A backup is a single self-contained file
+in rollback-journal mode — it never has WAL/SHM sidecars — so moving it is
+copying one file.
+
+Measured on the rivals dataset at 1,000,000 transactions (a 388 MB file,
+`Durability.full`; single runs on the shared build box, where the rivals
+methodology holds ±30%): `backupTo` takes 0.8-1.0 s and the backup is
+388 MB — 1.7% smaller than the source database file and 5% smaller than the
+source with its WAL; single writes running during the backup
+stay at 2.3-2.8 ms p50 and 4.9-5.2 ms p95 (the no-backup baseline p50 is
+1.8 ms), so the app stays usable; `restoreBackup` takes 6.9-7.5 s, which
+includes the whole-file `integrity_check` of the backup, the copy and the
+swap. Runs via `dart run tool/backup_measure.dart --size 1000000` in
+`benchmarks/cocoon_rivals`.
 
 ## Benchmarks
 

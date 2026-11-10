@@ -129,6 +129,38 @@ on the docs site under **Cocoon**:
   emissions identical in canonical bytes are suppressed; `watchFrom(cursor)`
   pins a fixed anchor. Change-log rows are on disk (`_cocoon_changes`) and
   prunable, ready for a sync outbox or audit trail.
+- **Backups and restores are two engine file primitives; the app owns the
+  policy** (when and where, which collections, compression, encryption,
+  files outside the database, validation, UI — no app-level backup file
+  format, no cryptography, no export/import stream). `db.backupTo()` copies
+  the whole file with SQLite's `VACUUM INTO`: one read snapshot while the
+  app keeps writing, and the copy is compacted in the same step (the online
+  backup API is not exposed by package:sqlite3's public surface, so it is
+  not reachable through the package's one sqlite-import rule). The copy is
+  written to `<path>.partial`, fsynced and renamed atomically; an existing
+  target refuses unless `overwrite`, and the copy is stamped in its own
+  `_cocoon_meta` with the backup format version, created-at, the snapshot's
+  change-log head and the Cocoon version (schema version and lock hash ride
+  along in the copied rows). `Cocoon.inspectBackup()` verifies the marker
+  and runs `PRAGMA integrity_check`, with typed errors for not-a-backup,
+  damaged and format-too-new. `Cocoon.restoreBackup()` refuses a target this
+  isolate holds open, applies open's schema rule (a newer backup refuses; an
+  older one migrates at the next open) before any file changes, then swaps:
+  copy to `<path>.restoring`, re-roll the copy's instance id, move the
+  current database with its WAL/journal sidecars to
+  `<path>.before-restore` (or delete after the swap when `keepPrevious` is
+  false), drop the target's stale sidecars, rename, fsync. Every step is
+  failure-injectable in tests; a failure at any of them undoes the steps
+  before it. Measured on the 1M rivals dataset (step 16): `backupTo` 0.8-1.0
+  s for a 388 MB file, single writes during the backup p95 ~5 ms,
+  `restoreBackup` 6.9-7.5 s.
+- **Every database has an instance id** (`_cocoon_meta`, exposed as
+  `db.instanceId`): a random id created with the database and re-rolled by
+  `restoreBackup`. A restore rewinds the change log and `lastChangeSeq` to
+  the backup's, so a sync consumer's saved watermark may be AHEAD of the
+  database — consumers save the instance id next to the watermark and
+  distrust the watermark when it differs. Within one instance the old
+  guarantee stands unchanged: `lastChangeSeq` never goes backwards.
 - **Large binaries** (receipts, statements) stay as files; documents store
   paths.
 - **Inspector**: read-only `dart:developer` service extensions
@@ -190,3 +222,6 @@ executor, so it is deferred.
 | Bulk-write path: `WriteBatch` (`db.batch()`), buffered transaction writes, per-collection prebuilt write SQL, byte-caching hot entries | done |
 | Bulk-load path: `BulkWriter` (`db.bulkWriter()`), chunked commits, deferred secondary indexes + crash recovery via `_cocoon_bulk` | done |
 | Import-performance knobs: `pageCacheMiB` (64 MiB page cache), `tempStoreInMemory`, sqlite_async `profileQueries` off; measurements in `benchmarks/cocoon_rivals/IMPORT.md` | done |
+| Whole-database backups: `db.backupTo()` (`VACUUM INTO` snapshot, stamped `_cocoon_meta`), `Cocoon.inspectBackup()`, `Cocoon.restoreBackup()` (closed-target rule, compatibility before the swap, `.restoring`/`.before-restore` protocol) + database instance id (`db.instanceId`) | done |
+| Export/import streams (documents through the public API, NDJSON-shaped) | planned |
+| Incremental backups (change-log-tailed deltas on top of `backupTo`) | planned |

@@ -9,6 +9,7 @@ environment:
 
 dependencies:
   meta: ^1.16.0
+  sqlite3: ^3.5.2
   sqlite_async: ^0.14.8
 
 dev_dependencies:

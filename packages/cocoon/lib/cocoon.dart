@@ -6,6 +6,14 @@ library;
 export 'src/annotations.dart';
 export 'src/cursor.dart';
 export 'src/engine/adapter.dart';
+export 'src/engine/backup.dart'
+    show
+        BackupDamagedException,
+        BackupFormatTooNewException,
+        BackupInfo,
+        NotCocoonBackupException,
+        backupFormatVersion,
+        cocoonLibraryVersion;
 export 'src/engine/batch.dart';
 export 'src/engine/bulk_writer.dart';
 export 'src/engine/naming.dart' show snakeCase, tableNameFor, validNamePattern;
