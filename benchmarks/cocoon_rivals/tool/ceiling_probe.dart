@@ -486,7 +486,7 @@ Future<(int, int)> _fillRaw(
     }
     var chunkIndex = 0;
     for (var start = 0; start < size; start += importBatchSize) {
-      final rows = _chunkRows(
+      final rows = chunkRows(
         index: chunkIndex++,
         count: min(importBatchSize, size - start),
         avgDataBytes: schema.avgDataBytes,
@@ -574,7 +574,7 @@ Future<(int, int)> _fillSqliteAsync(
     final swLoad = Stopwatch()..start();
     var chunkIndex = 0;
     for (var start = 0; start < size; start += importBatchSize) {
-      final rows = _chunkRows(
+      final rows = chunkRows(
         index: chunkIndex++,
         count: min(importBatchSize, size - start),
         avgDataBytes: schema.avgDataBytes,
@@ -623,7 +623,11 @@ String _plainInsertSql(RealSchema schema) {
 /// average — and booked days, statuses and amounts follow the dataset's
 /// distribution. The chunk's rng is seeded from (seed, chunk index), so
 /// every variant and run draws the same distribution.
-List<List<Object?>> _chunkRows({
+///
+/// Public so `storage_probe.dart` reuses the exact same rows for the layout
+/// variants; the drift-shaped rows of its L5 reference are generated there
+/// with the same distributions (see `dataset.dart`).
+List<List<Object?>> chunkRows({
   required int index,
   required int count,
   required int avgDataBytes,
@@ -638,7 +642,7 @@ List<List<Object?>> _chunkRows({
         ? // Account-major: chunk c covers the c*1000-th rows of the
           // path-sorted sequence — account (c*1000+i) ~/ (size/20)'s round,
           // id within the account.
-          _pathOrderedIndex(index * importBatchSize + i, size)
+          pathOrderedIndex(index * importBatchSize + i, size)
         : index * importBatchSize + i;
     final accountId = globalIndex % 20;
     final blob = Uint8List(avgDataBytes);
@@ -671,7 +675,7 @@ List<List<Object?>> _chunkRows({
 
 /// The global index of the [position]-th row of the path-sorted sequence:
 /// account-major over 20 accounts of [size] rows total.
-int _pathOrderedIndex(int position, int size) {
+int pathOrderedIndex(int position, int size) {
   const accounts = 20;
   final perAccount = size ~/ accounts;
   final account = position ~/ perAccount;
