@@ -1,5 +1,5 @@
 /// The root app of the Cocoon DevTools extension: connection handling, the
-/// database picker and the four panels.
+/// database picker and the five panels.
 library;
 
 import 'dart:async';
@@ -14,6 +14,7 @@ import 'live.dart';
 import 'models.dart';
 import 'query_panel.dart';
 import 'schema_panel.dart';
+import 'storage_panel.dart';
 
 /// How many change rows the feed keeps in memory.
 const int _feedCapacity = 500;
@@ -203,7 +204,7 @@ class _CocoonInspectorAppState extends State<CocoonInspectorApp> {
     }
     final collections = _listing?.collections ?? const <CollectionInfo>[];
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Column(
         children: [
           _header(selected),
@@ -213,6 +214,7 @@ class _CocoonInspectorAppState extends State<CocoonInspectorApp> {
               Tab(text: 'Query runner'),
               Tab(text: 'Changes'),
               Tab(text: 'Schema'),
+              Tab(text: 'Storage'),
             ],
           ),
           Expanded(
@@ -230,6 +232,7 @@ class _CocoonInspectorAppState extends State<CocoonInspectorApp> {
                 ),
                 ChangesPanel(feed: _feed, collections: collections),
                 SchemaPanel(api: api, databaseId: selected.id),
+                const StoragePanel(),
               ],
             ),
           ),

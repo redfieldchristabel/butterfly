@@ -1,13 +1,15 @@
 ---
 title: DevTools Inspector
-description: Browse documents, run typed queries, watch changes live and read the schema of a running debug app from a DevTools tab. Zero setup beyond depending on cocoon.
+description: Browse documents, run typed queries, watch changes live, read the schema and inspect the storage of a running debug app from a DevTools tab. Zero setup beyond depending on cocoon.
 ---
 
 The Cocoon DevTools extension adds a **Cocoon tab** to Dart DevTools for a
 running debug (or profile) app. You can browse every collection and document,
 run the same typed queries your code runs and see which index served them,
 watch commits arrive live, and read the schema the engine reconciled on open.
-It is read-only end to end: nothing in the tab writes to your database.
+A fifth panel, Storage, shows where the database file's bytes go (preview
+data for now). It is read-only end to end: nothing in the tab writes to your
+database.
 
 There is no setup beyond depending on `cocoon`. The inspector registers itself
 when a `Cocoon` database opens, in debug and profile builds only.
@@ -17,7 +19,7 @@ when a `Cocoon` database opens, in debug and profile builds only.
 Run your app in debug mode with a database open, start DevTools, and pick the
 Cocoon tab. The tab lists every database the process opened (a database that
 closed stays listed, marked closed, because service extensions cannot be
-unregistered) and shows the four panels:
+unregistered) and shows the five panels:
 
 - **Documents**: collections, then documents, then fields, with a path
   breadcrumb (`accounts / a1 / txns / t9`). Clicking a document shows its
@@ -36,6 +38,41 @@ unregistered) and shows the four panels:
   (columns from `PRAGMA table_info`, indexes, row counts, shape hash) and,
   when the app passed a lock, the pinned field numbers and reserved numbers
   per model.
+- **Storage** (preview): where the database file's bytes go and what a bulk
+  load is doing. Fed by built-in preview data for now — see
+  [Storage tab (preview)](#storage-tab-preview).
+
+## Storage tab (preview)
+
+The Storage panel shows where a database file's bytes go and what a bulk
+load is doing. It is preview-only for now: the storage format and the bulk
+writer are not stable yet, so the panel renders built-in snapshots of the
+1M-transaction rivals benchmark (`benchmarks/cocoon_rivals/STORAGE.md`),
+a banner says so, and a toggle switches between the idle snapshot and a
+mid-load one. No `ext.cocoon.storage` service extension exists yet — wiring
+comes in a later step — and the panel already renders exactly the JSON
+shape that extension will return, documented on `StorageReport` in
+`packages/cocoon_devtools/lib/src/models.dart`.
+
+Top to bottom:
+
+- **File**: the headline on-disk footprint (database file plus WAL), the
+  file's page count and page size, the WAL size, and the reclaimable
+  (freelist) bytes a `VACUUM` would give back.
+- **Where the bytes go**: one stacked bar per collection table, sorted by
+  size — the documents, the path index, the scope index, each declared
+  secondary index, and the collection's share of the change log. Tapping a
+  segment shows its bytes, its share of the file and its average bytes per
+  row. The change log has its own row underneath (the log is prunable at
+  runtime; pruning gives those bytes back without a layout change).
+- **Indexes**: each declared index per collection with its fields in plain
+  words ("Index: account, newest first"), its size, and its state: live,
+  deferred by a bulk load, or rebuilding. While a bulk load defers an
+  index it holds no pages — its bar segment disappears and its size reads
+  "—".
+- **Bulk load**: while a `db.bulkWriter()` load runs, rows committed and
+  queued, the chunk size, how many indexes are deferred, how many queries
+  are waiting for them, and the elapsed time; a quiet idle note otherwise.
 
 ## Passing the schema lock
 

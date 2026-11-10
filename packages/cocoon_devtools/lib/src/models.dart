@@ -11,6 +11,11 @@
 /// [subcollectionPathOf], [parseQueryValue]) carry the small amount of
 /// Cocoon path/query grammar the UI needs; they mirror the app-side rules
 /// and are unit tested.
+///
+/// The [StorageReport] family documents the JSON a future
+/// `ext.cocoon.storage` service extension must return (the shape lives in
+/// its dartdoc); the Storage tab renders that shape from built-in preview
+/// payloads until the extension ships.
 library;
 
 /// The service extension prefix every Cocoon inspector call uses.
@@ -887,6 +892,969 @@ class InspectorCallException implements Exception {
 
   @override
   String toString() => message;
+}
+
+// -- Storage (preview) -------------------------------------------------------
+//
+// The Storage tab renders where a database file's bytes go. The live feed is
+// not wired yet: the classes below define the JSON shape a future
+// `ext.cocoon.storage` service extension must return, and the tab renders
+// built-in preview payloads ([StorageReport.previewIdle],
+// [StorageReport.previewBulkLoad]) until that extension exists.
+
+/// The whole `ext.cocoon.storage` result: the file, every collection's
+/// bytes, the change log and the bulk-load state.
+///
+/// This dartdoc is the shape contract for the app-side handler a later step
+/// implements (`packages/cocoon/lib/src/inspector/service.dart`); the
+/// preview payloads below are exactly this shape, from the 1M-transaction
+/// rivals benchmark (`benchmarks/cocoon_rivals/STORAGE.md` Part A):
+///
+/// ```json
+/// {
+///   "file": {
+///     "dbBytes": 409088000,
+///     "walBytes": 37343232,
+///     "freelistBytes": 0,
+///     "pageSize": 4096,
+///     "pageCount": 99875
+///   },
+///   "collections": [
+///     {
+///       "model": "Txn",
+///       "pattern": "accounts/{accountId}/txns",
+///       "table": "txn",
+///       "documentCount": 1000025,
+///       "tableBytes": 165830656,
+///       "pathIndex": {"name": "sqlite_autoindex_txn_1", "bytes": 41328640},
+///       "scopeIndex": {"name": "cx_txn_scope", "bytes": 25952256},
+///       "indexes": [
+///         {
+///           "name": "cx_txn_54b66501d86f96a9",
+///           "unique": false,
+///           "parts": [
+///             {"name": "accountId", "descending": false},
+///             {"name": "bookedOn", "descending": true}
+///           ],
+///           "bytes": 31055872,
+///           "state": "live"
+///         }
+///       ],
+///       "changeLogBytes": 54771712
+///     }
+///   ],
+///   "changeLog": {"bytes": 54771712, "rows": 1000690},
+///   "bulkLoad": {"active": false}
+/// }
+/// ```
+///
+/// Field-by-field:
+///
+/// - `file.dbBytes`: the main database file, `page_count * page_size` —
+///   every page dbstat can account for, free pages included.
+///   `file.walBytes`: the `-wal` sidecar's size on disk (0 when
+///   checkpointed away). `file.freelistBytes`: `freelist_count * page_size`
+///   — pages the file would give back after a `VACUUM`. The headline the
+///   tab shows is `dbBytes + walBytes`, the on-disk footprint.
+/// - `collections`: one entry per collection table, any order. `tableBytes`
+///   is the table's own pages (rows). `pathIndex` is the `path UNIQUE`
+///   autoindex and `scopeIndex` the `(param, id)` scope index; either may
+///   be `null` when the layout keeps none. `indexes` lists the collection's
+///   declared secondary indexes only. `changeLogBytes` is the share of the
+///   change-log table this collection's writes produced; the log's own
+///   whole-table row is `changeLog`. Small objects (other collections'
+///   tables, `_cocoon_meta`, `sqlite_sequence`, the schema) may be left
+///   unattributed — nothing else in the file is double-counted, except the
+///   change-log share, which is reported inside its collection and again in
+///   `changeLog` because both views are useful.
+/// - `indexes[].bytes` is 0 while the index is not in the file (deferred by
+///   a bulk load, or rebuilding). `indexes[].state` is `live`, `deferred`
+///   or `rebuilding`; a state word the tab does not know parses as an
+///   unknown state instead of throwing, so the two packages can drift.
+/// - `bulkLoad` is `{"active": false}` when no `bulkWriter()` runs; while
+///   one runs it carries `elapsedMs`, `rowsCommitted`, `rowsQueued` (still
+///   buffered), `chunkSize`, `deferredIndexes` (physical index names) and
+///   `waitingQueries` (how many queries are held until the deferred
+///   indexes come back).
+final class StorageReport {
+  const StorageReport({
+    required this.file,
+    required this.collections,
+    required this.changeLog,
+    required this.bulkLoad,
+  });
+
+  /// Parses the whole `storage` result.
+  factory StorageReport.fromJson(Object? json) {
+    final map = _mapOf(json, 'storage result');
+    return StorageReport(
+      file: StorageFile.fromJson(map['file']),
+      collections: [
+        for (final entry in _listOf(map['collections'], 'collections'))
+          CollectionStorage.fromJson(entry),
+      ],
+      changeLog: ChangeLogStorage.fromJson(map['changeLog']),
+      bulkLoad: BulkLoadReport.fromJson(map['bulkLoad']),
+    );
+  }
+
+  /// The database file's page accounting.
+  final StorageFile file;
+
+  /// One entry per collection table, any order.
+  final List<CollectionStorage> collections;
+
+  /// The change-log table, whole.
+  final ChangeLogStorage changeLog;
+
+  /// Whether a `bulkWriter()` is running, and its progress.
+  final BulkLoadReport bulkLoad;
+
+  /// Encodes the report back to the documented wire shape.
+  Map<String, Object?> toJson() => {
+    'file': file.toJson(),
+    'collections': [for (final collection in collections) collection.toJson()],
+    'changeLog': changeLog.toJson(),
+    'bulkLoad': bulkLoad.toJson(),
+  };
+
+  /// The preview payload for a database at rest: the 1M-transaction rivals
+  /// benchmark's checkpointed file (STORAGE.md Part A — page counts times
+  /// the 4096-byte page size), plus a WAL sidecar like the one the rivals
+  /// matrix measured (RESULTS.md's 425.8 MB "File size" row is the open
+  /// file plus its un-checkpointed WAL; the db pages are Part A's).
+  static Map<String, Object?> previewIdleJson() => {
+    'file': {
+      'dbBytes': 99875 * 4096,
+      'walBytes': 9117 * 4096,
+      'freelistBytes': 0,
+      'pageSize': 4096,
+      'pageCount': 99875,
+    },
+    'collections': [
+      {
+        'model': 'Txn',
+        'pattern': 'accounts/{accountId}/txns',
+        'table': 'txn',
+        'documentCount': 1000025,
+        'tableBytes': 40486 * 4096,
+        'pathIndex': {'name': 'sqlite_autoindex_txn_1', 'bytes': 10090 * 4096},
+        'scopeIndex': {'name': 'cx_txn_scope', 'bytes': 6336 * 4096},
+        'indexes': [
+          _previewIndex('cx_txn_54b66501d86f96a9', 7582, const [
+            (name: 'accountId', descending: false),
+            (name: 'bookedOn', descending: true),
+          ]),
+          _previewIndex('cx_txn_31eb54e047d080dd', 8876, const [
+            (name: 'status', descending: false),
+            (name: 'bookedOn', descending: false),
+          ]),
+          _previewIndex('cx_txn_f4ecd63f00d4b439', 6918, const [
+            (name: 'bookedOn', descending: false),
+          ]),
+          _previewIndex('cx_txn_4081929ae6be2a63', 6207, const [
+            (name: 'amountMinor', descending: false),
+          ]),
+        ],
+        'changeLogBytes': 13372 * 4096,
+      },
+    ],
+    'changeLog': {'bytes': 13372 * 4096, 'rows': 1000690},
+    'bulkLoad': {'active': false},
+  };
+
+  /// The preview payload with a `bulkWriter()` mid-load: ~80% of the same
+  /// 1M import committed (page-rounded from Part A), the four secondary
+  /// indexes deferred — so they hold no pages — the WAL near the engine's
+  /// 8,000-page autocheckpoint ceiling, a small freelist from chunk churn,
+  /// and two queries waiting for the deferred indexes. The load-plausible
+  /// page counts are derived from Part A, not measured.
+  static Map<String, Object?> previewBulkLoadJson() => {
+    'file': {
+      'dbBytes': (32389 + 10698 + 8072 + 5069 + 6 + 96) * 4096,
+      'walBytes': 7922 * 4096,
+      'freelistBytes': 96 * 4096,
+      'pageSize': 4096,
+      'pageCount': 32389 + 10698 + 8072 + 5069 + 6 + 96,
+    },
+    'collections': [
+      {
+        'model': 'Txn',
+        'pattern': 'accounts/{accountId}/txns',
+        'table': 'txn',
+        'documentCount': 800000,
+        'tableBytes': 32389 * 4096,
+        'pathIndex': {'name': 'sqlite_autoindex_txn_1', 'bytes': 8072 * 4096},
+        'scopeIndex': {'name': 'cx_txn_scope', 'bytes': 5069 * 4096},
+        'indexes': [
+          _previewIndex('cx_txn_54b66501d86f96a9', 0, const [
+            (name: 'accountId', descending: false),
+            (name: 'bookedOn', descending: true),
+          ], state: 'deferred'),
+          _previewIndex('cx_txn_31eb54e047d080dd', 0, const [
+            (name: 'status', descending: false),
+            (name: 'bookedOn', descending: false),
+          ], state: 'deferred'),
+          _previewIndex('cx_txn_f4ecd63f00d4b439', 0, const [
+            (name: 'bookedOn', descending: false),
+          ], state: 'deferred'),
+          _previewIndex('cx_txn_4081929ae6be2a63', 0, const [
+            (name: 'amountMinor', descending: false),
+          ], state: 'deferred'),
+        ],
+        'changeLogBytes': 10698 * 4096,
+      },
+    ],
+    'changeLog': {'bytes': 10698 * 4096, 'rows': 800000},
+    'bulkLoad': {
+      'active': true,
+      'elapsedMs': 10400,
+      'rowsCommitted': 800000,
+      'rowsQueued': 200000,
+      'chunkSize': 10000,
+      'deferredIndexes': [
+        'cx_txn_54b66501d86f96a9',
+        'cx_txn_31eb54e047d080dd',
+        'cx_txn_f4ecd63f00d4b439',
+        'cx_txn_4081929ae6be2a63',
+      ],
+      'waitingQueries': 2,
+    },
+  };
+
+  /// The idle preview, parsed. (The tab renders these through [fromJson] so
+  /// every render exercises the wire shape.)
+  static StorageReport previewIdle() =>
+      StorageReport.fromJson(previewIdleJson());
+
+  /// The active-bulk-load preview, parsed.
+  static StorageReport previewBulkLoad() =>
+      StorageReport.fromJson(previewBulkLoadJson());
+
+  @override
+  bool operator ==(Object other) =>
+      other is StorageReport &&
+      file == other.file &&
+      bulkLoad == other.bulkLoad &&
+      changeLog == other.changeLog &&
+      _listEquals(collections, other.collections);
+
+  @override
+  int get hashCode =>
+      Object.hash(file, changeLog, bulkLoad, collections.length);
+}
+
+/// One declared secondary index of the `storage` result.
+final class StorageIndex {
+  const StorageIndex({
+    required this.name,
+    required this.unique,
+    required this.parts,
+    required this.bytes,
+    required this.stateRaw,
+  });
+
+  /// Parses one entry of a collection's `indexes`.
+  factory StorageIndex.fromJson(Object? json) {
+    final map = _mapOf(json, 'storage index');
+    return StorageIndex(
+      name: _stringOf(map['name'], 'name'),
+      unique: map['unique'] == true,
+      parts: [
+        for (final part in _listOf(map['parts'], 'parts'))
+          () {
+            final partMap = _mapOf(part, 'index part');
+            return (
+              name: _stringOf(partMap['name'], 'name'),
+              descending: partMap['descending'] == true,
+            );
+          }(),
+      ],
+      bytes: _intOf(map['bytes'], 'bytes'),
+      stateRaw: _stringOf(map['state'], 'state'),
+    );
+  }
+
+  /// The physical index name (`cx_<table>_<hex>`).
+  final String name;
+
+  /// Whether the index enforces uniqueness.
+  final bool unique;
+
+  /// The (name, descending) parts in declaration order.
+  final List<({String name, bool descending})> parts;
+
+  /// The bytes the index's pages take; 0 while it is not in the file.
+  final int bytes;
+
+  /// The state word the wire carried (`live`, `deferred`, `rebuilding`, or
+  /// something newer — see [state]).
+  final String stateRaw;
+
+  /// The parsed state; an unknown word parses as [StorageIndexState.unknown]
+  /// instead of throwing.
+  StorageIndexState get state => storageIndexStateFrom(stateRaw);
+
+  /// The human label for the declared fields, e.g. `account, newest first`.
+  String get fieldsLabel => storageIndexFieldsLabel(parts);
+
+  /// Encodes back to the documented wire shape.
+  Map<String, Object?> toJson() => {
+    'name': name,
+    'unique': unique,
+    'parts': [
+      for (final part in parts)
+        {'name': part.name, 'descending': part.descending},
+    ],
+    'bytes': bytes,
+    'state': stateRaw,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is StorageIndex &&
+      name == other.name &&
+      unique == other.unique &&
+      bytes == other.bytes &&
+      stateRaw == other.stateRaw &&
+      _listEquals(parts, other.parts);
+
+  @override
+  int get hashCode => Object.hash(name, unique, bytes, stateRaw, parts.length);
+}
+
+/// Where a collection's index stands relative to a bulk load.
+enum StorageIndexState {
+  /// In the file and serving queries.
+  live,
+
+  /// Dropped for the duration of a bulk load.
+  deferred,
+
+  /// Being rebuilt (a bulk load just finished, or crash recovery ran).
+  rebuilding,
+
+  /// A state word this build does not know; [StorageIndex.stateRaw] carries
+  /// the original.
+  unknown,
+}
+
+/// Parses a `storage` index state word; unknown words become
+/// [StorageIndexState.unknown] so a newer app side cannot crash the tab.
+StorageIndexState storageIndexStateFrom(String raw) => switch (raw) {
+  'live' => StorageIndexState.live,
+  'deferred' => StorageIndexState.deferred,
+  'rebuilding' => StorageIndexState.rebuilding,
+  _ => StorageIndexState.unknown,
+};
+
+/// The human words for an index state; an unknown state shows the raw wire
+/// word so the mismatch is visible.
+String storageIndexStateLabel(StorageIndex index) => switch (index.state) {
+  StorageIndexState.live => 'Live',
+  StorageIndexState.deferred => 'Deferred by a bulk load',
+  StorageIndexState.rebuilding => 'Rebuilding',
+  StorageIndexState.unknown => index.stateRaw,
+};
+
+/// One engine-owned index of a collection table in the `storage` result:
+/// the `path UNIQUE` autoindex or the `(param, id)` scope index.
+final class StorageTableIndex {
+  const StorageTableIndex({required this.name, required this.bytes});
+
+  /// Parses one entry of a `pathIndex` / `scopeIndex` field.
+  factory StorageTableIndex.fromJson(Object? json) {
+    final map = _mapOf(json, 'table index');
+    return StorageTableIndex(
+      name: _stringOf(map['name'], 'name'),
+      bytes: _intOf(map['bytes'], 'bytes'),
+    );
+  }
+
+  /// The physical index name.
+  final String name;
+
+  /// The bytes the index's pages take.
+  final int bytes;
+
+  /// Encodes back to the documented wire shape.
+  Map<String, Object?> toJson() => {'name': name, 'bytes': bytes};
+
+  @override
+  bool operator ==(Object other) =>
+      other is StorageTableIndex && name == other.name && bytes == other.bytes;
+
+  @override
+  int get hashCode => Object.hash(name, bytes);
+}
+
+/// One collection table's bytes in the `storage` result.
+final class CollectionStorage {
+  const CollectionStorage({
+    required this.model,
+    required this.pattern,
+    required this.table,
+    required this.documentCount,
+    required this.tableBytes,
+    required this.pathIndex,
+    required this.scopeIndex,
+    required this.indexes,
+    required this.changeLogBytes,
+  });
+
+  /// Parses one entry of the `storage` result's `collections`.
+  factory CollectionStorage.fromJson(Object? json) {
+    final map = _mapOf(json, 'collection storage');
+    return CollectionStorage(
+      model: _stringOf(map['model'], 'model'),
+      pattern: _stringOf(map['pattern'], 'pattern'),
+      table: _stringOf(map['table'], 'table'),
+      documentCount: _intOf(map['documentCount'], 'documentCount'),
+      tableBytes: _intOf(map['tableBytes'], 'tableBytes'),
+      pathIndex: map['pathIndex'] == null
+          ? null
+          : StorageTableIndex.fromJson(map['pathIndex']),
+      scopeIndex: map['scopeIndex'] == null
+          ? null
+          : StorageTableIndex.fromJson(map['scopeIndex']),
+      indexes: [
+        for (final index in _listOf(map['indexes'], 'indexes'))
+          StorageIndex.fromJson(index),
+      ],
+      changeLogBytes: _intOf(map['changeLogBytes'], 'changeLogBytes'),
+    );
+  }
+
+  /// The Dart model class name.
+  final String model;
+
+  /// The collection path pattern, e.g. `accounts/{accountId}/txns`.
+  final String pattern;
+
+  /// The SQL table the collection stores its documents in.
+  final String table;
+
+  /// How many documents the table holds.
+  final int documentCount;
+
+  /// The bytes the table's own pages (the rows) take.
+  final int tableBytes;
+
+  /// The `path UNIQUE` autoindex, or `null` when the layout keeps none.
+  final StorageTableIndex? pathIndex;
+
+  /// The `(param, id)` scope index, or `null` when the table has none.
+  final StorageTableIndex? scopeIndex;
+
+  /// The collection's declared secondary indexes, any order.
+  final List<StorageIndex> indexes;
+
+  /// The share of the change-log table this collection's writes produced.
+  final int changeLogBytes;
+
+  /// Every byte of the file attributed to this collection, change-log share
+  /// included.
+  int get totalBytes =>
+      tableBytes +
+      (pathIndex?.bytes ?? 0) +
+      (scopeIndex?.bytes ?? 0) +
+      changeLogBytes +
+      [
+        for (final index in indexes) index.bytes,
+      ].fold(0, (sum, bytes) => sum + bytes);
+
+  /// Encodes back to the documented wire shape.
+  Map<String, Object?> toJson() => {
+    'model': model,
+    'pattern': pattern,
+    'table': table,
+    'documentCount': documentCount,
+    'tableBytes': tableBytes,
+    'pathIndex': pathIndex?.toJson(),
+    'scopeIndex': scopeIndex?.toJson(),
+    'indexes': [for (final index in indexes) index.toJson()],
+    'changeLogBytes': changeLogBytes,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is CollectionStorage &&
+      model == other.model &&
+      pattern == other.pattern &&
+      table == other.table &&
+      documentCount == other.documentCount &&
+      tableBytes == other.tableBytes &&
+      pathIndex == other.pathIndex &&
+      scopeIndex == other.scopeIndex &&
+      changeLogBytes == other.changeLogBytes &&
+      _listEquals(indexes, other.indexes);
+
+  @override
+  int get hashCode => Object.hash(
+    model,
+    pattern,
+    table,
+    documentCount,
+    tableBytes,
+    pathIndex,
+    scopeIndex,
+    changeLogBytes,
+    indexes.length,
+  );
+}
+
+/// The change-log table in the `storage` result, whole (the per-collection
+/// shares live on [CollectionStorage.changeLogBytes]).
+final class ChangeLogStorage {
+  const ChangeLogStorage({required this.bytes, required this.rows});
+
+  /// Parses the `storage` result's `changeLog` entry.
+  factory ChangeLogStorage.fromJson(Object? json) {
+    final map = _mapOf(json, 'change log');
+    return ChangeLogStorage(
+      bytes: _intOf(map['bytes'], 'bytes'),
+      rows: _intOf(map['rows'], 'rows'),
+    );
+  }
+
+  /// The bytes the table's pages take.
+  final int bytes;
+
+  /// How many change rows the table holds (one per written document per
+  /// committed write).
+  final int rows;
+
+  /// Encodes back to the documented wire shape.
+  Map<String, Object?> toJson() => {'bytes': bytes, 'rows': rows};
+
+  @override
+  bool operator ==(Object other) =>
+      other is ChangeLogStorage && bytes == other.bytes && rows == other.rows;
+
+  @override
+  int get hashCode => Object.hash(bytes, rows);
+}
+
+/// The bulk-load section of the `storage` result: idle, or a running
+/// `bulkWriter()`'s progress.
+final class BulkLoadReport {
+  const BulkLoadReport({
+    required this.active,
+    this.elapsedMs = 0,
+    this.rowsCommitted = 0,
+    this.rowsQueued = 0,
+    this.chunkSize = 0,
+    this.deferredIndexes = const [],
+    this.waitingQueries = 0,
+  });
+
+  /// The idle report every `{"active": false}` payload parses to.
+  static const BulkLoadReport idle = BulkLoadReport(active: false);
+
+  /// Parses the `storage` result's `bulkLoad` entry.
+  ///
+  /// An inactive payload needs nothing but `active: false`; an active one
+  /// must carry the whole progress set — a shape the app side does not
+  /// produce throws a [FormatException] naming the missing piece.
+  factory BulkLoadReport.fromJson(Object? json) {
+    final map = _mapOf(json, 'bulk load');
+    if (map['active'] != true) {
+      return idle;
+    }
+    return BulkLoadReport(
+      active: true,
+      elapsedMs: _intOf(map['elapsedMs'], 'elapsedMs'),
+      rowsCommitted: _intOf(map['rowsCommitted'], 'rowsCommitted'),
+      rowsQueued: _intOf(map['rowsQueued'], 'rowsQueued'),
+      chunkSize: _intOf(map['chunkSize'], 'chunkSize'),
+      deferredIndexes: [
+        for (final name in _listOf(map['deferredIndexes'], 'deferredIndexes'))
+          _stringOf(name, 'deferred index name'),
+      ],
+      waitingQueries: _intOf(map['waitingQueries'], 'waitingQueries'),
+    );
+  }
+
+  /// Whether a `bulkWriter()` is running.
+  final bool active;
+
+  /// Milliseconds since the writer started (active payloads only).
+  final int elapsedMs;
+
+  /// Rows committed so far, chunk by chunk.
+  final int rowsCommitted;
+
+  /// Rows still buffered, not yet committed.
+  final int rowsQueued;
+
+  /// Rows per chunk commit ([BulkWriterOptions.chunkSize] on the app side).
+  final int chunkSize;
+
+  /// The physical index names the writer deferred.
+  final List<String> deferredIndexes;
+
+  /// How many queries are held until the deferred indexes are rebuilt.
+  final int waitingQueries;
+
+  /// Committed share of the whole load, 0 to 1; 0 when nothing is queued.
+  double get progress {
+    final total = rowsCommitted + rowsQueued;
+    return total == 0 ? 0 : rowsCommitted / total;
+  }
+
+  /// Encodes back to the documented wire shape; the idle report encodes to
+  /// exactly `{"active": false}`.
+  Map<String, Object?> toJson() => active
+      ? {
+          'active': true,
+          'elapsedMs': elapsedMs,
+          'rowsCommitted': rowsCommitted,
+          'rowsQueued': rowsQueued,
+          'chunkSize': chunkSize,
+          'deferredIndexes': List<String>.of(deferredIndexes),
+          'waitingQueries': waitingQueries,
+        }
+      : {'active': false};
+
+  @override
+  bool operator ==(Object other) =>
+      other is BulkLoadReport &&
+      active == other.active &&
+      elapsedMs == other.elapsedMs &&
+      rowsCommitted == other.rowsCommitted &&
+      rowsQueued == other.rowsQueued &&
+      chunkSize == other.chunkSize &&
+      waitingQueries == other.waitingQueries &&
+      _listEquals(deferredIndexes, other.deferredIndexes);
+
+  @override
+  int get hashCode => Object.hash(
+    active,
+    elapsedMs,
+    rowsCommitted,
+    rowsQueued,
+    chunkSize,
+    waitingQueries,
+    deferredIndexes.length,
+  );
+}
+
+/// The database file's page accounting in the `storage` result.
+final class StorageFile {
+  const StorageFile({
+    required this.dbBytes,
+    required this.walBytes,
+    required this.freelistBytes,
+    required this.pageSize,
+    required this.pageCount,
+  });
+
+  /// Parses the `storage` result's `file` entry.
+  factory StorageFile.fromJson(Object? json) {
+    final map = _mapOf(json, 'file');
+    return StorageFile(
+      dbBytes: _intOf(map['dbBytes'], 'dbBytes'),
+      walBytes: _intOf(map['walBytes'], 'walBytes'),
+      freelistBytes: _intOf(map['freelistBytes'], 'freelistBytes'),
+      pageSize: _intOf(map['pageSize'], 'pageSize'),
+      pageCount: _intOf(map['pageCount'], 'pageCount'),
+    );
+  }
+
+  /// The main database file (`page_count * page_size`), free pages included.
+  final int dbBytes;
+
+  /// The `-wal` sidecar's size on disk, 0 when checkpointed away.
+  final int walBytes;
+
+  /// Free pages (`freelist_count * page_size`): what a `VACUUM` would give
+  /// back.
+  final int freelistBytes;
+
+  /// The page size in bytes.
+  final int pageSize;
+
+  /// How many pages the main file holds ([dbBytes] / [pageSize]).
+  final int pageCount;
+
+  /// The on-disk footprint the tab's headline shows: database file plus
+  /// WAL sidecar.
+  int get totalBytes => dbBytes + walBytes;
+
+  /// The reclaimable bytes ([freelistBytes]).
+  int get reclaimableBytes => freelistBytes;
+
+  /// Encodes back to the documented wire shape.
+  Map<String, Object?> toJson() => {
+    'dbBytes': dbBytes,
+    'walBytes': walBytes,
+    'freelistBytes': freelistBytes,
+    'pageSize': pageSize,
+    'pageCount': pageCount,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is StorageFile &&
+      dbBytes == other.dbBytes &&
+      walBytes == other.walBytes &&
+      freelistBytes == other.freelistBytes &&
+      pageSize == other.pageSize &&
+      pageCount == other.pageCount;
+
+  @override
+  int get hashCode =>
+      Object.hash(dbBytes, walBytes, freelistBytes, pageSize, pageCount);
+}
+
+/// What a stacked-bar slice of a collection's bytes stands for.
+enum StorageSegmentKind {
+  /// The collection table's rows.
+  rows,
+
+  /// The `path UNIQUE` autoindex.
+  pathIndex,
+
+  /// The `(param, id)` scope index.
+  scopeIndex,
+
+  /// One declared secondary index ([StorageSegment.index] carries it).
+  secondary,
+
+  /// The collection's share of the change-log table.
+  changeLog,
+}
+
+/// One slice of a collection's stacked bar in the Storage tab: a byte count
+/// plus what the tap detail shows (share, average bytes per row).
+///
+/// Segments are derived views ([storageSegments], [changeLogSegment]); they
+/// are not part of the wire shape.
+final class StorageSegment {
+  const StorageSegment({
+    required this.kind,
+    required this.label,
+    required this.bytes,
+    required this.shareTotalBytes,
+    this.sqlName,
+    this.entries,
+    this.index,
+  });
+
+  /// Which kind of object the slice stands for.
+  final StorageSegmentKind kind;
+
+  /// The human label ("Documents", "Change log", "Index: account, newest
+  /// first").
+  final String label;
+
+  /// The bytes the slice's pages take.
+  final int bytes;
+
+  /// The total the segment's [share] is taken against (the database file).
+  final int shareTotalBytes;
+
+  /// The physical SQL object name, for the tooltip.
+  final String? sqlName;
+
+  /// The rows the slice covers, for the average-bytes-per-row detail.
+  final int? entries;
+
+  /// The declared index, when [kind] is [StorageSegmentKind.index].
+  final StorageIndex? index;
+
+  /// The slice's share of [shareTotalBytes], 0 to 1.
+  double get share => shareTotalBytes <= 0 ? 0 : bytes / shareTotalBytes;
+
+  /// The average bytes per row across [entries]; 0 when unknown.
+  double get avgBytesPerRow {
+    final rows = entries;
+    if (rows == null || rows == 0) {
+      return 0;
+    }
+    return bytes / rows;
+  }
+
+  /// The stable key the tab tracks the tapped segment by across rebuilds.
+  String get key => '$kind:$sqlName:$label';
+}
+
+/// The stacked-bar slices for [collection] out of [report]: rows, path
+/// index, scope index, every secondary index that is in the file, the
+/// change-log share — sorted by size, largest first, zero-byte objects
+/// (deferred indexes) dropped. Shares are taken against the database file.
+List<StorageSegment> storageSegments(
+  CollectionStorage collection,
+  StorageReport report,
+) {
+  final shareTotalBytes = report.file.dbBytes;
+  final segments = [
+    StorageSegment(
+      kind: StorageSegmentKind.rows,
+      label: 'Documents',
+      bytes: collection.tableBytes,
+      shareTotalBytes: shareTotalBytes,
+      sqlName: collection.table,
+      entries: collection.documentCount,
+    ),
+    if (collection.pathIndex != null)
+      StorageSegment(
+        kind: StorageSegmentKind.pathIndex,
+        label: 'Path index',
+        bytes: collection.pathIndex!.bytes,
+        shareTotalBytes: shareTotalBytes,
+        sqlName: collection.pathIndex!.name,
+        entries: collection.documentCount,
+      ),
+    if (collection.scopeIndex != null)
+      StorageSegment(
+        kind: StorageSegmentKind.scopeIndex,
+        label: 'Scope (account, id)',
+        bytes: collection.scopeIndex!.bytes,
+        shareTotalBytes: shareTotalBytes,
+        sqlName: collection.scopeIndex!.name,
+        entries: collection.documentCount,
+      ),
+    for (final index in collection.indexes)
+      StorageSegment(
+        kind: StorageSegmentKind.secondary,
+        label: 'Index: ${index.fieldsLabel}',
+        bytes: index.bytes,
+        shareTotalBytes: shareTotalBytes,
+        sqlName: index.name,
+        entries: collection.documentCount,
+        index: index,
+      ),
+    StorageSegment(
+      kind: StorageSegmentKind.changeLog,
+      label: 'Change log',
+      bytes: collection.changeLogBytes,
+      shareTotalBytes: shareTotalBytes,
+      sqlName: '_cocoon_changes',
+      entries: report.changeLog.rows,
+    ),
+  ];
+  final inFile = [
+    for (final segment in segments)
+      if (segment.bytes > 0) segment,
+  ]..sort((a, b) => b.bytes.compareTo(a.bytes));
+  return inFile;
+}
+
+/// The change-log table's own stacked-bar slice: the separate row the tab
+/// shows under the collection bars.
+StorageSegment changeLogSegment(
+  ChangeLogStorage changeLog,
+  int shareTotalBytes,
+) => StorageSegment(
+  kind: StorageSegmentKind.changeLog,
+  label: 'Change log',
+  bytes: changeLog.bytes,
+  shareTotalBytes: shareTotalBytes,
+  sqlName: '_cocoon_changes',
+  entries: changeLog.rows,
+);
+
+/// The human label for a declared index's fields: camelCase splits into
+/// lowercase words and a trailing " id" is dropped ("accountId" reads
+/// "account"), and a descending date-like sort field ("bookedOn") reads
+/// "newest first" — e.g. `[accountId, -bookedOn]` reads
+/// "account, newest first".
+String storageIndexFieldsLabel(List<({String name, bool descending})> parts) =>
+    parts
+        .map((part) {
+          if (!part.descending) {
+            return _humanFieldName(part.name);
+          }
+          return _dateLikeField(part.name)
+              ? 'newest first'
+              : '${_humanFieldName(part.name)}, descending';
+        })
+        .join(', ');
+
+bool _dateLikeField(String name) {
+  final lower = name.toLowerCase();
+  return lower.endsWith('on') || lower.endsWith('at');
+}
+
+String _humanFieldName(String name) {
+  final words = name
+      .replaceAllMapped(
+        RegExp(r'([a-z0-9])([A-Z])'),
+        (match) => '${match[1]} ${match[2]}',
+      )
+      .toLowerCase()
+      .split(' ');
+  if (words.length > 1 && words.last == 'id') {
+    words.removeLast();
+  }
+  return words.join(' ');
+}
+
+/// Human byte size in the monorepo benchmark convention (MB = 1024², GB =
+/// 1024³, matching RESULTS.md / STORAGE.md / CEILING.md): "425.8 MB",
+/// "35.6 MB", "32 KB", "48 B".
+String formatBytes(num bytes) {
+  if (bytes >= 1024 * 1024 * 1024) {
+    return '${_oneDecimal(bytes / (1024 * 1024 * 1024))} GB';
+  }
+  if (bytes >= 1024 * 1024) {
+    return '${_oneDecimal(bytes / (1024 * 1024))} MB';
+  }
+  if (bytes >= 1024) {
+    return '${(bytes / 1024).round()} KB';
+  }
+  return '${bytes.round()} B';
+}
+
+/// Human count with thousands separators: "1,000,025".
+String formatCount(int count) => count.toString().replaceAllMapped(
+  RegExp(r'\B(?=(\d{3})+(?!\d))'),
+  (match) => ',',
+);
+
+/// Human share, 0 to 1: "40.5%".
+String formatPercent(double fraction) =>
+    '${(fraction * 100).toStringAsFixed(1)}%';
+
+/// Human elapsed milliseconds: "10.4 s" under a minute, "1 m 05 s" above.
+String formatElapsed(int milliseconds) {
+  if (milliseconds < 60000) {
+    return '${_oneDecimal(milliseconds / 1000)} s';
+  }
+  final minutes = milliseconds ~/ 60000;
+  final seconds = (milliseconds % 60000) ~/ 1000;
+  return '$minutes m ${seconds.toString().padLeft(2, '0')} s';
+}
+
+String _oneDecimal(double value) => value.toStringAsFixed(1);
+
+Map<String, Object?> _previewIndex(
+  String name,
+  int pages,
+  List<({String name, bool descending})> parts, {
+  String state = 'live',
+}) => {
+  'name': name,
+  'unique': false,
+  'parts': [
+    for (final part in parts)
+      {'name': part.name, 'descending': part.descending},
+  ],
+  'bytes': pages * 4096,
+  'state': state,
+};
+
+bool _listEquals(List<Object?> a, List<Object?> b) {
+  if (a.length != b.length) {
+    return false;
+  }
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 Map<String, Object?> _mapOf(Object? value, String what) =>
