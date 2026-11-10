@@ -280,6 +280,43 @@ void main() {
       expect(await t2.get(), isNull);
     });
 
+    test('logChanges: false writes documents but no change rows', () async {
+      final db = await openDatabase();
+      final t1 = txnRef(db, 't1');
+      final t2 = txnRef(db, 't2');
+
+      final emissions = <DocSnapshot<Txn>?>[];
+      final sub = t1.watch().listen(emissions.add);
+      await settle();
+
+      final bulk =
+          db.bulkWriter(
+              const BulkWriterOptions(chunkSize: 1, logChanges: false),
+            )
+            ..set(t1, txnOf(100))
+            ..set(t2, txnOf(200));
+      await bulk.close();
+      await settle();
+
+      // The documents are on disk; watches still fired per chunk.
+      expect((await t1.get())!.data.amountMinor, 100);
+      expect((await t2.get())!.data.amountMinor, 200);
+      expect(emissions, hasLength(2));
+      // The log has a hole where the load ran: a consumer resuming from a
+      // saved watermark must resync fully instead of resuming.
+      expect(await db.changesSince(0), isEmpty);
+      expect(await db.lastChangeSeq(), 0);
+      await sub.cancel();
+
+      // Later logged writes still seq past the load.
+      final bulk2 = db.bulkWriter(BulkWriterOptions(chunkSize: 1))
+        ..set(t2, txnOf(300));
+      await bulk2.close();
+      final changes = await db.changesSince(0);
+      expect(changes.single.path, 'accounts/a1/txns/t2');
+      expect(changes.single.seq, 1);
+    });
+
     test('every committed chunk delivers one watch event', () async {
       final db = await openDatabase();
       final t1 = txnRef(db, 't1');

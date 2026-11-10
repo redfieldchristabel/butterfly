@@ -71,13 +71,18 @@ String indexName(String table, String canonicalIndex) =>
 String scopeIndexName(String table) => 'cx_${table}_scope';
 
 /// The `CREATE TABLE` statement for one collection.
+///
+/// A document is identified by its **scope key**: the `p_` param columns
+/// plus `id`, enforced by the table's unique scope index
+/// ([createScopeIndexSql] — for a root collection just `id`). There is no
+/// stored `path` column; the full path is derived from the scope key (see
+/// [RegistryEntry.pathOfRow] and [RegistryEntry.scopeKeyOf]).
 String createTableSql(
   String table,
   List<String> paramSqlNames,
   List<ColumnDdl> columns,
 ) {
   final defs = <String>[
-    'path TEXT NOT NULL UNIQUE',
     'id TEXT NOT NULL',
     for (final param in paramSqlNames) '$param TEXT NOT NULL',
     'data BLOB NOT NULL',
@@ -117,43 +122,50 @@ String createIndexSql(String table, IndexDdl index) {
 }
 
 /// The one-document upsert statement for a table: every write binds
-/// `path, id, params..., data, f_columns...` in exactly this order. Built
-/// once per collection (see [RegistryEntry.upsertSql]), not per document.
+/// `data, f_columns..., params..., id` in exactly this order — the same
+/// bind order as [writeUpdateSql], so one bound argument list serves both.
+/// Built once per collection (see [RegistryEntry.upsertSql]), not per
+/// document; the conflict target is the scope key.
 String writeUpsertSql(
   String table,
   List<String> paramSqlNames,
   List<ColumnDdl> columns,
 ) {
   final columnNames = [
-    'path',
-    'id',
-    ...paramSqlNames,
     'data',
     for (final column in columns) column.name,
+    ...paramSqlNames,
+    'id',
   ];
   final placeholders = List.filled(columnNames.length, '?').join(', ');
+  final key = [...paramSqlNames, 'id'].join(', ');
   final updates = [
-    for (final name in columnNames.skip(1)) '$name = excluded.$name',
+    'data = excluded.data',
+    for (final column in columns) '${column.name} = excluded.${column.name}',
   ].join(', ');
   return 'INSERT INTO $table (${columnNames.join(', ')}) '
       'VALUES ($placeholders) '
-      'ON CONFLICT(path) DO UPDATE SET $updates';
+      'ON CONFLICT($key) DO UPDATE SET $updates';
 }
 
 /// The one-document replace-if-exists statement behind batch `update`s: the
-/// same bind order as [writeUpsertSql], keyed by `path`.
+/// same bind order as [writeUpsertSql] (`data, f_columns..., params..., id`),
+/// keyed by the scope key. The key columns themselves are never SET — a
+/// document's identity cannot change.
 String writeUpdateSql(
   String table,
   List<String> paramSqlNames,
   List<ColumnDdl> columns,
 ) {
   final updates = [
-    'id = ?',
-    for (final name in paramSqlNames) '$name = ?',
     'data = ?',
     for (final column in columns) '${column.name} = ?',
   ].join(', ');
-  return 'UPDATE $table SET $updates WHERE path = ?';
+  final where = [
+    for (final name in paramSqlNames) '$name = ?',
+    'id = ?',
+  ].join(' AND ');
+  return 'UPDATE $table SET $updates WHERE $where';
 }
 
 /// The `ALTER TABLE ADD COLUMN` for a backfilled `f_` column.
@@ -285,11 +297,11 @@ final class RegistryEntry {
   final String shapeHash;
 
   /// The one-document upsert statement, built once per table: every write
-  /// binds `path, id, params..., data, f_columns...` in exactly this order.
+  /// binds `data, f_columns..., params..., id` in exactly this order.
   final String upsertSql;
 
   /// The one-document replace-if-exists statement behind batch `update`s:
-  /// the same bind order as [upsertSql], keyed by `path`.
+  /// the same bind order as [upsertSql], keyed by the scope key.
   final String updateSql;
 
   /// The SQL name of a model field or path param of this collection.
@@ -299,6 +311,48 @@ final class RegistryEntry {
       return paramSqlNames[paramIndex];
     }
     return fieldColumnName(name);
+  }
+
+  /// The scope-key SQL columns in key order: the `p_` param columns, then
+  /// `id`. The conflict target of the upsert and the WHERE key of deletes
+  /// and updates; unique together by the scope index.
+  List<String> get keyColumns => [...paramSqlNames, 'id'];
+
+  /// The full document path of the row identified by [paramValues] (one per
+  /// [paramNames] entry, in order) and [id] — the stored layout has no path
+  /// column, so paths are always derived like this.
+  String pathOfRow(List<String> paramValues, String id) {
+    final values = <String, String>{
+      for (var i = 0; i < paramNames.length; i++) paramNames[i]: paramValues[i],
+    };
+    return adapter.pattern.resolve(values).doc(id).path;
+  }
+
+  /// The full document path of a read row holding the scope-key columns
+  /// (`p_` params and `id`) — e.g. a `DELETE ... RETURNING` row.
+  String pathOfKeyRow(Map<String, Object?> row) => pathOfRow([
+    for (final name in paramSqlNames) row[name]! as String,
+  ], row['id']! as String);
+
+  /// Splits a full document [path] into its scope key: the param values in
+  /// [paramNames] order plus the document id, or `null` when [path] is not
+  /// a document of this collection's pattern (wrong shape or collection).
+  ///
+  /// The inverse of [pathOfRow] — together they are the one shared
+  /// path-derivation helper; tested round-trip in both directions.
+  ({List<String> paramValues, String id})? scopeKeyOf(String path) {
+    final separator = path.lastIndexOf('/');
+    if (separator < 0) {
+      return null;
+    }
+    final values = adapter.pattern.match(path.substring(0, separator));
+    if (values == null) {
+      return null;
+    }
+    return (
+      paramValues: [for (final name in paramNames) values[name]!],
+      id: path.substring(separator + 1),
+    );
   }
 }
 

@@ -635,11 +635,16 @@ await bulk.close(); // flushes, finishes the indexes, resolves when durable
   table's indexes — the table is empty, or the writer has buffered more
   rows than the table already holds — the writer drops the table's
   secondary indexes during the load and rebuilds them in `close()`'s one
-  write transaction. The scope index and the unique `path` constraint are
-  never dropped. A query whose plan needs a deferred index waits until the
-  writer closes, then runs; `get()` by id is unaffected. Watches fire once
-  per chunk commit; a query watch whose plan needs a deferred index re-runs
-  only after the writer closes.
+  write transaction. The scope index is never dropped. A query whose plan
+  needs a deferred index waits until the writer closes, then runs; `get()`
+  by id is unaffected. Watches fire once per chunk commit; a query watch
+  whose plan needs a deferred index re-runs only after the writer closes.
+- **Skip the change log for pure imports** (`BulkWriterOptions(logChanges:
+  false)`): a 1M-document import writes no log rows (~52 MB of the file at
+  1M). In-process watches still fire per chunk, but the log has a hole
+  where the load ran — a sync consumer resuming from a saved
+  `lastChangeSeq` would silently skip the loaded documents, so give it a
+  full resync (a fresh snapshot plus the changes after the load).
 - **Crash recovery**: while the indexes are deferred they are recorded in
   the internal `_cocoon_bulk` table, in the same transaction that drops
   them. A database opened with rows left there (a crash mid-load) rebuilds
@@ -704,15 +709,46 @@ for (final change in changes) {
   watermark = change.seq;
 }
 // Durably save `watermark`, then trim what you've processed:
-await db.pruneChanges(upToSeq: watermark);
+final pruned = await db.pruneChanges(upToSeq: watermark); // rows deleted
 
 // db.lastChangeSeq() is the highest seq ever assigned; it never goes
-// backwards, even after a full prune.
+// backwards, even after a full prune. db.earliestChangeSeq() is the oldest
+// seq still readable (lastChangeSeq + 1 once the log is empty).
 ```
+
+A consumer resuming from a pruned watermark must resync fully, not resume:
+the pruned rows are gone, and reading from a seq below the floor throws
+
+```dart
+try {
+  final changes = await db.changesSince(watermark);
+  // ...
+} on ChangesPrunedException catch (e) {
+  // e.requestedSeq < e.earliestSeq: take a fresh snapshot, then resume
+  // from the new lastChangeSeq().
+}
+```
+
+Or let the engine bound the log for you:
+
+```dart
+final db = await Cocoon.open(file, collections: [...],
+  options: const CocoonOptions(
+    changeRetention: ChangeRetention(maxChanges: 50000, maxAge: Duration(days: 30)),
+  ),
+);
+```
+
+The engine deletes the old prefix in small batches after commits that wrote
+change rows — never inside a user transaction, and never more than a few
+thousand rows per commit, so a large backlog shrinks over subsequent writes
+instead of stalling one. The default keeps everything.
 
 `CocoonOptions(keepChanges: false)` stops writing log rows for apps that
 only need the in-process watches; notifications are unaffected, and
-`changesSince` simply returns nothing.
+`changesSince` simply returns nothing. The same idea applies at load time:
+`db.bulkWriter(const BulkWriterOptions(logChanges: false))` writes no log
+rows for a big import — give sync consumers a full resync afterwards.
 
 Save `db.instanceId` durably next to the watermark, and compare the two
 after every open (see "Backup and restore"): the guarantee that
@@ -730,6 +766,7 @@ final db = await Cocoon.open(
     durability: Durability.full, // PRAGMA synchronous; `normal` for speed
     cacheSize: 2000, // bounded LRU of decoded hot documents; 0 disables
     keepChanges: true, // write the change log the watches and sync read
+    changeRetention: null, // or ChangeRetention(...) to bound the log
     pageCacheMiB: 64, // PRAGMA cache_size on the writer; readers keep the default; <= 0 = default
     tempStoreInMemory: true, // PRAGMA temp_store = MEMORY
     walAutoCheckpointPages: 8000, // PRAGMA wal_autocheckpoint; <= 0 = default
@@ -744,6 +781,16 @@ the stored shape matches, opening does no DDL at all. Tables in the file
 without a registered adapter are left alone. Pass `schemaVersion:` and
 `migrations:` (see "Schema migrations") and the same transaction first
 applies every pending schema migration.
+
+Files also carry a storage-format version in `_cocoon_meta`. A file written
+by an older Cocoon is upgraded on open — its collection tables are rebuilt
+to the current layout (no stored `path` column; identity is the path params
+plus id) table by table, inside the open, crash-safe, with progress
+reported through `onMigrationProgress` — and a file written by a newer
+version refuses to open with a `StorageFormatTooNewException`. Measured on
+a 1M file: the one-time upgrade takes ~5-9 s, keeps every document and
+change-log row, and a `backupTo` (or any `VACUUM`) afterwards compacts the
+file from 390 MiB to 305 MiB.
 
 One `Cocoon` instance must own its database file: do not open the same file
 from two instances or two processes — SQLite's write lock and the hot-cache
@@ -797,13 +844,17 @@ What the engine guarantees:
   before touching the target, then copies to `<path>.restoring` and swaps;
   a failure at any point puts the previous database back where it was.
 - **Compatibility checked like `open`.** A backup written by a NEWER schema
-  version is refused before the target is touched; an older one is fine —
-  the normal migrations run at the next `open`.
+  version or a NEWER storage format is refused before the target is
+  touched; an older one is fine — the normal migrations run at the next
+  `open`, and an older storage format's tables are rebuilt at that open
+  (measured at 1M: ~5-9 s, then a `backupTo` compacts 390 → 305 MiB).
 - **Typed errors.** `inspectBackup` throws `NotCocoonBackupException` (the
   file is not a Cocoon backup — a live database file isn't one either),
   `BackupDamagedException` (unreadable bytes or a failed
   `PRAGMA integrity_check`), `BackupFormatTooNewException` (a newer app's
-  format version wrote it).
+  format version wrote it); `restoreBackup` throws
+  `StorageFormatTooNewException` for a backup written by a newer storage
+  format than this engine reads.
 - **`keepChanges: false` databases back up too** — the copy's change log is
   simply empty, like the source's.
 
@@ -840,6 +891,29 @@ stay at 2.3-2.8 ms p50 and 4.9-5.2 ms p95 (the no-backup baseline p50 is
 includes the whole-file `integrity_check` of the backup, the copy and the
 swap. Runs via `dart run tool/backup_measure.dart --size 1000000` in
 `benchmarks/cocoon_rivals`.
+
+## Storage layout and file size
+
+One table per collection; a row's stored identity is its **scope key** (the
+path params as `p_` columns plus the document `id`, unique through the
+table's scope index). The full `path` you see in refs, snapshots and the
+change log is derived from it — there is no stored path column and no path
+autoindex, which is 69.8 MB of a 1M-transaction file gone with no read
+regression. `benchmarks/cocoon_rivals/STORAGE.md` has the full anatomy;
+the shipped layout at 1M transactions:
+
+| file | size |
+|---|---|
+| shipped layout (this Cocoon), fresh 1M import via `bulkWriter()` | 307.6 MiB |
+| same load, change log pruned (`pruneChanges`/`changeRetention`) | 252.7 MiB |
+| pre-2026-11 layout (with the path column), same data | 374.7 MiB |
+| drift, same data (reference) | 230.9 MiB |
+
+Per row: the document blob (canonical protobuf) averages 125.1 B in the
+table, the change log adds ~52 B per written document (48 B payload, 1M
+rows = 52.2 MB) until pruned, and the secondary + scope indexes together
+126.4 MB. The internal `path` column is gone; documents written by older
+Cocoon versions are upgraded on open (see "Opening and options").
 
 ## Benchmarks
 
@@ -925,7 +999,10 @@ The knobs of `CocoonOptions`, with their measured trade-offs:
   Keep `full` for money data that must survive a power cut.
 - `keepChanges: false` — stops writing the on-disk change log. ~11% faster
   single writes. Only for databases where nothing needs `changesSince`
-  (in-process `watch()` streams keep working).
+  (in-process `watch()` streams keep working). For databases where
+  something does, `changeRetention` bounds the log instead (small batched
+  deletes after commits) — at 1M the log is 52.2 MB, so keeping it bounded
+  is the difference between a 305 MB and a 253 MB file.
 - `cacheSize` — the LRU of decoded documents. It is a cap, not a
   pre-allocation: RAM follows the working set. A warm 1,000-document
   working set reads 50x faster than cold SQLite round-trips (113 → 2 ms),

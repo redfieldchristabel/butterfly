@@ -1,5 +1,38 @@
 ## Unreleased
 
+- **Existing databases upgrade themselves on open** — and every file got
+  ~18% smaller at 1M transactions. The internal `path` column (and its
+  unique index) is gone from collection tables: a document is identified by
+  its path params + id, and the full path you see in refs, snapshots and
+  the change log is derived from it. The public API is unchanged. Files
+  written by older Cocoon versions are rebuilt table by table inside the
+  first open that touches them (crash-safe — a failure leaves the old file
+  and the next open finishes; progress reports through the existing
+  `onMigrationProgress`), a file written by a NEWER version refuses to open
+  with a typed `StorageFormatTooNewException`, and `restoreBackup` accepts
+  older-format backups (they migrate at the next open). Measured on a 1M
+  file: 409 MB → 320 MB compacted (390 → 305 MiB), the one-time migration
+  takes ~5-9 s and keeps every document and change-log row.
+- **Bound the change log** (it exists for sync consumers; watches don't
+  read it). `db.pruneChanges(upToSeq:)` now returns how many rows it
+  deleted; new `db.earliestChangeSeq()` is the oldest seq still readable;
+  and a consumer that reads from a pruned watermark gets a typed
+  `ChangesPrunedException` instead of a silent gap — resync fully, like
+  Firestore's "resume token expired". Or let the engine do it:
+  `CocoonOptions(changeRetention: ChangeRetention(maxChanges: 50000,
+  maxAge: Duration(days: 30)))` keeps the newest N rows and/or everything
+  newer than the duration, deleted in small batches after commits (never
+  inside a user transaction, never stalling a write). The default keeps
+  everything, as before. `lastChangeSeq()` still never goes backwards.
+- **`bulkWriter(logChanges: false)`**: importing a million documents no
+  longer writes a million change-log rows (~52 MB of the file at 1M).
+  In-process watches still fire per chunk; sync consumers must resync fully
+  afterwards, because the log has a hole where the load ran.
+- Batch `update` now actually persists: an `update` of a document that
+  already existed on disk was written with a shifted bind order and
+  silently matched nothing — the new value only ever lived in the
+  hot-document cache. Caught and fixed by the scope-key rewrite; reads from
+  a fresh instance now see the update.
 - Butterfly CLI shortcuts (optional): `butterfly generate model <Name>
   --cocoon [--collection <path>]` scaffolds a starter `@Collection` model,
   and `butterfly cocoon migrate [args...]` / `butterfly cocoon build` run

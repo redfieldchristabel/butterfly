@@ -220,6 +220,11 @@ final class RawFileMeta {
 
   /// The parsed `schema_version` meta value, `null` when absent.
   int? get schemaVersion => int.tryParse(values[schemaVersionMetaKey] ?? '');
+
+  /// The parsed `format_version` meta value (the file's storage format),
+  /// `null` when the file predates format tracking.
+  int? get storageFormatVersion =>
+      int.tryParse(values[formatVersionMetaKey] ?? '');
 }
 
 /// Writes a consistent, compacted copy of the SQLite file at [sourcePath]

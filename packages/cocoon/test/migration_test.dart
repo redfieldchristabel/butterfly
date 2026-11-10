@@ -259,13 +259,7 @@ void main() {
     expect(await storedVersion(), 3);
     // The old column is gone, the new one carries the converted values, and
     // the untouched `name` column was rebuilt too.
-    expect(await staffColumns(), [
-      'path',
-      'id',
-      'data',
-      'f_name',
-      'f_staff_uid',
-    ]);
+    expect(await staffColumns(), ['id', 'data', 'f_name', 'f_staff_uid']);
     final raw = SqliteDatabase(path: dbPath());
     final columns = await raw.getAll(
       'SELECT id, f_staff_uid FROM staff ORDER BY id',
@@ -421,8 +415,8 @@ void main() {
     final raw = SqliteDatabase(path: dbPath());
     final bare = WireWriter()..writeString(1, 'Old');
     await raw.execute(
-      'INSERT INTO staff (path, id, data, f_name, f_staff_id) '
-      "VALUES ('staff/s0', 's0', ?, 'Old', 'legacy')",
+      'INSERT INTO staff (id, data, f_name, f_staff_id) '
+      "VALUES ('s0', ?, 'Old', 'legacy')",
       [bare.toBytes()],
     );
     await raw.close();

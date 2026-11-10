@@ -828,9 +828,9 @@ IndexPlan _servingIndexOrThrow(
 
 String _selectSql(RegistryEntry entry, List<QueryOrder> orders) {
   // The param columns travel with every page so a row can be turned back
-  // into a DocRef, whatever parent it belongs to.
+  // into a DocRef — its full path is derived from the params and the id,
+  // which is also every row's stored identity (the scope key).
   final columns = <String>[
-    'path',
     'id',
     'data',
     ...entry.paramSqlNames,

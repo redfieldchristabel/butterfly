@@ -63,6 +63,38 @@ final class Change {
 /// [Change.at].
 typedef TouchedChange = (String table, String path, ChangeOp op);
 
+/// Thrown by `Cocoon.changesSince` when [requestedSeq] predates the log's
+/// pruned floor: every change between [requestedSeq] and [earliestSeq] was
+/// already deleted (`Cocoon.pruneChanges` or a
+/// `CocoonOptions.changeRetention` bound), so reading forward from
+/// [requestedSeq] would silently skip them.
+///
+/// The Firestore "resume token expired" idea: a sync consumer that saved a
+/// watermark must resync fully (a fresh snapshot plus the changes from the
+/// new floor on), not just resume. Combine it with the `instanceId` rule —
+/// save `Cocoon.instanceId` next to the watermark and distrust both when
+/// the id changed.
+final class ChangesPrunedException implements Exception {
+  /// Builds the exception with the seq the consumer asked from and the
+  /// oldest seq still readable.
+  const ChangesPrunedException({
+    required this.requestedSeq,
+    required this.earliestSeq,
+  });
+
+  /// The seq the read started from.
+  final int requestedSeq;
+
+  /// The oldest seq still in the log.
+  final int earliestSeq;
+
+  @override
+  String toString() =>
+      'ChangesPrunedException: changes from #$requestedSeq were pruned; '
+      'the log keeps #$earliestSeq onward. Resync fully — a read from '
+      'this watermark would silently skip the deleted changes.';
+}
+
 /// The internal notification one committed transaction produces: the set of
 /// (table, path, op) triples it touched.
 ///

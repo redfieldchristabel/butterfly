@@ -20,6 +20,7 @@ import 'bulk_writer.dart';
 import 'cache.dart';
 import 'changes.dart';
 import 'executor.dart';
+import 'format_migration.dart';
 import 'migrate.dart';
 import 'naming.dart';
 import 'query.dart';
@@ -41,6 +42,48 @@ enum Durability {
   normal,
 }
 
+/// A bound for the on-disk change log, applied by the engine after commits.
+///
+/// Pass it as [CocoonOptions.changeRetention]. Both fields are optional and
+/// combine: the engine keeps at most [maxChanges] newest rows AND every row
+/// newer than [maxAge]; anything older is deleted in small batches after a
+/// commit that wrote change rows — never inside a user transaction, and at
+/// most [CocoonOptions.defaultRetentionBatchRows] rows per commit, so a
+/// large backlog shrinks over subsequent writes instead of stalling one.
+///
+/// The default (no [CocoonOptions.changeRetention]) keeps everything: the
+/// log only grows when the app lets it, exactly as before.
+final class ChangeRetention {
+  /// Builds a retention policy; at least one bound must be set, and both
+  /// must be non-negative — checked when the database opens
+  /// ([CocoonOptions.changeRetention] is validated in `Cocoon.open`).
+  const ChangeRetention({this.maxChanges, this.maxAge});
+
+  /// Keep at most this many of the newest change rows.
+  final int? maxChanges;
+
+  /// Keep no change row older than this duration.
+  final Duration? maxAge;
+
+  /// Throws an [ArgumentError] when the policy is unusable (no bounds, or a
+  /// negative one). Called when the database opens.
+  void validate() {
+    if (maxChanges == null && maxAge == null) {
+      throw ArgumentError('ChangeRetention needs maxChanges, maxAge, or both');
+    }
+    if (maxChanges != null && maxChanges! < 0) {
+      throw ArgumentError.value(
+        maxChanges,
+        'maxChanges',
+        'Must not be negative',
+      );
+    }
+    if (maxAge != null && maxAge!.isNegative) {
+      throw ArgumentError.value(maxAge, 'maxAge', 'Must not be negative');
+    }
+  }
+}
+
 /// Options for opening a [Cocoon] database.
 final class CocoonOptions {
   /// Builds options; the defaults are safe for money-style data.
@@ -48,6 +91,7 @@ final class CocoonOptions {
     this.durability = Durability.full,
     this.cacheSize = defaultCacheSize,
     this.keepChanges = true,
+    this.changeRetention,
     this.pageCacheMiB = defaultPageCacheMiB,
     this.tempStoreInMemory = true,
     this.walAutoCheckpointPages = defaultWalAutoCheckpointPages,
@@ -76,6 +120,21 @@ final class CocoonOptions {
   /// the log stays empty — while in-process watch notifications are
   /// unaffected; pick it when only `watch()` streams are needed.
   final bool keepChanges;
+
+  /// An optional bound for the change log, enforced by the engine after
+  /// commits (see [ChangeRetention]). `null` — the default — keeps every
+  /// change row until the app calls [Cocoon.pruneChanges] itself.
+  final ChangeRetention? changeRetention;
+
+  /// Rows deleted per batched `DELETE` while enforcing
+  /// [changeRetention], and the most rows one commit's enforcement may
+  /// delete in total (more is left for the next commits, so a large
+  /// backlog shrinks without stalling any single write).
+  static const int defaultRetentionBatchRows = 2000;
+
+  /// How many batched deletes one commit's retention enforcement may run
+  /// ([defaultRetentionBatchRows] rows per batch).
+  static const int defaultRetentionBatchStatements = 10;
 
   /// The SQLite page-cache budget in MiB, applied as
   /// `PRAGMA cache_size = -<MiB * 1024>` on the write connection. Reader
@@ -140,7 +199,8 @@ final class Cocoon {
     this._executor,
     this._registry,
     this._cache,
-    this._keepChanges, {
+    this._keepChanges,
+    this._changeRetention, {
     this.databasePath,
     this.schemaLock,
     required this.instanceId,
@@ -150,6 +210,7 @@ final class Cocoon {
   final SchemaRegistry _registry;
   final DocumentCache _cache;
   final bool _keepChanges;
+  final ChangeRetention? _changeRetention;
   final WatchHub _watchHub = WatchHub();
 
   /// The paths (in absolute form) of the databases currently open through
@@ -279,10 +340,20 @@ final class Cocoon {
     String? databasePath,
   }) async {
     final registry = SchemaRegistry.build(collections);
+    // Fail fast on an unusable retention policy, before the file is touched.
+    options.changeRetention?.validate();
     final instanceId = await executor.writeTransaction((tx) async {
       await _createMetaTableIfMissing(tx);
       await _createChangesTableIfMissing(tx);
       final instanceId = await _ensureInstanceId(tx);
+      // The file's storage layout is brought up to the engine's before the
+      // schema versions run: the format rebuild is shape-preserving, and
+      // the migration runner and reconciler both assume the current layout.
+      await _applyStorageFormat(
+        tx,
+        onMigrationProgress: onMigrationProgress,
+        databasePath: databasePath ?? '',
+      );
       if (schemaLock != null) {
         await tx.execute(
           'INSERT OR REPLACE INTO $metaTableName (key, value) VALUES (?, ?)',
@@ -311,6 +382,7 @@ final class Cocoon {
       registry,
       DocumentCache(options.cacheSize),
       options.keepChanges,
+      options.changeRetention,
       databasePath: databasePath,
       schemaLock: schemaLock,
       instanceId: instanceId,
@@ -450,6 +522,19 @@ final class Cocoon {
         throw SchemaTooNewException(stored, schemaVersion);
       }
     }
+    // The same rule for the storage layout: a backup written by a NEWER
+    // storage format cannot be read by this engine, so refuse before the
+    // target file is touched. An OLDER format is fine: the restored file's
+    // tables are rebuilt at the next `Cocoon.open` (see the README's
+    // "Backup and restore").
+    final storedFormat = info.storageFormatVersion;
+    if (storedFormat != null && storedFormat > storageFormatVersion) {
+      throw StorageFormatTooNewException(
+        path: backup,
+        formatVersion: storedFormat,
+        maxSupported: storageFormatVersion,
+      );
+    }
     return BackupOperations.restore(
       backupPath: backup,
       targetPath: path,
@@ -568,11 +653,20 @@ final class Cocoon {
   /// Document writes buffer in the transaction's [WriteTx] and flush as
   /// batched statements before the COMMIT (and before any read or delete in
   /// the same transaction, and every [writeFlushThreshold] rows).
+  ///
+  /// With `logChanges: false` the transaction appends no change-log rows
+  /// (a [BulkWriter] chunk can opt out); watch notifications and cache
+  /// updates are unaffected. After the commit — never inside it — the
+  /// change log's [CocoonOptions.changeRetention] bound is enforced in
+  /// small batches.
   @internal
-  Future<R> writeTx<R>(Future<R> Function(WriteTx wtx) body) async {
+  Future<R> writeTx<R>(
+    Future<R> Function(WriteTx wtx) body, {
+    bool logChanges = true,
+  }) async {
     final stage = CacheStage();
     final result = await _executor.writeTransaction((tx) async {
-      final wtx = WriteTx(this, tx, stage);
+      final wtx = WriteTx(this, tx, stage, logChanges: logChanges);
       final out = await body(wtx);
       await wtx.flush();
       return out;
@@ -581,6 +675,9 @@ final class Cocoon {
     final touched = stage.takeTouched();
     if (touched.isNotEmpty) {
       _watchHub.emit(CommitEvent(touched));
+    }
+    if (_changeRetention != null && touched.isNotEmpty) {
+      await _enforceChangeRetention();
     }
     return result;
   }
@@ -636,35 +733,58 @@ final class Cocoon {
   Future<void> deleteDoc(DocRef<Object> ref) =>
       writeTx<void>((wtx) => wtx.delete(ref));
 
-  /// Deletes the document at [path] from [table], returning its `(table,
-  /// path)` pair only when a row was actually removed.
+  /// Deletes the one row of [table] (via [entry]) identified by the scope
+  /// key [paramValues] + [id], returning its `(table, path)` pair only when
+  /// a row was actually removed. The path is derived from the deleted row's
+  /// key columns.
   @internal
-  Future<List<(String, String)>> deleteReturning(
+  Future<List<(String, String)>> deleteRow(
     CocoonTx tx,
-    String table,
-    String path,
+    RegistryEntry entry,
+    List<String> paramValues,
+    String id,
   ) async {
+    final where = [
+      for (var i = 0; i < entry.paramSqlNames.length; i++)
+        '${entry.paramSqlNames[i]} = ?',
+      'id = ?',
+    ].join(' AND ');
+    final returning = [...entry.paramSqlNames, 'id'].join(', ');
     final rows = await tx.getAll(
-      'DELETE FROM $table WHERE path = ? RETURNING path',
-      [path],
+      'DELETE FROM ${entry.table} WHERE $where RETURNING $returning',
+      [...paramValues, id],
     );
-    return [for (final row in rows) (table, row['path']! as String)];
+    return [for (final row in rows) (entry.table, entry.pathOfKeyRow(row))];
   }
 
-  /// Deletes the half-open subtree range from [table], returning one
-  /// `(table, path)` pair per removed document.
+  /// Deletes every row of [entry]'s table whose leading param columns match
+  /// [paramValues] — the whole subtree of the document whose ancestor scope
+  /// those values are — returning one `(table, path)` pair per removed row,
+  /// path derived from each row's key columns.
   @internal
-  Future<List<(String, String)>> deleteSubtree(
+  Future<List<(String, String)>> deleteScopePrefix(
     CocoonTx tx,
-    String table,
-    String from,
-    String to,
+    RegistryEntry entry,
+    List<String> paramValues,
   ) async {
+    if (paramValues.isEmpty ||
+        paramValues.length > entry.paramSqlNames.length) {
+      throw ArgumentError.value(
+        paramValues,
+        'paramValues',
+        'Not a subtree prefix of collection ${entry.adapter.pattern}',
+      );
+    }
+    final where = [
+      for (var i = 0; i < paramValues.length; i++)
+        '${entry.paramSqlNames[i]} = ?',
+    ].join(' AND ');
+    final returning = [...entry.paramSqlNames, 'id'].join(', ');
     final rows = await tx.getAll(
-      'DELETE FROM $table WHERE path >= ? AND path < ? RETURNING path',
-      [from, to],
+      'DELETE FROM ${entry.table} WHERE $where RETURNING $returning',
+      paramValues,
     );
-    return [for (final row in rows) (table, row['path']! as String)];
+    return [for (final row in rows) (entry.table, entry.pathOfKeyRow(row))];
   }
 
   /// Whether every commit appends its change rows to the on-disk log.
@@ -906,9 +1026,18 @@ final class Cocoon {
   /// [Change.seq] until the list comes back empty. With
   /// `CocoonOptions.keepChanges` disabled the log is never written and this
   /// always returns an empty list.
+  ///
+  /// Throws a [ChangesPrunedException] when [seq] predates the log's pruned
+  /// floor ([earliestChangeSeq] - 1): the changes between [seq] and the
+  /// floor are gone, so a sync consumer must resync fully instead of
+  /// silently skipping them.
   Future<List<Change>> changesSince(int seq, {int limit = 1000}) async {
     if (limit < 1) {
       throw ArgumentError.value(limit, 'limit', 'Must be at least 1');
+    }
+    final earliest = await earliestChangeSeq();
+    if (seq + 1 < earliest) {
+      throw ChangesPrunedException(requestedSeq: seq, earliestSeq: earliest);
     }
     final rows = await _executor.getAll(
       'SELECT seq, tbl, path, op, at FROM $changesTableName '
@@ -918,11 +1047,27 @@ final class Cocoon {
     return [for (final row in rows) _changeFromRow(row)];
   }
 
+  /// The oldest change seq still readable from the log: the lowest [seq]
+  /// present, or `lastChangeSeq() + 1` when the log is empty (nothing was
+  /// ever logged, or everything logged was pruned).
+  Future<int> earliestChangeSeq() async {
+    final row = await _executor.getOptional(
+      'SELECT MIN(seq) AS seq FROM $changesTableName',
+    );
+    final min = row?['seq'] as int?;
+    if (min != null) {
+      return min;
+    }
+    return (await lastChangeSeq()) + 1;
+  }
+
   /// The highest seq ever assigned to a change, or `0` when nothing was
   /// logged yet.
   ///
-  /// It never goes backwards: pruning removes rows but keeps the head, so a
-  /// sync outbox can compare its own watermark against it at any time.
+  /// It never goes backwards: pruning and retention remove rows but the
+  /// AUTOINCREMENT head in `sqlite_sequence` (where this value lives, not
+  /// in `MAX(seq)`) is never rewound, so a sync outbox can compare its own
+  /// watermark against it at any time.
   Future<int> lastChangeSeq() async {
     final row = await _executor.getOptional(
       'SELECT seq FROM sqlite_sequence WHERE name = ?',
@@ -931,15 +1076,111 @@ final class Cocoon {
     return (row?['seq'] as int?) ?? 0;
   }
 
-  /// Deletes every change row with `seq <= upToSeq`.
+  /// Deletes every change row with `seq <= upToSeq`, returning how many
+  /// rows were removed.
   ///
   /// Call it once changes are durably processed elsewhere (synced, audited);
-  /// the log would otherwise grow forever.
-  Future<void> pruneChanges({required int upToSeq}) {
+  /// the log would otherwise grow forever. `lastChangeSeq()` does not move
+  /// — a consumer that reads from a seq below the new floor
+  /// ([earliestChangeSeq]) gets a [ChangesPrunedException] and knows to
+  /// resync, never a silent gap.
+  Future<int> pruneChanges({required int upToSeq}) async {
+    if (upToSeq < 0) {
+      throw ArgumentError.value(upToSeq, 'upToSeq', 'Must not be negative');
+    }
     return _executor.writeTransaction((tx) async {
       await tx.execute('DELETE FROM $changesTableName WHERE seq <= ?', [
         upToSeq,
       ]);
+      final row = await tx.getOptional('SELECT changes() AS c');
+      return row!['c']! as int;
+    });
+  }
+
+  /// Applies [CocoonOptions.changeRetention] after a commit: computes the
+  /// seq floor the count and age bounds imply and deletes the log's old
+  /// prefix in small batches, in its own write transaction — never inside a
+  /// user transaction. One call deletes at most
+  /// [CocoonOptions.defaultRetentionBatchStatements] batches
+  /// ([CocoonOptions.defaultRetentionBatchRows] rows each) and walks at
+  /// most that many batches to find the age floor, so a large backlog
+  /// shrinks over the commits that follow instead of stalling one write.
+  Future<void> _enforceChangeRetention() async {
+    final retention = _changeRetention!;
+    final last = await lastChangeSeq();
+    if (last == 0) {
+      return;
+    }
+    var floor = 0;
+    if (retention.maxChanges != null) {
+      // Keep at most the newest N rows: everything at or below
+      // `last - N` goes (the AUTOINCREMENT seqs of committed rows are
+      // contiguous, so this is exact).
+      final countFloor = last - retention.maxChanges!;
+      if (countFloor > floor) {
+        floor = countFloor;
+      }
+    }
+    if (retention.maxAge != null) {
+      final cutoff =
+          DateTime.now().toUtc().microsecondsSinceEpoch -
+          retention.maxAge!.inMicroseconds;
+      // The log is append-ordered, so rows older than the cutoff are (up
+      // to clock skew) a prefix; walk it in small batches and keep only
+      // the verified-older part.
+      final batch = CocoonOptions.defaultRetentionBatchRows;
+      var low = 0;
+      for (
+        var walked = 0;
+        walked < CocoonOptions.defaultRetentionBatchStatements;
+        walked++
+      ) {
+        final rows = await _executor.getAll(
+          'SELECT seq, at FROM $changesTableName WHERE seq > ? '
+          'ORDER BY seq LIMIT ?',
+          [low, batch],
+        );
+        if (rows.isEmpty) {
+          break;
+        }
+        var oldest = 0;
+        for (final row in rows) {
+          if ((row['at']! as int) >= cutoff) {
+            break;
+          }
+          oldest = row['seq']! as int;
+        }
+        if (oldest > floor) {
+          floor = oldest;
+        }
+        // `oldest == 0`: this batch already holds a row newer than the
+        // cutoff. A short batch is the log's end. Either way the old
+        // prefix is behind us; otherwise keep walking.
+        if (oldest == 0 ||
+            oldest != (rows.last['seq']! as int) ||
+            rows.length < batch) {
+          break;
+        }
+        low = oldest;
+      }
+    }
+    if (floor <= 0) {
+      return;
+    }
+    await _executor.writeTransaction((tx) async {
+      var statements = 0;
+      while (statements < CocoonOptions.defaultRetentionBatchStatements) {
+        final result = await tx.getAll(
+          'DELETE FROM $changesTableName WHERE seq IN '
+          '(SELECT seq FROM $changesTableName WHERE seq <= ? LIMIT ?) '
+          'RETURNING seq',
+          [floor, CocoonOptions.defaultRetentionBatchRows],
+        );
+        statements++;
+        if (result.length < CocoonOptions.defaultRetentionBatchRows) {
+          break;
+        }
+      }
     });
   }
 
@@ -994,9 +1235,22 @@ final class Cocoon {
     required bool cachePut,
   }) async {
     final entry = _registry.entryFor(ref.adapter);
+    final key = entry.scopeKeyOf(ref.path.path);
+    if (key == null) {
+      throw ArgumentError.value(
+        ref.path.path,
+        'ref',
+        'Not a document path of collection ${entry.adapter.pattern}',
+      );
+    }
+    final where = [
+      for (var i = 0; i < entry.paramSqlNames.length; i++)
+        '${entry.paramSqlNames[i]} = ?',
+      'id = ?',
+    ].join(' AND ');
     final row = await reader.getOptional(
-      'SELECT data FROM ${entry.table} WHERE path = ?',
-      [ref.path.path],
+      'SELECT data FROM ${entry.table} WHERE $where',
+      [...key.paramValues, key.id],
     );
     if (row == null) {
       return null;
@@ -1010,14 +1264,57 @@ final class Cocoon {
 
   @internal
   List<String> paramValuesInOrder(RegistryEntry entry, CollectionPath path) {
-    final patternSegments = entry.adapter.pattern.pattern.split('/');
-    final pathSegments = path.path.split('/');
-    return [
-      for (var i = 1; i < patternSegments.length; i += 2) pathSegments[i],
-    ];
+    final values = entry.adapter.pattern.match(path.path);
+    if (values == null) {
+      throw ArgumentError.value(
+        path.path,
+        'path',
+        'Not a collection path of ${entry.adapter.pattern}',
+      );
+    }
+    return [for (final name in entry.paramNames) values[name]!];
   }
 
   // -- Schema reconciliation ----------------------------------------------
+
+  /// Compares the file's storage format version with [storageFormatVersion]
+  /// and rebuilds an older file table by table (see [FormatMigrator]).
+  ///
+  /// A file written by a NEWER storage format refuses to open with a
+  /// [StorageFormatTooNewException]. A fresh database has no format row
+  /// yet; the rebuild finds no tables carrying the old layout and just
+  /// stamps the current version.
+  static Future<void> _applyStorageFormat(
+    CocoonTx tx, {
+    required void Function(int done, int total)? onMigrationProgress,
+    required String databasePath,
+  }) async {
+    final row = await tx.getOptional(
+      'SELECT value FROM $metaTableName WHERE key = ?',
+      [formatVersionMetaKey],
+    );
+    final stored = row == null
+        ? 0
+        : switch (int.tryParse(row['value']! as String)) {
+            final int version? => version,
+            null => throw StateError(
+              'The database\'s $metaTableName row '
+              '"$formatVersionMetaKey" does not parse as an integer: '
+              '${row['value']}',
+            ),
+          };
+    if (stored > storageFormatVersion) {
+      throw StorageFormatTooNewException(
+        path: databasePath,
+        formatVersion: stored,
+        maxSupported: storageFormatVersion,
+      );
+    }
+    if (stored == storageFormatVersion) {
+      return;
+    }
+    await FormatMigrator.migrateInTx(tx, onProgress: onMigrationProgress);
+  }
 
   /// Compares the stored schema version with [schemaVersion] and applies
   /// every pending [CocoonMigration] (see [runSchemaMigrationsInTx]); then
@@ -1249,26 +1546,27 @@ final class Cocoon {
     final updateSql =
         'UPDATE ${entry.table} SET '
         '${addedFields.map((field) => '${fieldColumnName(field.name)} = ?').join(', ')} '
-        'WHERE path = ?';
-    var lastPath = '';
+        'WHERE ${[...entry.paramSqlNames, 'id'].map((name) => '$name = ?').join(' AND ')}';
+    var lastRowId = 0;
     while (true) {
       final rows = await tx.getAll(
-        'SELECT path, data FROM ${entry.table} '
-        'WHERE path > ? ORDER BY path LIMIT $backfillBatchSize',
-        [lastPath],
+        'SELECT rowid, ${[...entry.paramSqlNames, 'id', 'data'].join(', ')} '
+        'FROM ${entry.table} WHERE rowid > ? ORDER BY rowid '
+        'LIMIT $backfillBatchSize',
+        [lastRowId],
       );
       if (rows.isEmpty) {
         break;
       }
       final updates = <List<Object?>>[];
       for (final row in rows) {
-        final path = row['path']! as String;
         final value = entry.adapter.decode(row['data'] as Uint8List);
         updates.add([
           for (final field in addedFields) field.sqlOf(value),
-          path,
+          for (final name in entry.paramSqlNames) row[name]! as String,
+          row['id']! as String,
         ]);
-        lastPath = path;
+        lastRowId = row['rowid']! as int;
       }
       await tx.executeBatch(updateSql, updates);
       if (rows.length < backfillBatchSize) {

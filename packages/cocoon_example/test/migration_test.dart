@@ -248,8 +248,9 @@ void main() {
     expect(columnType, 'INTEGER');
     expect(
       [
+        // Path order within one concrete collection is id order.
         for (final row in rawDb.select(
-          'SELECT f_booked_on FROM txn ORDER BY path',
+          'SELECT f_booked_on FROM txn ORDER BY id',
         ))
           row['f_booked_on'],
       ],

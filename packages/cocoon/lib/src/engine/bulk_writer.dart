@@ -21,6 +21,7 @@ final class BulkWriterOptions {
   const BulkWriterOptions({
     this.chunkSize = defaultChunkSize,
     this.deferIndexes = true,
+    this.logChanges = true,
   });
 
   /// The default number of rows one chunk commits ([chunkSize]).
@@ -39,10 +40,21 @@ final class BulkWriterOptions {
   /// Deferral only happens when it pays: when the table is empty (a bulk
   /// load into a fresh database) or the writer has buffered more rows for
   /// the table than the table already holds (a load that at least doubles
-  /// it). The scope index and the unique `path` constraint are never
-  /// dropped. While the indexes are deferred, a query whose plan needs one
-  /// of them waits until the writer closes; `get()` by id is unaffected.
+  /// it). The scope index is never dropped. While the indexes are deferred,
+  /// a query whose plan needs one of them waits until the writer closes;
+  /// `get()` by id is unaffected.
   final bool deferIndexes;
+
+  /// Whether every committed chunk appends its change-log rows (default).
+  ///
+  /// A 1M-document import writes 1M change-log rows — roughly a third of
+  /// the file again. With `logChanges: false` the load writes documents
+  /// only; in-process watches still fire per chunk, but the on-disk log has
+  /// a hole where this load ran, so a sync consumer that resumes from a
+  /// saved `lastChangeSeq` would silently skip the loaded documents: give
+  /// it a full resync instead (a fresh snapshot plus the changes after the
+  /// load). The same idea as `Cocoon.pruneChanges`, applied at write time.
+  final bool logChanges;
 }
 
 /// One queued [BulkWriter] operation.
@@ -359,7 +371,7 @@ final class BulkWriter {
             await wtx.delete(op.ref);
         }
       }
-    });
+    }, logChanges: _options.logChanges);
 
     // The chunk committed: everything in it is durable, its cache updates
     // applied and its watch event delivered. Wake the flushes that waited

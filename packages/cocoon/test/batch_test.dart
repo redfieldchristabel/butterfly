@@ -102,6 +102,56 @@ void main() {
       expect((await t1.get())!.data.amountMinor, 200);
     });
 
+    test('a batch update of an EXISTING document lands on disk, not just '
+        'in the cache', () async {
+      // Regression: the old update statement's bind order was shifted, so
+      // the UPDATE silently matched nothing and only the hot cache showed
+      // the new value.
+      final file = '${dir.path}${Platform.pathSeparator}cold.db';
+      Txn txnOf(int amountMinor) => Txn(
+        bookedOn: 20260115,
+        amountMinor: amountMinor,
+        rate: 1.0,
+        currency: 'MYR',
+        status: TxnStatus.posted,
+        createdAt: DateTime.utc(2026, 1, 15),
+      );
+      final writer = await Cocoon.open(file, collections: [accounts, txns]);
+      await writer
+          .collection(accounts)
+          .doc('a1')
+          .collection(txns)
+          .doc('t1')
+          .set(txnOf(100));
+      await writer.close();
+
+      final updater = await Cocoon.open(file, collections: [accounts, txns]);
+      openDbs.add(updater);
+      final t1 = updater
+          .collection(accounts)
+          .doc('a1')
+          .collection(txns)
+          .doc('t1');
+      await (updater.batch()..update(t1, txnOf(200))).commit();
+      await updater.close();
+
+      // Cache-cold: a third instance reads what is actually on disk.
+      final reader = await Cocoon.open(file, collections: [accounts, txns]);
+      openDbs.add(reader);
+      expect(
+        (await reader
+                .collection(accounts)
+                .doc('a1')
+                .collection(txns)
+                .doc('t1')
+                .get())!
+            .data
+            .amountMinor,
+        200,
+      );
+      await reader.close();
+    });
+
     test('a failing batch leaves nothing: no rows, no cache effects, no watch '
         'event, no change rows', () async {
       final db = await openDatabase();

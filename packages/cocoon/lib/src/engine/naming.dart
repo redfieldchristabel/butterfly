@@ -24,6 +24,22 @@ const String bulkTableName = '_cocoon_bulk';
 /// lock version the running app last migrated the file to.
 const String schemaVersionMetaKey = 'schema_version';
 
+/// Key under which `_cocoon_meta` stores the file's storage format version:
+/// how the collection tables are laid out. A file older than
+/// [storageFormatVersion] is rebuilt on open; a newer one refuses to open.
+const String formatVersionMetaKey = 'format_version';
+
+/// The storage format version this engine writes and reads.
+///
+/// Version 1 (Cocoon up to and including the step-14 layout) stored a
+/// redundant `path TEXT NOT NULL UNIQUE` column and its autoindex in every
+/// collection table. Version 2 (this engine) drops both: a document is
+/// identified by its scope key (the `p_` param columns plus `id`, enforced
+/// by the unique scope index), and the full path is derived from them. An
+/// older file is rebuilt table by table inside the open that first touches
+/// it; see `FormatMigrator`.
+const int storageFormatVersion = 2;
+
 /// Key under which `_cocoon_meta` stores the fingerprint of the schema lock
 /// the app passed to [Cocoon.open] (`schemaLock:`), when it did. Written on
 /// every open, stamped into backups, and reported by [BackupInfo].

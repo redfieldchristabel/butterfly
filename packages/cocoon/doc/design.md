@@ -217,6 +217,40 @@ on the docs site under **Cocoon**:
   `bulkWriter()` writes mirrored columns like any other; index deferral has
   nothing to defer for them. The lock records mirrored fields additively
   (omitted when empty, so pre-step-18 locks round-trip byte-for-byte).
+- **The stored identity is the scope key, not the path (storage format 2).**
+  Collection tables have no `path` column and no path autoindex: a document
+  is its `p_` param columns plus `id`, unique through the scope index, and
+  every path the API shows (refs, snapshots, cache keys, watch keys, change
+  log rows) is derived from it by one shared helper, tested round-trip in
+  both directions. Measured at 1M in
+  `benchmarks/cocoon_rivals/STORAGE.md`: 69.8 MB of the file (the column
+  inside every row plus its autoindex) with every read as fast as before —
+  get +3 µs (noise), latest-50 equal, delete faster (23 vs 28 µs
+  statement-time), and a 1M `bulkWriter()` import 1 s faster (11.9 s).
+  Subtree deletes key each child table by its leading param columns
+  (deleting `accounts/a1` deletes the txns with `p_account_id = 'a1'`) in
+  the same transaction — measured: one account plus its 50,000 txns in
+  1.16 s. Files are versioned in `_cocoon_meta` (`format_version`): an
+  older file is rebuilt table by table (new table, `INSERT ... SELECT`,
+  drop, rename, indexes recreated) inside the open that first touches it,
+  crash-safe — a failure leaves the old layout and the next open finishes —
+  and reports progress through `onMigrationProgress`; a file written by a
+  NEWER format refuses to open with `StorageFormatTooNewException`, and
+  `restoreBackup` applies the same rule to backups while accepting
+  older-format ones (they migrate at the next open). Measured on a copy of
+  the real pre-step-20 1M file: 5.1-8.7 s, data and change log intact,
+  `VACUUM`/`backupTo` afterwards compacts to exactly the shipped layout's
+  size (304.9 MiB).
+- **The change log is the app's to bound.** `pruneChanges` returns the rows
+  deleted; `earliestChangeSeq` reports the oldest readable seq; reading
+  from a pruned watermark throws `ChangesPrunedException` (the Firestore
+  "resume token expired" idea) so a sync consumer resyncs fully instead of
+  silently skipping. `CocoonOptions.changeRetention`
+  (`ChangeRetention(maxChanges:, maxAge:)`) bounds the log automatically,
+  enforced in small batches after commits — never inside a user transaction
+  — and `BulkWriterOptions(logChanges: false)` skips the load's log rows
+  entirely (sync consumers then resync). `lastChangeSeq` keeps its
+  monotonicity guarantee: it reads the AUTOINCREMENT head, not `MAX(seq)`.
 - **Document ids**: time-ordered UUIDv7 (`newDocId()`); `validateDocId`
   enforces path-safe ids.
 
@@ -264,6 +298,8 @@ executor, so it is deferred.
 | Whole-database backups: `db.backupTo()` (`VACUUM INTO` snapshot, stamped `_cocoon_meta`), `Cocoon.inspectBackup()`, `Cocoon.restoreBackup()` (closed-target rule, compatibility before the swap, `.restoring`/`.before-restore` protocol) + database instance id (`db.instanceId`) | done |
 | Aggregates: `aggregate([count(), sum, average])` (+ `minOf`/`maxOf`), one-statement SQLite pushdown with the query index rule, typed overflow error; `groupBy` extension (`key`, `paramKey`, `bucket`, `year`/`month`/`day` at a fixed `utcOffset`, group `.limit`), watches and bulk-writer wait included | done |
 | `@Mirrored()` fields: an `f_` column (aggregates, groupBy) with no index; add-and-backfill / drop at open, lock round-trip, DevTools "mirrored (no index)" label; measured storage cost and backfill time at 1M in the README | done |
+| Storage format 2: scope-key identity (no stored `path` column), path derived from table + params + id, `_cocoon_meta` format version with crash-safe table-by-table upgrade on open and newer-format refusal (`StorageFormatTooNewException`); measured at 1M in `benchmarks/cocoon_rivals/STORAGE.md` | done |
+| Change-log bounding: `pruneChanges` count, `earliestChangeSeq`, `ChangesPrunedException`, `CocoonOptions.changeRetention` (small-batch post-commit enforcement), `BulkWriterOptions(logChanges: false)` | done |
 | Butterfly CLI shortcuts (`butterfly generate model --cocoon`, `butterfly cocoon migrate`/`build`): scaffold + delegate only, the CLI never imports `cocoon_generator` or reimplements generation/diff | done |
 | Export/import streams (documents through the public API, NDJSON-shaped) | planned |
 | Incremental backups (change-log-tailed deltas on top of `backupTo`) | planned |

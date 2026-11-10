@@ -91,16 +91,19 @@ void main() {
 
       // 2. Replace the blobs with what an older schema version wrote:
       //    t-old has fields 2-6 and 10 (no memo, labels, receipt) and
-      //    t-older has fields 2-5 and 10 (also no rate).
+      //    t-older has fields 2-5 and 10 (also no rate). The rows are
+      //    keyed by their scope key (`p_account_id` + `id`).
       final rawDb = raw.sqlite3.open(dbPath);
-      final update = rawDb.prepare('UPDATE txn SET data = ? WHERE path = ?');
-      void overwrite(String path, void Function(WireWriter) write) {
+      final update = rawDb.prepare(
+        'UPDATE txn SET data = ? WHERE p_account_id = ? AND id = ?',
+      );
+      void overwrite(String id, void Function(WireWriter) write) {
         final writer = WireWriter();
         write(writer);
-        update.execute([writer.toBytes(), path]);
+        update.execute([writer.toBytes(), 'a1', id]);
       }
 
-      overwrite('accounts/a1/txns/t-old', (w) {
+      overwrite('t-old', (w) {
         w.writeSint64(2, -1200);
         w.writeString(3, 'SGD');
         w.writeString(4, TxnStatus.pending.name);
@@ -108,7 +111,7 @@ void main() {
         w.writeDouble(6, 0.31);
         w.writeSint64(10, 20260110);
       });
-      overwrite('accounts/a1/txns/t-older', (w) {
+      overwrite('t-older', (w) {
         w.writeSint64(2, 500);
         w.writeString(3, 'MYR');
         w.writeString(4, TxnStatus.posted.name);

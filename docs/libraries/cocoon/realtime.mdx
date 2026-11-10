@@ -97,11 +97,12 @@ pages further on demand.
       return true;
     }
 
-    Stream<Uint8List?> watchTxn(Database db, String path) async* {
+    Stream<Uint8List?> watchTxn(Database db, String id) async* {
       Uint8List? last;
       while (true) {
         final rows = db.select(
-          'SELECT data FROM txns WHERE path = ?', [path],
+          'SELECT data FROM txns WHERE p_account_id = ? AND id = ?',
+          ['a1', id],
         );
         final bytes = rows.isEmpty ? null : rows.first['data']! as Uint8List;
         if (!sameBytes(bytes, last)) {
@@ -142,20 +143,48 @@ for (final change in changes) {
   watermark = change.seq;
 }
 // Durably save `watermark`, then trim what you've processed:
-await db.pruneChanges(upToSeq: watermark);
+await db.pruneChanges(upToSeq: watermark); // returns the rows deleted
 
 // db.lastChangeSeq() is the highest seq ever assigned; it never goes
-// backwards, even after a full prune.
+// backwards, even after a full prune. db.earliestChangeSeq() is the oldest
+// seq still readable (lastChangeSeq + 1 once the log is empty).
 ```
 
 - `changesSince(seq)` returns at most `limit` rows (default 1000), oldest
   first; keep calling with the last row's `seq` until the list comes back
   empty. Cascade deletes log one row per deleted document.
-- `pruneChanges(upToSeq:)` deletes every row with `seq <= upToSeq`; call it
-  once changes are durably processed elsewhere, or the log grows forever.
+- `pruneChanges(upToSeq:)` deletes every row with `seq <= upToSeq` and
+  returns how many rows went; call it once changes are durably processed
+  elsewhere, or the log grows forever.
+- **A consumer resuming from a pruned watermark must resync fully.** Once
+  rows are gone, reading from a seq below the floor throws a
+  `ChangesPrunedException` (it carries `requestedSeq` and `earliestSeq`) —
+  the Firestore "resume token expired" idea — instead of silently skipping
+  the deleted changes:
+
+  ```dart
+  try {
+    final changes = await db.changesSince(watermark);
+    // ... push to your server / audit trail ...
+  } on ChangesPrunedException {
+    // The floor moved past `watermark`: take a fresh snapshot, then
+    // resume from the new lastChangeSeq().
+  }
+  ```
+- **Let the engine bound the log for you.**
+  `CocoonOptions(changeRetention: ChangeRetention(maxChanges: 50000,
+  maxAge: Duration(days: 30)))` keeps at most the newest 50,000 rows AND
+  every row newer than 30 days; the engine deletes the old prefix in small
+  batches after commits that wrote change rows — never inside a user
+  transaction, and never more than a few thousand rows per commit, so a
+  large backlog shrinks over subsequent writes instead of stalling one.
+  The default keeps everything.
 
 <Info>
   `CocoonOptions(keepChanges: false)` stops writing log rows for apps that
   only need the in-process watches: notifications are unaffected, and
-  `changesSince` simply returns nothing.
+  `changesSince` simply returns nothing. A `bulkWriter()` load with
+  `BulkWriterOptions(logChanges: false)` does the same at load time —
+  a 1M-document import then writes no log rows; sync consumers must resync
+  fully afterwards.
 </Info>

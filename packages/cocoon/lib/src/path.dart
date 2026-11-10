@@ -137,6 +137,35 @@ class CollectionPattern {
     return CollectionPath._(parts.join('/'), collectionId);
   }
 
+  /// The placeholder values this pattern takes when the concrete collection
+  /// [path] matches its shape — same number of segments, equal collection
+  /// ids at the even positions — or `null` when it does not.
+  ///
+  /// `accounts/{accountId}/txns` matches `accounts/a1/txns` to
+  /// `{'accountId': 'a1'}`. This is the one shared path splitter behind
+  /// scope keys (path -> params + id) and query scopes; [resolve] is its
+  /// inverse (params -> path).
+  Map<String, String>? match(String path) {
+    final segments = path.split('/');
+    if (segments.length != _segments.length) {
+      return null;
+    }
+    final values = <String, String>{};
+    for (var i = 0; i < segments.length; i++) {
+      if (i.isEven) {
+        if (segments[i] != _segments[i]) {
+          return null;
+        }
+      } else {
+        if (segments[i].isEmpty) {
+          return null;
+        }
+        values[params[i ~/ 2]] = segments[i];
+      }
+    }
+    return values;
+  }
+
   @override
   bool operator ==(Object other) =>
       other is CollectionPattern && other.pattern == pattern;

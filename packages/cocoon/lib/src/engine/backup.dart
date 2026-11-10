@@ -46,6 +46,7 @@ final class BackupInfo {
     required this.schemaLockHash,
     required this.lastChangeSeq,
     required this.cocoonVersion,
+    this.storageFormatVersion,
   });
 
   /// The file the info describes: the backup path for `backupTo` and
@@ -80,6 +81,13 @@ final class BackupInfo {
   /// The Cocoon library version that wrote the backup.
   final String cocoonVersion;
 
+  /// The storage format version the source database carried when the
+  /// backup was taken, or `null` when the file predates format tracking.
+  /// `Cocoon.restoreBackup` refuses a backup written in a NEWER storage
+  /// format than this engine reads; an OLDER one restores fine and its
+  /// tables are rebuilt at the next `Cocoon.open`.
+  final int? storageFormatVersion;
+
   @override
   bool operator ==(Object other) =>
       other is BackupInfo &&
@@ -91,7 +99,8 @@ final class BackupInfo {
       other.schemaVersion == schemaVersion &&
       other.schemaLockHash == schemaLockHash &&
       other.lastChangeSeq == lastChangeSeq &&
-      other.cocoonVersion == cocoonVersion;
+      other.cocoonVersion == cocoonVersion &&
+      other.storageFormatVersion == storageFormatVersion;
 
   @override
   int get hashCode => Object.hash(
@@ -103,6 +112,7 @@ final class BackupInfo {
     schemaLockHash,
     lastChangeSeq,
     cocoonVersion,
+    storageFormatVersion,
   );
 
   @override
@@ -265,6 +275,7 @@ final class BackupOperations {
         schemaLockHash: meta.values[schemaLockHashMetaKey],
         lastChangeSeq: meta.lastChangeSeq,
         cocoonVersion: cocoonLibraryVersion,
+        storageFormatVersion: meta.storageFormatVersion,
       );
     } on Object {
       _deleteIfFile(partial);
@@ -351,6 +362,7 @@ final class BackupOperations {
       schemaLockHash: meta.values[schemaLockHashMetaKey],
       lastChangeSeq: meta.lastChangeSeq,
       cocoonVersion: meta.values[backupCocoonVersionMetaKey] ?? '',
+      storageFormatVersion: meta.storageFormatVersion,
     );
   }
 
@@ -435,6 +447,7 @@ final class BackupOperations {
         schemaLockHash: info.schemaLockHash,
         lastChangeSeq: info.lastChangeSeq,
         cocoonVersion: info.cocoonVersion,
+        storageFormatVersion: info.storageFormatVersion,
       );
     } on Object catch (error, stackTrace) {
       // Whatever step failed: the original database goes back where it was.

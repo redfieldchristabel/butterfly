@@ -64,12 +64,13 @@ Future<Set<String>> runSchemaMigrationsInTx({
             'collection of the app when migrations are used',
       );
     }
-    tables[entry.table] = List.unmodifiable(steps);
+    tables[model] = List.unmodifiable(steps);
   }
 
   var total = 0;
   final existing = <String, bool>{};
-  for (final table in tables.keys) {
+  for (final model in tables.keys) {
+    final table = registry.byModel(model)!.table;
     final exists =
         await tx.getOptional(
           "SELECT name FROM sqlite_master WHERE type = 'table' "
@@ -87,16 +88,17 @@ Future<Set<String>> runSchemaMigrationsInTx({
   var done = 0;
   onProgress?.call(0, total);
   final rewrittenTables = <String>{};
-  for (final MapEntry(key: table, value: steps) in tables.entries) {
-    if (!existing[table]!) {
+  for (final MapEntry(key: model, value: steps) in tables.entries) {
+    final entry = registry.byModel(model)!;
+    if (!existing[entry.table]!) {
       // A brand-new collection: the reconciler creates its table after the
       // migrations, and there is no old data to rewrite.
       continue;
     }
-    rewrittenTables.add(table);
+    rewrittenTables.add(entry.table);
     done += await _migrateTable(
       tx,
-      table: table,
+      entry: entry,
       steps: steps,
       keepChanges: keepChanges,
       progress: onProgress == null
@@ -110,20 +112,26 @@ Future<Set<String>> runSchemaMigrationsInTx({
   return rewrittenTables;
 }
 
-/// Drops every declared index and field column of [table], then rewrites its
-/// documents through [steps] in batches. Returns the number of rows scanned.
+/// Drops every declared index and field column of [entry]'s table, then
+/// rewrites its documents through [steps] in batches. Returns the number of
+/// rows scanned.
 ///
 /// Dropping all `f_` columns up front keeps the rewrite shape-agnostic: the
 /// reconciler re-adds every declared column from the rewritten bytes right
 /// after, which is exactly what makes same-name type changes (whose SQLite
 /// column type or CHECK constraint differs from the old one) safe.
+///
+/// Rows are scanned in rowid order and updated by their scope key; the
+/// change-log rows a rewrite appends carry the full path derived from each
+/// row's key columns.
 Future<int> _migrateTable(
   CocoonTx tx, {
-  required String table,
+  required RegistryEntry entry,
   required List<FieldMigration> steps,
   required bool keepChanges,
   required void Function(int rows)? progress,
 }) async {
+  final table = entry.table;
   // Columns cannot be dropped while an index references them; every index
   // is rebuilt by the reconciler afterwards.
   final indexes = await tx.getAll(
@@ -144,23 +152,26 @@ Future<int> _migrateTable(
     }
   }
 
-  final updateSql = 'UPDATE $table SET data = ? WHERE path = ?';
+  final keyWhere = [
+    ...entry.paramSqlNames,
+    'id',
+  ].map((name) => '$name = ?').join(' AND ');
+  final updateSql = 'UPDATE $table SET data = ? WHERE $keyWhere';
   var scanned = 0;
-  var lastPath = '';
+  var lastRowId = 0;
   while (true) {
     final rows = await tx.getAll(
-      'SELECT path, data FROM $table '
-      'WHERE path > ? ORDER BY path LIMIT $migrationBatchSize',
-      [lastPath],
+      'SELECT rowid, ${[...entry.paramSqlNames, 'id', 'data'].join(', ')} '
+      'FROM $table WHERE rowid > ? ORDER BY rowid LIMIT $migrationBatchSize',
+      [lastRowId],
     );
     if (rows.isEmpty) {
       break;
     }
     final updates = <List<Object?>>[];
-    final rewritten = <String>[];
+    final rewritten = <(String, String)>[];
     for (final row in rows) {
-      final path = row['path']! as String;
-      lastPath = path;
+      lastRowId = row['rowid']! as int;
       var bytes = row['data']! as Uint8List;
       var changed = false;
       for (final step in steps) {
@@ -183,8 +194,12 @@ Future<int> _migrateTable(
       }
       scanned++;
       if (changed) {
-        updates.add([bytes, path]);
-        rewritten.add(path);
+        updates.add([
+          bytes,
+          for (final name in entry.paramSqlNames) row[name]! as String,
+          row['id']! as String,
+        ]);
+        rewritten.add((table, entry.pathOfKeyRow(row)));
       }
     }
     if (updates.isNotEmpty) {
@@ -195,7 +210,7 @@ Future<int> _migrateTable(
           'INSERT INTO $changesTableName (tbl, path, op, at) '
           "VALUES (?, ?, 'set', ?)",
           [
-            for (final path in rewritten) [table, path, at],
+            for (final (tbl, path) in rewritten) [tbl, path, at],
           ],
         );
       }

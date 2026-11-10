@@ -706,20 +706,23 @@ void main() {
     expect(account['exists'], isTrue);
     expect(account['rowCount'], 1);
     expect(account['sql'], contains('CREATE TABLE account'));
+    expect(account['sql'], isNot(contains('path')));
     expect(account['model'], 'Account');
     expect(account['pattern'], 'accounts');
 
     final columns = account['columns']! as List<Object?>;
-    final pathColumn = columns
+    final idColumn = columns
         .map((c) => c! as Map<String, Object?>)
-        .firstWhere((c) => c['name'] == 'path');
-    expect(pathColumn['type'], 'TEXT');
-    expect(pathColumn['notNull'], isTrue);
-    expect(pathColumn['isPrimaryKey'], isFalse);
+        .firstWhere((c) => c['name'] == 'id');
+    expect(idColumn['type'], 'TEXT');
+    expect(idColumn['notNull'], isTrue);
+    expect(idColumn['isPrimaryKey'], isFalse);
     final names = [
       for (final column in columns) (column! as Map<String, Object?>)['name'],
     ];
-    expect(names, containsAll(['path', 'id', 'data', 'f_name']));
+    // The format-2 layout: identity is the scope key, no stored path column.
+    expect(names, containsAll(['id', 'data', 'f_name']));
+    expect(names, isNot(contains('path')));
 
     final indexes = account['indexes']! as List<Object?>;
     final indexNames = [
@@ -763,7 +766,10 @@ void main() {
     expect(mirroredOf('f_category'), isTrue); // mirrored, no index
     expect(mirroredOf('f_booked_on'), isFalse); // indexed
     expect(mirroredOf('p_account_id'), isFalse); // params never are
-    expect(mirroredOf('path'), isFalse);
+    final columnNames = [
+      for (final column in columns) (column! as Map<String, Object?>)['name'],
+    ];
+    expect(columnNames, isNot(contains('path')));
 
     final listing = await CocoonInspectorService.dispatch('listCollections', {
       'databaseId': id,

@@ -1,9 +1,12 @@
 import 'dart:io';
 
 import 'package:cocoon/cocoon.dart';
+import 'package:cocoon/src/engine/sqlite_executor.dart' show SqliteExecutor;
+import 'package:sqlite_async/sqlite_async.dart' show SqliteDatabase;
 import 'package:test/test.dart';
 
 import 'support/models.dart';
+import 'support/spy_executor.dart';
 
 Txn txn({
   required int bookedOn,
@@ -194,13 +197,21 @@ void main() {
       }
       final all = await db.changesSince(0);
 
-      await db.pruneChanges(upToSeq: all[1].seq);
-      expect(await db.changesSince(0), [all[2]]);
+      final pruned = await db.pruneChanges(upToSeq: all[1].seq);
+      expect(pruned, 2);
+      expect(await db.earliestChangeSeq(), all[2].seq);
+      expect(await db.changesSince(all[1].seq), [all[2]]);
+      // The head survives a prune, so watermarks never go backwards.
       expect(await db.lastChangeSeq(), all[2].seq);
 
-      await db.pruneChanges(upToSeq: await db.lastChangeSeq());
-      expect(await db.changesSince(0), isEmpty);
-      // The head survives a full prune, so watermarks never go backwards.
+      final prunedRest = await db.pruneChanges(
+        upToSeq: await db.lastChangeSeq(),
+      );
+      expect(prunedRest, 1);
+      // Empty log: the floor is the head + 1, so reading AT the head is
+      // fine (nothing after it), and the head does not move.
+      expect(await db.earliestChangeSeq(), all[2].seq + 1);
+      expect(await db.changesSince(all[2].seq), isEmpty);
       expect(await db.lastChangeSeq(), all[2].seq);
 
       await db
@@ -210,6 +221,57 @@ void main() {
       final later = await db.changesSince(all[2].seq);
       expect(later.single.seq, greaterThan(all[2].seq));
       expect(await db.lastChangeSeq(), later.single.seq);
+    });
+
+    test('reading from a pruned seq throws ChangesPrunedException', () async {
+      final db = await openDatabase();
+      final accountsRef = db.collection(accounts);
+      for (var i = 1; i <= 3; i++) {
+        await accountsRef.doc('a$i').set(Account(name: 'n$i', active: true));
+      }
+      final all = await db.changesSince(0);
+      await db.pruneChanges(upToSeq: all[1].seq);
+
+      // The pruned seqs are gone: a consumer resuming from #0 (or from the
+      // exact floor boundary) must be told to resync, never silently skip.
+      await expectLater(
+        db.changesSince(0),
+        throwsA(
+          isA<ChangesPrunedException>()
+              .having((e) => e.requestedSeq, 'requestedSeq', 0)
+              .having((e) => e.earliestSeq, 'earliestSeq', all[2].seq),
+        ),
+      );
+      await expectLater(
+        db.changesSince(all[0].seq - 1),
+        throwsA(isA<ChangesPrunedException>()),
+      );
+      // From the last readable boundary on, the read is well-defined.
+      expect(await db.changesSince(all[1].seq), [all[2]]);
+    });
+
+    test('lastChangeSeq stays monotonic across prune and reopen', () async {
+      final db = await openDatabase();
+      final accountsRef = db.collection(accounts);
+      for (var i = 1; i <= 3; i++) {
+        await accountsRef.doc('a$i').set(Account(name: 'n$i', active: true));
+      }
+      final head = await db.lastChangeSeq();
+      await db.pruneChanges(upToSeq: head);
+      expect(await db.lastChangeSeq(), head);
+      await db.close();
+      openDbs.remove(db);
+
+      // The same file, reopened: the head still stands.
+      final reopened = await openDatabase();
+      expect(await reopened.lastChangeSeq(), head);
+      await reopened
+          .collection(accounts)
+          .doc('a4')
+          .set(const Account(name: 'n4', active: true));
+      expect(await reopened.lastChangeSeq(), greaterThan(head));
+      // The empty log reads as head + 1.
+      expect(await reopened.earliestChangeSeq(), greaterThan(head));
     });
 
     test('the log persists across reopen and keeps seq increasing', () async {
@@ -251,5 +313,125 @@ void main() {
       expect(await db.lastChangeSeq(), 0);
       await sub.cancel();
     });
+
+    test('retention keeps at most the newest maxChanges rows', () async {
+      final db = await openDatabase(
+        options: const CocoonOptions(
+          changeRetention: ChangeRetention(maxChanges: 2),
+        ),
+      );
+      final accountsRef = db.collection(accounts);
+      for (var i = 1; i <= 5; i++) {
+        await accountsRef.doc('a$i').set(Account(name: 'n$i', active: true));
+      }
+      // Five writes, two kept: the two newest, in seq order.
+      final head = await db.lastChangeSeq();
+      expect(head, 5);
+      expect(await db.earliestChangeSeq(), 4);
+      final kept = await db.changesSince(3);
+      expect([for (final c in kept) c.seq], [4, 5]);
+      // Below the floor: the pruned exception, never a silent gap.
+      await expectLater(
+        db.changesSince(0),
+        throwsA(isA<ChangesPrunedException>()),
+      );
+    });
+
+    test('retention drops rows older than maxAge', () async {
+      final db = await openDatabase(
+        options: const CocoonOptions(
+          changeRetention: ChangeRetention(maxAge: Duration(minutes: 1)),
+        ),
+      );
+      final a1 = db.collection(accounts).doc('a1');
+      await a1.set(const Account(name: 'one', active: true));
+      await a1.set(const Account(name: 'two', active: true));
+      // Age only the first row deterministically past any cutoff, then
+      // write again: the post-commit enforcement walks the prefix, keeps
+      // the young row and deletes the aged one.
+      await db.executor.execute(
+        'UPDATE _cocoon_changes SET at = 1 WHERE seq = 1',
+      );
+      await a1.set(const Account(name: 'three', active: true));
+
+      final head = await db.lastChangeSeq();
+      expect(head, 3);
+      expect(await db.earliestChangeSeq(), 2);
+      final kept = await db.changesSince(1);
+      expect([for (final c in kept) c.seq], [2, 3]);
+      await expectLater(
+        db.changesSince(0),
+        throwsA(isA<ChangesPrunedException>()),
+      );
+    });
+
+    test(
+      'retention without writes deletes nothing and read stays legal',
+      () async {
+        final db = await openDatabase(
+          options: const CocoonOptions(
+            changeRetention: ChangeRetention(maxChanges: 100),
+          ),
+        );
+        await db
+            .collection(accounts)
+            .doc('a1')
+            .set(const Account(name: 'Acme', active: true));
+        expect(await db.earliestChangeSeq(), 1);
+        expect(await db.changesSince(0), hasLength(1));
+      },
+    );
+
+    test(
+      'retention runs after the commit, never inside a user transaction',
+      () async {
+        final spy = SpyExecutor(
+          SqliteExecutor(SqliteDatabase(path: dbPath('retention-spy.db'))),
+        );
+        final db = await Cocoon.openWith(
+          spy,
+          collections: [accounts, txns, splits],
+          options: const CocoonOptions(
+            changeRetention: ChangeRetention(maxChanges: 1),
+          ),
+        );
+        openDbs.add(db);
+        final a1 = db.collection(accounts).doc('a1');
+
+        // First write: one row, under the bound — nothing to prune yet.
+        await db.runTransaction((tx) async {
+          await tx.set(a1, const Account(name: 'one', active: true));
+        });
+        expect(
+          spy.statements.any(
+            (statement) => statement.startsWith('DELETE FROM _cocoon_changes'),
+          ),
+          isFalse,
+        );
+
+        // Second write: the log exceeds the bound, and the enforcement runs
+        // after the commit — never inside the user transaction.
+        await db.runTransaction((tx) async {
+          await tx.set(a1, const Account(name: 'two', active: true));
+          // Inside the user transaction no retention DELETE has run.
+          expect(
+            spy.statements.any(
+              (statement) =>
+                  statement.startsWith('DELETE FROM _cocoon_changes'),
+            ),
+            isFalse,
+          );
+        });
+        // After the commit the enforcement ran, outside the user transaction:
+        // one row kept (maxChanges: 1), the rest gone.
+        expect(
+          spy.statements.any(
+            (statement) => statement.startsWith('DELETE FROM _cocoon_changes'),
+          ),
+          isTrue,
+        );
+        expect(await db.earliestChangeSeq(), 2);
+      },
+    );
   });
 }

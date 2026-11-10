@@ -323,8 +323,9 @@ final class CocoonInspectorService {
 
   /// One keyset page of documents of the concrete collection [params]
   /// `'path'` (e.g. `accounts/a1/txns`; a top-level collection is just
-  /// `accounts`), ordered by document path, decoded to JSON via the
-  /// collection's adapter.
+  /// `accounts`), ordered by document id — within one concrete collection
+  /// that is document-path order — decoded to JSON via the collection's
+  /// adapter.
   ///
   /// `'limit'` caps the page (default [inspectorDefaultDocLimit]);
   /// `'startAfter'` continues after a previous page's `nextStartAfter`
@@ -339,17 +340,28 @@ final class CocoonInspectorService {
     final limit =
         _positiveIntParam(params, 'limit') ?? inspectorDefaultDocLimit;
     final startAfter = params['startAfter'];
-    // The half-open range ['<path>/', '<path>0') covers exactly the
-    // documents of this collection ('0' sorts right after '/'), and the
-    // binary-collated unique index on `path` serves both the range and the
-    // document-path ordering.
-    final from = '${resolved.path.path}/';
-    final to = '${resolved.path.path}0';
+    // The collection's rows are identified by their scope key (the `p_`
+    // param columns plus `id`, one unique index): the page filters by the
+    // concrete collection's param values and continues after the last id,
+    // which orders exactly like the document paths.
+    final paramValues = _scopeParamValuesOf(resolved.entry, resolved.path);
+    final keyColumns = resolved.entry.keyColumns;
+    final where = [
+      for (var i = 0; i < resolved.entry.paramSqlNames.length; i++)
+        '${resolved.entry.paramSqlNames[i]} = ?',
+      'id > ?',
+    ].join(' AND ');
+    // An empty floor id sorts before every real id, so the first page
+    // starts at the collection's beginning.
+    final args = [
+      ...paramValues,
+      startAfter == null ? '' : _docIdOf(startAfter),
+    ];
     final rows = await db.executor.getAll(
-      'SELECT path, id, data FROM ${resolved.entry.table} '
-      'WHERE path >= ? AND path < ? AND path > ? '
-      'ORDER BY path ASC LIMIT ?',
-      [from, to, startAfter ?? '', limit + 1],
+      'SELECT ${[...keyColumns, 'data'].join(', ')} '
+      'FROM ${resolved.entry.table} WHERE $where '
+      'ORDER BY id ASC LIMIT ?',
+      [...args, limit + 1],
     );
     final hasMore = rows.length > limit;
     final pageRows = hasMore ? rows.sublist(0, limit) : rows;
@@ -363,12 +375,14 @@ final class CocoonInspectorService {
       'docs': [
         for (final row in pageRows)
           {
-            'path': row['path']! as String,
+            'path': resolved.entry.pathOfKeyRow(row),
             'id': row['id']! as String,
             'json': _docJson(resolved.entry, row['data']! as Uint8List),
           },
       ],
-      'nextStartAfter': hasMore ? pageRows.last['path']! as String : null,
+      'nextStartAfter': hasMore
+          ? resolved.entry.pathOfKeyRow(pageRows.last)
+          : null,
     };
   }
 
@@ -379,9 +393,15 @@ final class CocoonInspectorService {
     final tracked = _openEntryOf(params);
     final db = tracked.db!;
     final resolved = _resolveDoc(db, _requireParam(params, 'path'));
+    final key = resolved.entry.scopeKeyOf(resolved.path.path)!;
+    final where = [
+      for (var i = 0; i < resolved.entry.paramSqlNames.length; i++)
+        '${resolved.entry.paramSqlNames[i]} = ?',
+      'id = ?',
+    ].join(' AND ');
     final row = await db.executor.getOptional(
-      'SELECT path, id, data FROM ${resolved.entry.table} WHERE path = ?',
-      [resolved.path.path],
+      'SELECT id, data FROM ${resolved.entry.table} WHERE $where',
+      [...key.paramValues, key.id],
     );
     return {
       'database': _databaseJson(tracked),
@@ -710,6 +730,28 @@ final class CocoonInspectorService {
     final dynamic dynamicColumn = column;
     return dynamicColumn.read(value) as Object?;
   }
+
+  /// The param values of [entry]'s pattern that [path] fills, in
+  /// [entry.paramNames] order — the scope-key bound values of a concrete
+  /// collection path.
+  static List<String> _scopeParamValuesOf(
+    RegistryEntry entry,
+    CollectionPath path,
+  ) {
+    final values = entry.adapter.pattern.match(path.path);
+    if (values == null) {
+      throw ArgumentError.value(
+        path.path,
+        'path',
+        'Not a collection path of ${entry.adapter.pattern}',
+      );
+    }
+    return [for (final name in entry.paramNames) values[name]!];
+  }
+
+  /// The document id of a document [path]: its last segment.
+  static String _docIdOf(String docPath) =>
+      docPath.substring(docPath.lastIndexOf('/') + 1);
 
   static ({RegistryEntry entry, CollectionPath path}) _resolveCollection(
     Cocoon db,

@@ -79,19 +79,20 @@ const readRuns = 200;
 /// rotate through every account.
 const targetStride = 4999;
 
-/// Whether a variant writes change-log rows, keeps the `path` column, is a
-/// `WITHOUT ROWID` table, or uses drift's layout entirely.
+/// Whether a variant writes change-log rows, is a `WITHOUT ROWID` table, or
+/// uses drift's layout entirely. Since step 20's shipped layout every Cocoon
+/// variant identifies rows by the scope key (`p_account_id`, `id`) — the
+/// stored `path` column of the pre-step-20 layouts no longer exists.
 final class LayoutVariant {
   const LayoutVariant({
     required this.name,
     required this.description,
     this.changeRows = true,
-    this.pathColumn = true,
     this.withoutRowid = false,
     this.driftLayout = false,
   });
 
-  /// Short name (`L0`..`L5`).
+  /// Short name (`L0`..`L3`).
   final String name;
 
   /// One-line description for the summary table.
@@ -99,9 +100,6 @@ final class LayoutVariant {
 
   /// One change-log row per written document.
   final bool changeRows;
-
-  /// The `path` column and its UNIQUE index are in the table.
-  final bool pathColumn;
 
   /// The table is `WITHOUT ROWID` with `PRIMARY KEY (p_account_id, id)`.
   final bool withoutRowid;
@@ -114,32 +112,21 @@ final class LayoutVariant {
 const variants = [
   LayoutVariant(
     name: 'L0',
-    description: 'Cocoon DDL as-is: path UNIQUE + change log per doc (today)',
+    description:
+        'shipped layout: scope-key identity + change log per doc (no path column)',
   ),
   LayoutVariant(
     name: 'L1',
-    description: 'L0 without change-log rows',
+    description: 'L0 without change-log rows (the pruning ceiling)',
     changeRows: false,
   ),
   LayoutVariant(
     name: 'L2',
-    description: 'no path column/UNIQUE; scope (p_account_id, id) unique',
-    pathColumn: false,
-  ),
-  LayoutVariant(
-    name: 'L3',
-    description: 'L2 as WITHOUT ROWID, PRIMARY KEY (p_account_id, id)',
-    pathColumn: false,
+    description: 'L0 as WITHOUT ROWID, PRIMARY KEY (p_account_id, id)',
     withoutRowid: true,
   ),
   LayoutVariant(
-    name: 'L4',
-    description: 'L2 + L1: no path, no change log',
-    changeRows: false,
-    pathColumn: false,
-  ),
-  LayoutVariant(
-    name: 'L5',
+    name: 'L3',
     description: "drift's layout for the same data (reference)",
     driftLayout: true,
   ),
@@ -223,8 +210,8 @@ String insertSql(
 
 /// The variant's `CREATE TABLE` statement and its insert/bind column list.
 ///
-/// The real DDL is one column definition per line, so the `path` column is
-/// dropped by line; L3's `WITHOUT ROWID` adds the table-level primary key.
+/// The real schema IS the shipped layout; L2's `WITHOUT ROWID` adds the
+/// table-level primary key.
 (String, List<String>) variantDdl(
   LayoutVariant variant,
   RealSchema schema,
@@ -233,12 +220,11 @@ String insertSql(
   if (variant.driftLayout) {
     return (drift!.tableSql, drift.columnNames);
   }
-  if (variant.pathColumn) {
+  if (!variant.withoutRowid) {
     return (schema.tableSql, schema.columnNames);
   }
   // The stored DDL is one column definition per line between the opening
-  // paren and the closing '\n)' (sqlite_master keeps the text without the
-  // engine's optional IF NOT EXISTS).
+  // paren and the closing '\n)'.
   final openParen = schema.tableSql.indexOf('(');
   final bodyStart = schema.tableSql.indexOf('\n  ', openParen) + 3;
   final bodyEnd = schema.tableSql.lastIndexOf('\n)');
@@ -253,14 +239,9 @@ String insertSql(
   final lines = schema.tableSql
       .substring(bodyStart, bodyEnd)
       .split(',\n  ')
-      .where((line) => !line.startsWith('path '))
       .toList();
-  final columns = schema.columnNames.where((c) => c != 'path').toList();
-  if (variant.withoutRowid) {
-    lines.add('PRIMARY KEY (p_account_id, id)');
-    return ('$header${lines.join(',\n  ')}\n) WITHOUT ROWID', columns);
-  }
-  return ('$header${lines.join(',\n  ')}\n)', columns);
+  lines.add('PRIMARY KEY (p_account_id, id)');
+  return ('$header${lines.join(',\n  ')}\n) WITHOUT ROWID', schema.columnNames);
 }
 
 /// The writer connection at Cocoon's pragmas (the ceiling probe's set).
@@ -288,16 +269,12 @@ raw.Database openWriter(String path) {
   );
 }
 
-/// The identity lookup arguments of [t] under [variant]: the path for
-/// L0/L1, the scope/PK key for L2-L4, the drift id for L5.
+/// The identity lookup arguments of [t] under [variant]: the scope/PK key
+/// for the Cocoon layouts, the drift id for L3.
 List<Object?> keyArgs(
   LayoutVariant variant,
   ({String path, String id, String accountId}) t,
-) => variant.driftLayout
-    ? [t.id]
-    : variant.pathColumn
-    ? [t.path]
-    : [t.accountId, t.id];
+) => variant.driftLayout ? [t.id] : [t.accountId, t.id];
 
 /// One chunk of drift-shaped rows: the same distributions, seeding and
 /// dataset order as `chunkRows` in `ceiling_probe.dart`, but the fields
@@ -386,11 +363,7 @@ Future<Map<String, Object?>> measure({
   final table = variant.driftLayout ? 'txn_rows' : 'txn';
   final fillSql = variant.driftLayout
       ? insertSql(table, insertColumns, orReplace: true)
-      : insertSql(
-          table,
-          insertColumns,
-          conflictTarget: variant.pathColumn ? 'path' : 'p_account_id, id',
-        );
+      : insertSql(table, insertColumns, conflictTarget: 'p_account_id, id');
 
   // 2. The load: per-1000-row transactions, deferred secondaries.
   final path = '${dir.path}/${variant.name}_$run.db';
@@ -437,8 +410,8 @@ Future<Map<String, Object?>> measure({
       db.execute('BEGIN IMMEDIATE');
       final at = DateTime.now().toUtc().microsecondsSinceEpoch;
       for (final row in rows) {
-        // chunkRows leads with the path; the L2+ variants bind the rest.
-        insert.execute(variant.pathColumn ? row : row.sublist(1));
+        // chunkRows leads with the path; the scope-key layouts bind the rest.
+        insert.execute(row.sublist(1));
         changeRow?.execute([row[0], at]);
       }
       db.execute('COMMIT');
@@ -490,10 +463,12 @@ Future<Map<String, Object?>> measure({
         'avgRowPayloadB': snapshot.avgRowPayload,
         'getP50Us': reads.getUs,
         'latest50P50Us': reads.latest50Us,
+        'monthlyGroupByP50Us': reads.monthUs,
         'deleteP50Us': reads.deleteUs,
       },
       'getUs': reads.getUs,
       'latest50Us': reads.latest50Us,
+      'monthlyGroupByUs': reads.monthUs,
       'deleteUs': reads.deleteUs,
     };
   } finally {
@@ -573,7 +548,7 @@ snapshotDb(String path, String table) {
 /// each. Deletes run inside a transaction and are undone untimed, so the
 /// timing is the b-tree work, not the commit's fsync. Closes its
 /// statements; the caller closes the connection.
-({int getUs, int latest50Us, int deleteUs}) runReads({
+({int getUs, int latest50Us, int monthUs, int deleteUs}) runReads({
   required String path,
   required LayoutVariant variant,
   required int size,
@@ -590,8 +565,6 @@ snapshotDb(String path, String table) {
     final getStmt = db.prepare(
       variant.driftLayout
           ? 'SELECT * FROM "$table" WHERE id = ?'
-          : variant.pathColumn
-          ? 'SELECT * FROM "$table" WHERE path = ?'
           : 'SELECT * FROM "$table" WHERE p_account_id = ? AND id = ?',
     );
     final latestStmt = db.prepare(
@@ -601,14 +574,22 @@ snapshotDb(String path, String table) {
           : 'SELECT * FROM "$table" WHERE p_account_id = ? '
                 'ORDER BY f_booked_on DESC, id DESC LIMIT 50',
     );
+    // One account's monthly report, expressed the way the engine's
+    // `bucket(field, width: 100)` emits it (exact integer arithmetic, no
+    // floats): yyyymmdd -> yyyymm00, count and sum per month.
+    final monthStmt = db.prepare(
+      variant.driftLayout
+          ? 'SELECT (booked_on - ((booked_on % 100) + 100) % 100) AS k, '
+                'count(*) AS c, SUM(amount_minor) AS s FROM "$table" '
+                'WHERE account_id = ? GROUP BY k ORDER BY k ASC'
+          : 'SELECT (f_booked_on - ((f_booked_on % 100) + 100) % 100) AS k, '
+                'count(*) AS c, SUM(f_amount_minor) AS s FROM "$table" '
+                'WHERE p_account_id = ? GROUP BY k ORDER BY k ASC',
+    );
     final deleteStmt = db.prepare(
       variant.driftLayout
           ? 'DELETE FROM "$table" WHERE id = ?'
-          : variant.pathColumn
-          // The half-open descendants range [path, path0) the engine's
-          // cascade delete scans: the document and its subtree, here
-          // the row itself.
-          ? 'DELETE FROM "$table" WHERE path >= ? AND path < ?'
+          // The engine's cascade delete keys the row by its scope key.
           : 'DELETE FROM "$table" WHERE p_account_id = ? AND id = ?',
     );
     final reinsertStmt = db.prepare(fillSql);
@@ -624,6 +605,10 @@ snapshotDb(String path, String table) {
       final rows = latestStmt.select([account]);
       if (rows.length != 50) {
         throw StateError('latest50($account) returned ${rows.length} rows');
+      }
+      final months = monthStmt.select([account]);
+      if (months.isEmpty) {
+        throw StateError('monthly groupBy($account) returned no groups');
       }
     }
     final before =
@@ -668,6 +653,19 @@ snapshotDb(String path, String table) {
       latestMicros.add(sw.elapsedMicroseconds);
     }
 
+    // (b2) one account's monthly groupBy (bucket bookedOn by 100, count and
+    // sum per month bucket) — the engine's groupBy SQL shape.
+    final monthMicros = <int>[];
+    for (final t in targets) {
+      final sw = Stopwatch()..start();
+      final rows = monthStmt.select([t.accountId]);
+      sw.stop();
+      if (rows.isEmpty) {
+        throw StateError('monthly groupBy returned no rows');
+      }
+      monthMicros.add(sw.elapsedMicroseconds);
+    }
+
     // (c) delete one document with its subtree: the row is captured first
     // and re-inserted untimed, so the timed section is the delete alone.
     final deleteMicros = <int>[];
@@ -686,11 +684,13 @@ snapshotDb(String path, String table) {
 
     getStmt.close();
     latestStmt.close();
+    monthStmt.close();
     deleteStmt.close();
     reinsertStmt.close();
     return (
       getUs: p50Of(getMicros),
       latest50Us: p50Of(latestMicros),
+      monthUs: p50Of(monthMicros),
       deleteUs: p50Of(deleteMicros),
     );
   } finally {
@@ -698,8 +698,8 @@ snapshotDb(String path, String table) {
   }
 }
 
-/// The delete statement's arguments for [t]: the subtree range for L0/L1,
-/// the scope/PK key for L2-L5.
+/// The delete statement's arguments for [t]: the scope/PK key for the
+/// Cocoon layouts, the drift id for L3.
 void executeDelete(
   raw.PreparedStatement deleteStmt,
   LayoutVariant variant,
@@ -707,8 +707,6 @@ void executeDelete(
 ) {
   if (variant.driftLayout) {
     deleteStmt.execute([t.id]);
-  } else if (variant.pathColumn) {
-    deleteStmt.execute([t.path, '${t.path}0']);
   } else {
     deleteStmt.execute([t.accountId, t.id]);
   }
@@ -791,6 +789,7 @@ void collect(String dir) {
       'indexMs': median('indexMs'),
       'getUs': median('getUs'),
       'latest50Us': median('latest50Us'),
+      'monthlyGroupByUs': median('monthlyGroupByUs'),
       'deleteUs': median('deleteUs'),
       'runs': entry.value.length,
     };
@@ -805,9 +804,9 @@ void collect(String dir) {
 
   stdout.writeln(
     '| variant | what | file MB | saving vs L0 MB | load s | index s | '
-    'get p50 µs | latest-50 p50 µs | delete p50 µs |',
+    'get p50 µs | latest-50 p50 µs | monthly groupBy p50 µs | delete p50 µs |',
   );
-  stdout.writeln('|---|---|---|---|---|---|---|---|---|');
+  stdout.writeln('|---|---|---|---|---|---|---|---|---|---|');
   for (final variant in variants) {
     final m = medians[variant.name];
     if (m == null) {
@@ -818,7 +817,7 @@ void collect(String dir) {
       '| ${variant.name} | ${variant.description} | ${mb(m["fileBytes"])} | '
       '${saving == null ? '—' : (saving == 0 ? '—' : mb(saving))} | '
       '${s(m["loadMs"])} | ${s(m["indexMs"])} | ${m["getUs"]} | '
-      '${m["latest50Us"]} | ${m["deleteUs"]} |',
+      '${m["latest50Us"]} | ${m["monthlyGroupByUs"]} | ${m["deleteUs"]} |',
     );
   }
 

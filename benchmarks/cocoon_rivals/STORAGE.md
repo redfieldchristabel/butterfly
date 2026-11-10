@@ -1,5 +1,11 @@
 # Where the bytes go: Cocoon's storage at 1M transactions
 
+> **Shipped layout (step 20):** Cocoon ships the L2 layout measured below —
+> no stored `path` column, identity = scope key — with the change log kept
+> and prunable. See [Shipped layout](#shipped-layout-step-20) for the
+> re-measured numbers; everything above stays as the history of how the
+> decision was made.
+
 Measurements, not guesses, of where Cocoon's 1M bytes go and what each layout
 change would buy. Two dev tools produced them (not shipped, no engine changes):
 
@@ -15,6 +21,79 @@ change would buy. Two dev tools produced them (not shipped, no engine changes):
   size, the dataset's value shape), at Cocoon's writer pragmas, secondary
   indexes built after the load (Cocoon's measured bulk path). Medians of 3
   fresh-process runs.
+
+## Shipped layout (step 20)
+
+Cocoon shipped the **L2 layout**: the stored `path` column and its UNIQUE
+autoindex are gone; a document is its scope key (`p_account_id`, `id`,
+unique through `cx_txn_scope`), and the full path is derived from it. The
+change log stays (L2, not L4) because it is prunable at runtime —
+`pruneChanges` / `changeRetention` get the L4 bytes back whenever an app
+wants them, with no layout change.
+
+Re-measured with the same probe (`tool/storage_probe.dart`, variants
+renumbered: L0 = shipped, L1 = no change log, L2 = WITHOUT ROWID reference,
+L3 = drift reference) after the engine change — the real DDL the probe reads
+from a fresh engine-built database IS the new layout:
+
+| variant | what | file MB | saving vs old L0 MB | load s | index s | get p50 µs | latest-50 p50 µs | monthly groupBy p50 µs | delete p50 µs |
+|---|---|---|---|---|---|---|---|---|---|
+| L0 | shipped layout: scope-key identity + change log per doc (no path column) | 304.9 | 69.8 | 5.5 | 3.7 | 10 | 61 | 109,078 | 23 |
+| L1 | L0 without change-log rows (the pruning ceiling) | 252.7 | 121.9 | 4.7 | 3.6 | 9 | 55 | 106,335 | 23 |
+
+Per-object medians (MB):
+
+| object | type | L0 MB | L1 MB |
+|---|---|---|---|
+| txn | table | 126.3 | 126.3 |
+| _cocoon_changes | table | 52.2 | 0.0 |
+| cx_txn_31eb54e047d080dd | index | 29.9 | 29.9 |
+| cx_txn_54b66501d86f96a9 | index | 26.8 | 26.8 |
+| cx_txn_scope | index | 24.7 | 24.7 |
+| cx_txn_f4ecd63f00d4b439 | index | 23.0 | 23.0 |
+| cx_txn_4081929ae6be2a63 | index | 22.0 | 22.0 |
+
+Sanity: L0's file (304.9 MB) and every per-object number match the step-14
+L2 probe to the decimal — the shipped layout is exactly the variant the
+step-14 measurements predicted, including the table payload's drop from
+154.9 to 125.1 B/row (the stored `path` was ~28 B) and the disappearance of
+`sqlite_autoindex_txn_1` (39.4 MB). The monthly groupBy is new in this
+table: one account's whole 50k-row history bucketed into months by
+`bucket(bookedOn, width: 100)` (the engine's exact integer SQL: count and
+sum per `yyyymm00`), statement time, no range filter — the filtered
+month-report numbers live in `AGGREGATES.md`. Engine-level runs
+(`tool/shipped_layout_measure.dart`, the real Cocoon API at 1M,
+`Durability.full`):
+
+| measurement | result |
+|---|---|
+| `bulkWriter()` 1M import (fresh file, indexes deferred) | 11.9 s (was ~13 s on the old layout) |
+| fresh file after import (20 accounts + 1M txns + change log) | 322,551,808 B (307.6 MiB) |
+| get by id p50 | 380 µs (engine round trip incl. cache) |
+| latest-50 p50 | 643 µs |
+| monthly groupBy, whole account history (50k rows) | 73 ms |
+| single delete p50 (delete + re-add untimed) | 1.76 ms |
+| subtree delete: one account + its 50,000 txns | 1.16 s, 50,001 change rows |
+| file after the subtree delete | 322,789,376 B |
+
+The old-format migration, measured on a scratch copy of the real 1M
+pre-step-20 file (`/tmp/cocoon_rivals_run/cocoon_rivals_cocoon_1000000/
+cocoon.db`, 409,088,000 B — the exact file Part A anatomized):
+
+- the first open rebuilds both collection tables inside the open: **5.1-8.7 s**
+  across two runs on the shared box (the table rebuild + every index
+  recreated), reporting progress per table;
+- the data and log survive intact: 1,000,025 documents and the change log
+  head #1,000,690 — both exactly the file's pre-migration values from
+  Part A; the second open does no work (3 ms);
+- the migrated file is transiently **larger** (544,337,920 B; the dropped
+  old tables' pages sit on the freelist — 214.2 MB) until a compaction
+  reclaims them: `VACUUM` takes 4.3 s and lands at **319,778,816 B —
+  304.9 MiB, byte-for-byte the probe's L0 size**. `db.backupTo()` performs
+  the same compaction as part of every backup.
+
+Noise note: measured 2026-11-10 on the shared build box through Foreman
+(no emulator running); single runs, medians of 3 for the probe variants.
 
 ## Part A: anatomy of the real files
 
@@ -233,6 +312,11 @@ dart run tool/storage_probe.dart --collect /tmp/cocoon_step14_scratch/probe_runs
 
 # smoke at 20k first:
 dart run tool/storage_probe.dart --variant L0 --size 20000
+
+# Step 20's shipped-layout section (engine level + the old-format migration
+# and the freelist/VACUUM reclaim; both copy the real 1M file, never write it):
+dart run tool/shipped_layout_measure.dart
+dart run tool/vacuum_probe.dart
 ```
 
 Android emulator off; originals under `/tmp/cocoon_rivals_run` untouched

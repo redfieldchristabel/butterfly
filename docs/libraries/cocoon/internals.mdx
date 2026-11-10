@@ -31,8 +31,7 @@ One table per collection model, named `snake_case(model)` (`Txn` → `txn`;
 
 ```sql
 CREATE TABLE txn (
-  path TEXT NOT NULL UNIQUE,   -- full document path
-  id TEXT NOT NULL,
+  id TEXT NOT NULL,            -- the document id
   p_account_id TEXT NOT NULL,  -- one per path param
   data BLOB NOT NULL,          -- canonical wire bytes
   f_booked_on INTEGER NOT NULL
@@ -41,10 +40,25 @@ CREATE TABLE txn (
 )
 ```
 
+- **A document's identity is its scope key**: the `p_` param columns plus
+  `id`, unique together through the table's scope index. There is **no
+  stored `path` column** — the full path is derived from the scope key (one
+  shared helper, tested round-trip both ways), which is what `DocRef.path`,
+  snapshots, the cache keys, the watch keys and the change-log rows carry.
+  A cascade delete keys child-table rows by their leading param columns
+  (`p_account_id = 'a1'` for everything under `accounts/a1`), in the same
+  transaction.
+- **Files upgrade themselves.** The layout is versioned in `_cocoon_meta`
+  (`format_version`): a file written before the path column was dropped is
+  rebuilt table by table (new table, `INSERT ... SELECT`, drop, rename,
+  indexes recreated) inside the first open that touches it — crash-safe, a
+  failure leaves the old layout and the next open finishes — and a file
+  written by a NEWER format refuses to open with
+  `StorageFormatTooNewException`. The same rule backs up and restore: an
+  older-format backup restores fine and migrates at the next open.
 - **Path params are typed columns** (`p_account_id`). Querying one parent is
   an index range scan; skipping the parent filter is a collection-group
-  query for free. The full `path` is also kept, so a subtree (cascade
-  delete, export) is `path >= 'accounts/a1/' AND path < 'accounts/a10'`.
+  query for free.
 - **Indexed fields are copied into real typed columns at write time**
   (`f_`-prefixed). SQLite can't look inside the blob; real columns are
   better than JSON generated columns: real integers, no silent
@@ -74,11 +88,13 @@ CREATE TABLE txn (
   unique: true)`) to make it unique per parent.
 - **Reconcile on open** runs in one write transaction: create missing
   tables; add missing `f_` columns and backfill them by decoding every row
-  with the adapter in batches of 500 (keyed by `path`); drop undeclared
-  `f_` columns (their indexes go first); create missing and drop stale
-  `cx_` indexes. A per-table shape hash in `_cocoon_meta` makes a no-change
-  open do no DDL at all. Tables without a registered adapter are never
-  touched.
+  with the adapter in batches of 500 (keyed by the scope key, scanned in
+  rowid order); drop undeclared `f_` columns (their indexes go first);
+  create missing and drop stale `cx_` indexes. A per-table shape hash in
+  `_cocoon_meta` makes a no-change open do no DDL at all. Tables without a
+  registered adapter are never touched (but they do take part in the
+  storage-format upgrade, which rebuilds any table still carrying the old
+  `path` column).
 - SQLite cannot add a `NOT NULL` column to a table with rows, so backfilled
   columns are declared nullable and the adapter's non-null invariant is
   enforced at write time.
@@ -143,8 +159,8 @@ the table is empty, or the writer has buffered more rows for the table than
 the table holds — and, when deferral pays:
 
 1. inserts one `_cocoon_bulk` row per declared secondary index, carrying
-   the exact `CREATE ... INDEX IF NOT EXISTS` statement (the scope index and
-   the unique `path` constraint are never touched), and
+   the exact `CREATE ... INDEX IF NOT EXISTS` statement (the scope index is
+   never touched), and
 2. `DROP INDEX`es each of them.
 
 The writes of the chunk commit atomically with the drops, so the meta rows

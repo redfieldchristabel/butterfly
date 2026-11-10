@@ -320,7 +320,7 @@ void main() {
       await a2.collection(txns).add(txn(bookedOn: 20260102));
 
       int queryRuns() => spy.statements
-          .where((statement) => statement.startsWith('SELECT path, id, data'))
+          .where((statement) => statement.startsWith('SELECT id, data'))
           .length;
 
       final emissions = <QueryPage<Txn>>[];
@@ -382,7 +382,7 @@ void main() {
       final txnsRef = db.collection(accounts).doc('a1').collection(txns);
 
       // Hold every query read so re-runs pile up behind the gate.
-      gate.gate = (sql) => sql.startsWith('SELECT path, id, data');
+      gate.gate = (sql) => sql.startsWith('SELECT id, data');
       final emissions = <QueryPage<Txn>>[];
       final sub = txnsRef
           .orderBy(txnBookedOn, descending: true)
@@ -493,7 +493,7 @@ void main() {
       final t1 = await txnsRef.add(txn(bookedOn: 20260101, memo: 'one'));
 
       int queryRuns() => spy.statements
-          .where((statement) => statement.startsWith('SELECT path, id, data'))
+          .where((statement) => statement.startsWith('SELECT id, data'))
           .length;
 
       final emissions = <QueryPage<Txn>>[];

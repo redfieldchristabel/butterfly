@@ -59,13 +59,15 @@ void main() {
   group('create table', () {
     final entry = txnEntry;
 
-    test('declares path, id, params, data and checked field columns', () {
+    test('declares id, params, data and checked field columns, no path', () {
       final sql = createTableSql(
         entry.table,
         entry.paramSqlNames,
         entry.columnDdls,
       );
-      expect(sql, contains('path TEXT NOT NULL UNIQUE'));
+      // The format-2 layout: identity is the scope key; there is no stored
+      // `path` column and no UNIQUE constraint beyond the scope index.
+      expect(sql, isNot(contains('path')));
       expect(sql, contains('id TEXT NOT NULL'));
       expect(sql, contains('p_account_id TEXT NOT NULL'));
       expect(sql, contains('data BLOB NOT NULL'));

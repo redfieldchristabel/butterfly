@@ -52,8 +52,11 @@ final class BufferedWrite {
 /// hot-document cache reflects any of it.
 final class WriteTx {
   /// Builds the transaction state over [tx]; [db] supplies the registry, the
-  /// change-log policy and the delete helpers.
-  WriteTx(this._db, this.tx, this.stage);
+  /// change-log policy and the delete helpers. With `logChanges: false` the
+  /// transaction writes no change-log rows (a bulk-writer chunk opt-out);
+  /// watch notifications and cache updates are unaffected.
+  WriteTx(this._db, this.tx, this.stage, {bool logChanges = true})
+    : _logChanges = logChanges;
 
   final Cocoon _db;
 
@@ -63,6 +66,9 @@ final class WriteTx {
   /// The cache stage this transaction's updates accumulate on, applied only
   /// after the commit succeeds.
   final CacheStage stage;
+
+  /// Whether the flush appends change-log rows.
+  final bool _logChanges;
 
   final List<BufferedWrite> _writes = [];
   final List<(String table, String path, ChangeOp op)> _changes = [];
@@ -88,12 +94,14 @@ final class WriteTx {
   }) {
     final entry = _db.registry.entryFor(ref.adapter);
     final bytes = entry.adapter.encode(value);
+    // One bound argument list serves both the upsert and the update
+    // statement: `data, f_columns..., params..., id` (see
+    // [RegistryEntry.upsertSql]).
     final args = <Object?>[
-      ref.path.path,
-      ref.path.id,
-      ..._db.paramValuesInOrder(entry, ref.path.collection),
       bytes,
       for (final column in entry.fieldColumns) column.sqlOf(value),
+      ..._db.paramValuesInOrder(entry, ref.path.collection),
+      ref.path.id,
     ];
     _writes.add(BufferedWrite(entry, update, ref.path.path, args));
     // Only an upsert makes the path exist by construction; a buffered
@@ -122,19 +130,39 @@ final class WriteTx {
 
   /// Deletes [ref] and its whole subtree. The buffer flushes first, so
   /// queued writes land before the delete, in call order.
+  ///
+  /// The document's own row goes by its scope key; every child collection
+  /// table loses the rows whose leading param columns match the parent's —
+  /// a descendant table's first N params are exactly the deleted
+  /// collection's params (the patterns share their path prefix). All in one
+  /// transaction.
   Future<void> delete(DocRef<Object> ref) async {
     await flush();
     final entry = _db.registry.entryFor(ref.adapter);
+    final key = entry.scopeKeyOf(ref.path.path);
+    if (key == null) {
+      throw ArgumentError.value(
+        ref.path.path,
+        'ref',
+        'Not a document path of collection ${entry.adapter.pattern}',
+      );
+    }
     final deleted = <(String, String)>[
-      ...await _db.deleteReturning(tx, entry.table, ref.path.path),
+      ...await _db.deleteRow(tx, entry, key.paramValues, key.id),
     ];
-    final (:from, :to) = ref.path.descendants;
+    // A child table's leading param columns line up with the deleted
+    // collection's params followed by the deleted document's own id (the
+    // child pattern introduces that param right after the parent's
+    // collection id): deleting an account filters its txns by
+    // p_account_id = the account's id, and the splits two levels down by
+    // the same prefix.
+    final childKey = [...key.paramValues, key.id];
     for (final candidate in _db.registry.entries) {
       if (SchemaRegistry.descendsFrom(
         candidate.adapter.pattern,
         ref.adapter.pattern,
       )) {
-        deleted.addAll(await _db.deleteSubtree(tx, candidate.table, from, to));
+        deleted.addAll(await _db.deleteScopePrefix(tx, candidate, childKey));
       }
     }
     for (final (table, path) in deleted) {
@@ -173,7 +201,7 @@ final class WriteTx {
     _writes.clear();
     final changes = _changes.toList();
     _changes.clear();
-    if (!_db.keepsChanges) {
+    if (!_db.keepsChanges || !_logChanges) {
       return;
     }
     final at = DateTime.now().toUtc().microsecondsSinceEpoch;
@@ -186,36 +214,50 @@ final class WriteTx {
   }
 
   /// A batch `update` must find an existing row: paths this buffer has
-  /// written (and not deleted since) exist by construction; every other path
-  /// in the run is checked against the transaction's database state, and a
-  /// missing one fails the transaction before any row of the run is written.
+  /// written (and not deleted since) exist by construction; every other
+  /// write's scope key in the run is checked against the transaction's
+  /// database state, and a missing one fails the transaction before any row
+  /// of the run is written.
   Future<void> _flushUpdateRun(
     RegistryEntry entry,
     List<BufferedWrite> run,
   ) async {
     final toCheck = [
       for (final write in run)
-        if (!_writtenPaths.contains(write.path)) write.path,
+        if (!_writtenPaths.contains(write.path)) write,
     ];
-    for (var start = 0; start < toCheck.length; start += _existenceBatchSize) {
+    final keyColumns = entry.keyColumns;
+    // Each VALUES tuple binds `paramCount + 1` values; chunk to stay inside
+    // a comfortable placeholder budget.
+    final keyCount = keyColumns.length;
+    final chunkSize = keyCount >= _existenceVarBudget
+        ? 1
+        : _existenceVarBudget ~/ keyCount;
+    for (var start = 0; start < toCheck.length; start += chunkSize) {
       final chunk = toCheck.sublist(
         start,
-        start + _existenceBatchSize > toCheck.length
-            ? toCheck.length
-            : start + _existenceBatchSize,
+        start + chunkSize > toCheck.length ? toCheck.length : start + chunkSize,
       );
+      final tuple = '(${List.filled(keyCount, '?').join(', ')})';
       final found = {
         for (final row in await tx.getAll(
-          'SELECT path FROM ${entry.table} WHERE path IN '
-          '(${List.filled(chunk.length, '?').join(', ')})',
-          chunk,
+          'SELECT ${keyColumns.join(', ')} FROM ${entry.table} '
+          'WHERE (${keyColumns.join(', ')}) IN '
+          '(VALUES ${List.filled(chunk.length, tuple).join(', ')})',
+          [
+            for (final write in chunk)
+              ...write.args.sublist(write.args.length - keyCount),
+          ],
         ))
-          row['path']! as String,
+          // Scope-key tag: the key values joined with '/', which no doc id
+          // or param can contain — collision-free within one table.
+          [for (final name in keyColumns) row[name]! as String].join('/'),
       };
-      for (final path in chunk) {
-        if (!found.contains(path)) {
+      for (final write in chunk) {
+        final tag = write.args.sublist(write.args.length - keyCount).join('/');
+        if (!found.contains(tag)) {
           throw ArgumentError.value(
-            path,
+            write.path,
             'ref',
             'batch update: document does not exist',
           );
@@ -234,7 +276,7 @@ final class WriteTx {
     _changes.add((table, path, op));
   }
 
-  /// Paths per existence-check `SELECT`; SQLite's variable limit is far
-  /// higher, this only bounds the statement size.
-  static const int _existenceBatchSize = 500;
+  /// Bound placeholder budget per existence-check `SELECT`; SQLite's
+  /// variable limit is far higher, this only bounds the statement size.
+  static const int _existenceVarBudget = 500;
 }

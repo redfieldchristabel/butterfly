@@ -325,7 +325,7 @@ void main() {
     );
     expect(
       plan.sql,
-      'SELECT path, id, data, p_account_id, f_booked_on FROM txn '
+      'SELECT id, data, p_account_id, f_booked_on FROM txn '
       'WHERE p_account_id = ? AND f_booked_on >= ? '
       'ORDER BY f_booked_on DESC, id DESC LIMIT ?',
     );
@@ -398,7 +398,7 @@ void main() {
     );
     expect(
       plan.sql,
-      'SELECT path, id, data, p_account_id FROM txn '
+      'SELECT id, data, p_account_id FROM txn '
       'WHERE p_account_id = ? AND f_booked_on > ? '
       'ORDER BY id ASC',
     );
