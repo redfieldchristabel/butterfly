@@ -24,6 +24,7 @@ final _collectionChecker = TypeChecker.typeNamed(
 final _embeddedChecker = TypeChecker.typeNamed(Embedded, inPackage: 'cocoon');
 final _ignoreChecker = TypeChecker.typeNamed(Ignore, inPackage: 'cocoon');
 final _mirroredChecker = TypeChecker.typeNamed(Mirrored, inPackage: 'cocoon');
+final _indexedChecker = TypeChecker.typeNamed(Indexed, inPackage: 'cocoon');
 
 /// A user source problem: the generator reports [message] as a build error.
 class CocoonBuildError implements Exception {
@@ -81,7 +82,12 @@ String describeEmbeddedDiff(EmbeddedDiff diff) {
 
 /// One stored field of an extracted class: a name and a canonical type.
 final class ExtractedField {
-  const ExtractedField(this.name, this.type, {this.mirrored = false});
+  const ExtractedField(
+    this.name,
+    this.type, {
+    this.mirrored = false,
+    this.indexed,
+  });
 
   /// The field name, e.g. `bookedOn`.
   final String name;
@@ -93,6 +99,11 @@ final class ExtractedField {
   /// Only meaningful on `@Collection` model fields; the extraction rejects
   /// the annotation on `@Embedded` fields.
   final bool mirrored;
+
+  /// The one-field index the field's `@Indexed()` declares, or `null`. Only
+  /// meaningful on `@Collection` model fields; the extraction rejects the
+  /// annotation on `@Embedded` fields.
+  final ExtractedIndex? indexed;
 
   @override
   String toString() => '$name: $type';
@@ -286,7 +297,24 @@ ExtractedModel _extractModel(
     }
   }
 
-  final clazz = _extractClass(element, extraction, allowMirrored: true);
+  final clazz = _extractClass(
+    element,
+    extraction,
+    allowColumnAnnotations: true,
+  );
+  // The class-level and field-level declarations are ONE list: a field's
+  // `@Indexed()` appends its one-field index after the class-level composites
+  // (in field order), unless the same index is already declared — an index
+  // declared both ways is one index, and the physical identity comes from the
+  // canonical definition, so moving a one-field `Index([...])` to `@Indexed()`
+  // on the field changes nothing.
+  for (final field in clazz.fields) {
+    final indexed = field.indexed;
+    if (indexed == null || indexes.any(_sameIndexAs(indexed))) {
+      continue;
+    }
+    indexes.add(indexed);
+  }
   try {
     tableNameFor(name);
   } on ArgumentError catch (error) {
@@ -300,10 +328,20 @@ ExtractedModel _extractModel(
   );
 }
 
+/// Whether an [ExtractedIndex] declares the same index as [index]: the same
+/// parts in the same order, with the same uniqueness.
+bool Function(ExtractedIndex) _sameIndexAs(ExtractedIndex index) =>
+    (other) =>
+        other.fields.length == index.fields.length &&
+        other.unique == index.unique &&
+        Iterable<int>.generate(
+          index.fields.length,
+        ).every((i) => other.fields[i] == index.fields[i]);
+
 ExtractedClass _extractClass(
   ClassElement element,
   _Extraction extraction, {
-  required bool allowMirrored,
+  required bool allowColumnAnnotations,
 }) {
   final name = element.name!;
   if (element.isAbstract) {
@@ -404,13 +442,39 @@ ExtractedClass _extractClass(
       );
     }
     final mirrored = _mirroredChecker.hasAnnotationOf(field);
-    fields.add(ExtractedField(fieldName, fieldType, mirrored: mirrored));
-    if (mirrored && !allowMirrored) {
+    final indexedAnnotation = _indexedChecker.firstAnnotationOf(field);
+    ExtractedIndex? indexed;
+    if (indexedAnnotation != null) {
+      final descending = indexedAnnotation
+          .getField('descending')
+          ?.toBoolValue();
+      final unique = indexedAnnotation.getField('unique')?.toBoolValue();
+      indexed = ExtractedIndex([
+        descending ?? false ? '-$fieldName' : fieldName,
+      ], unique: unique ?? false);
+    }
+    fields.add(
+      ExtractedField(
+        fieldName,
+        fieldType,
+        mirrored: mirrored,
+        indexed: indexed,
+      ),
+    );
+    if (mirrored && !allowColumnAnnotations) {
       throw CocoonBuildError(
         'Field "$fieldName" of $name cannot be @Mirrored: the annotation is '
         'only allowed on @Collection model fields. Embedded fields live '
         'inside the document blob and have no column, so there is nothing '
         'to mirror',
+      );
+    }
+    if (indexed != null && !allowColumnAnnotations) {
+      throw CocoonBuildError(
+        'Field "$fieldName" of $name cannot be @Indexed: the annotation is '
+        'only allowed on @Collection model fields. Embedded fields live '
+        'inside the document blob and have no column, so there is nothing '
+        'to index',
       );
     }
   }
@@ -535,7 +599,11 @@ String _canonicalBase(DartType type, String context, _Extraction extraction) {
         extraction.extracting.add(className);
         try {
           extraction.embedded[className] = ExtractedEmbedded(
-            clazz: _extractClass(element, extraction, allowMirrored: false),
+            clazz: _extractClass(
+              element,
+              extraction,
+              allowColumnAnnotations: false,
+            ),
           );
         } finally {
           extraction.extracting.remove(className);

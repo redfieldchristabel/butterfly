@@ -95,6 +95,7 @@ final class CocoonOptions {
     this.walAutoCheckpointPages = defaultWalAutoCheckpointPages,
     this.compactAfterUpgrade = true,
     this.onCompactionFailed,
+    this.onMissingIndex = MissingIndexMode.throwError,
   });
 
   /// The default hot-document cache size.
@@ -195,6 +196,21 @@ final class CocoonOptions {
   /// open succeeds, and the freelist is reclaimed by the next `backupTo` (or
   /// any explicit `VACUUM`). `null` — the default — reports nothing.
   final void Function(Object error)? onCompactionFailed;
+
+  /// How a query no declared index serves behaves:
+  /// [MissingIndexMode.throwError] (the default) throws the
+  /// `MissingIndexException` whose message carries the ready
+  /// `dart run cocoon_generator:index add` command;
+  /// [MissingIndexMode.scanAndWarn] is the debug-only fallback — the query
+  /// runs as a full scan, the missing index is printed once per process and
+  /// listed in [Cocoon.missingIndexes].
+  ///
+  /// `scanAndWarn` is honoured ONLY while asserts are enabled (debug and
+  /// profile-with-asserts builds). In a release build it behaves exactly like
+  /// [MissingIndexMode.throwError] regardless, so a forgotten
+  /// `.allowFullScan()` can never silently degrade a shipped query. The
+  /// fallback never creates an index at runtime.
+  final MissingIndexMode onMissingIndex;
 }
 
 /// A typed, disk-backed, Firestore-style local database on SQLite.
@@ -224,13 +240,23 @@ final class Cocoon {
     this.databasePath,
     this.schemaLock,
     required this.instanceId,
-  });
+    MissingIndexMode missingIndexMode = MissingIndexMode.throwError,
+  }) : _missingIndexMode = missingIndexMode;
 
   final CocoonExecutor _executor;
   final SchemaRegistry _registry;
   final DocumentCache _cache;
   final bool _keepChanges;
   final ChangeRetention? _changeRetention;
+
+  /// The configured behaviour for queries no index serves: the debug
+  /// scanAndWarn fallback is honoured only while asserts are enabled.
+  final MissingIndexMode _missingIndexMode;
+
+  /// The missing indexes scanAndWarn queries of this database have hit, by
+  /// fix command; exposed through [missingIndexes].
+  final Map<String, MissingIndexReport> _missingIndexes = {};
+
   final WatchHub _watchHub = WatchHub();
 
   /// The paths (in absolute form) of the databases currently open through
@@ -413,6 +439,7 @@ final class Cocoon {
       databasePath: databasePath,
       schemaLock: schemaLock,
       instanceId: instanceId,
+      missingIndexMode: options.onMissingIndex,
     );
     final openPath = databasePath;
     if (openPath != null) {
@@ -917,6 +944,46 @@ final class Cocoon {
   @internal
   bool get keepsChanges => _keepChanges;
 
+  /// The missing indexes that [MissingIndexMode.scanAndWarn] queries of this
+  /// database have run over, first hit first: the model, the index parts to
+  /// declare, the query shape, the ready fix command and when it was first
+  /// seen. One report per distinct missing index. Filled only while asserts
+  /// are enabled — a release build throws instead, so the list stays empty.
+  ///
+  /// The debug fallback never creates an index: run the report's
+  /// `fixCommand` in the project, then `dart run cocoon_generator:migrate`
+  /// and `dart run build_runner build -d`.
+  List<MissingIndexReport> get missingIndexes =>
+      List.unmodifiable(_missingIndexes.values);
+
+  /// The scanAndWarn decision for a query no index serves: record the report
+  /// on this database, print the message (with its `Fix:` line) once per
+  /// distinct missing index per process, and run the query as a full scan.
+  bool _acceptMissingIndexScan(
+    MissingIndexException error, {
+    required String model,
+    required List<String> fields,
+    required String queryShape,
+  }) {
+    if (_missingIndexMode != MissingIndexMode.scanAndWarn ||
+        !missingIndexScanPossible) {
+      return false;
+    }
+    final command = error.fixCommand!;
+    _missingIndexes.putIfAbsent(
+      command,
+      () => MissingIndexReport(
+        model: model,
+        fields: fields,
+        query: queryShape,
+        fixCommand: command,
+        firstSeen: DateTime.now(),
+      ),
+    );
+    warnMissingIndexOnce(error);
+    return true;
+  }
+
   @internal
   Future<QueryPage<T>> runQuery<T extends Object>(CocoonQuery<T> query) async =>
       (await runQueryWithBytes<T>(query)).$1;
@@ -940,6 +1007,7 @@ final class Cocoon {
       limit: spec.limit,
       cursor: spec.startAfter,
       fullScan: spec.fullScan,
+      onMissingIndex: _acceptMissingIndexScan,
     );
     await waitForBulkIndexes(plan.servingIndex);
     final rows = await _executor.getAll(plan.sql, plan.args);
@@ -995,6 +1063,7 @@ final class Cocoon {
       limit: spec.limit,
       fullScan: spec.fullScan,
       specs: aggregate.specs,
+      onMissingIndex: _acceptMissingIndexScan,
     );
     await waitForBulkIndexes(plan.servingIndex);
     final rows = await _executor.getAll(plan.sql, plan.args);
@@ -1019,6 +1088,7 @@ final class Cocoon {
       fullScan: spec.fullScan,
       keys: aggregate.keys,
       specs: aggregate.specs,
+      onMissingIndex: _acceptMissingIndexScan,
     );
     await waitForBulkIndexes(plan.servingIndex);
     final rows = await _executor.getAll(plan.sql, plan.args);

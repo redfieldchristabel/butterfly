@@ -216,13 +216,18 @@ String tableShapeHash({
   required List<ColumnDdl> columns,
   required List<String> indexCanonicals,
 }) {
+  // The index canonicals are sorted: an index's physical identity is its
+  // canonical definition, not its position in the declaration, so moving a
+  // one-field `Index([...])` to `@Indexed()` on the field (which may reorder
+  // the emitted adapter list) must not read as a shape change.
+  final sortedIndexes = [...indexCanonicals]..sort();
   final description = [
     table,
     paramSqlNames.join(','),
     for (final column in columns)
       '${column.name}:${column.sqlType}:${column.nullable ? '?' : '!'}:'
           '${column.checkType ?? '-'}',
-    ...indexCanonicals,
+    ...sortedIndexes,
   ].join('|');
   return queryFingerprint(description);
 }

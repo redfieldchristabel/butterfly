@@ -490,9 +490,25 @@ class CollectionDiff {
 
   /// Whether the `Index([...])` set changed: the on-device open creates or
   /// drops the SQLite indexes, so the schema version moves with it.
-  bool get indexesChanged =>
-      previous == null ||
-      jsonEncode(previous!.indexes) != jsonEncode(declared.indexes);
+  ///
+  /// The comparison ignores the declaration ORDER of the indexes: an index's
+  /// physical identity is its canonical definition, not its position in the
+  /// annotation, so moving a one-field `Index([...])` to `@Indexed()` on the
+  /// field (or reordering the list) declares the same indexes and changes
+  /// nothing.
+  bool get indexesChanged {
+    final previousIndexes = previous?.indexes;
+    if (previousIndexes == null) {
+      return true;
+    }
+    String sortedText(List<List<String>> indexes) {
+      final parts = [for (final index in indexes) index.join(',')];
+      parts.sort();
+      return parts.join('|');
+    }
+
+    return sortedText(previousIndexes) != sortedText(declared.indexes);
+  }
 
   /// Whether the `@Mirrored()` set changed: the on-device open adds and
   /// backfills, or drops, the mirrored `f_` columns, so the schema version

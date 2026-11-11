@@ -1,5 +1,41 @@
 ## Unreleased
 
+- **Single-field indexes go on the field: `@Indexed()`.** The annotation
+  declares exactly `Index(['field'])` (or `Index(['-field'])` with
+  `descending: true`, `unique: true` for a `UNIQUE` index) as if it were
+  written in `@Collection(indexes: [...])`. The generator merges
+  field-level and class-level indexes into one list — an index declared
+  both ways is one index — and the physical index name comes from the
+  canonical form, so moving a one-field index from the class to the field
+  changes nothing: no schema version bump, no rebuild, no lock change.
+  Composites (two or more parts) and path params stay on the class.
+- **A missing index now tells you the exact fix.** The
+  `MissingIndexException` message ends with a `Fix:` line:
+  `dart run cocoon_generator:index add <Model> <fields>` plus the
+  declaration it would write. Run the command and it edits the model for
+  you — `@Indexed()` on the field for a single model field, an appended
+  `Index([...])` for composites and path params — then `dart format`s the
+  file and prints the two follow-up commands (`migrate`, then
+  `build_runner build -d`; adding an index to an existing collection
+  changes the lock version, so `migrate` comes first). It validates names
+  with a "did you mean", is idempotent (an index already declared in
+  exactly that order is a no-op naming where), and refuses annotation
+  shapes it does not understand (a const variable, a spread, a non-literal)
+  with the exact text to paste. A development tool like `migrate`, never a
+  CI step; also forwarded by `butterfly cocoon index add` and exposed as an
+  MCP tool.
+- **Debug-only full-scan fallback for missing indexes.**
+  `CocoonOptions(onMissingIndex: MissingIndexMode.scanAndWarn)` runs
+  queries no declared index serves as a full scan while you explore a
+  schema: the missing index is printed once per distinct missing index per
+  process (message with its `Fix:` line, on the `dart:developer` log and
+  stderr) and listed in `db.missingIndexes` (model, index parts, query
+  shape, fix command, first seen). It is honoured only while asserts are
+  enabled — in a release build it throws like the default
+  (`MissingIndexMode.throwError`), so a forgotten `.allowFullScan()` can
+  never silently degrade a shipped query. It never creates an index at
+  runtime.
+
 - **The schema lock is a YAML `cocoon.lock` now** — Dart's own lock file
   (`pubspec.lock`) is YAML too, so reviews read it without braces-and-quotes
   noise next to the migration files. `SchemaLock.parse` reads both shapes

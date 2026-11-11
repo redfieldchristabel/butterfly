@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:developer';
+import 'dart:io';
 
 import 'package:meta/meta.dart';
 
@@ -16,22 +18,139 @@ import 'schema_sql.dart';
 ///
 /// The message spells the `Index([...])` to add to the `@Collection`
 /// declaration, or points at `.allowFullScan()` when there is nothing to
-/// index.
+/// index. When there is something to declare, the message ends with a
+/// `Fix:` line carrying the ready one-line command
+/// (`dart run cocoon_generator:index add ...`) that edits the model for you,
+/// and the declaration that command writes.
 class MissingIndexException implements Exception {
   /// Builds the exception with a human-readable [message] and, when there is
-  /// something to declare, the ready-to-paste [suggestedIndex].
-  MissingIndexException(this.message, {this.suggestedIndex});
+  /// something to declare, the ready-to-paste [suggestedIndex] and the
+  /// ready-to-run [fixCommand].
+  MissingIndexException(this.message, {this.suggestedIndex, this.fixCommand});
 
-  /// Explains which query failed and how to fix it.
+  /// Explains which query failed and how to fix it. Ends with exactly one
+  /// `Fix:` line when [fixCommand] is set.
   final String message;
 
   /// The `Index([...])` declaration that would serve the query, or `null`
   /// when the query has nothing to anchor an index on.
   final String? suggestedIndex;
 
+  /// The `dart run cocoon_generator:index add <Model> <fields>` command that
+  /// edits the model's source to declare the missing index, or `null` when
+  /// the query has nothing to anchor an index on.
+  final String? fixCommand;
+
   @override
   String toString() => 'MissingIndexException: $message';
 }
+
+/// How the engine behaves when no declared index serves a query.
+enum MissingIndexMode {
+  /// Throw a [MissingIndexException] — the default, and the behaviour of a
+  /// release build under every mode (see [CocoonOptions.onMissingIndex]).
+  throwError,
+
+  /// Debug-only full-scan fallback: run the query without an index guarantee,
+  /// print the missing index's message (with its `Fix:` line) once per
+  /// distinct missing index per process, and record it in
+  /// [Cocoon.missingIndexes]. Honoured only while asserts are enabled —
+  /// debug and profile-with-asserts builds; a release build behaves like
+  /// [throwError] regardless. Never creates an index at runtime.
+  scanAndWarn,
+}
+
+/// One missing index a debug [MissingIndexMode.scanAndWarn] query hit: what
+/// to declare, and where to look for the query that needs it.
+final class MissingIndexReport {
+  /// Built by the engine when a scanAndWarn query first hits the index.
+  @internal
+  MissingIndexReport({
+    required this.model,
+    required this.fields,
+    required this.query,
+    required this.fixCommand,
+    required this.firstSeen,
+  });
+
+  /// The model class the query ran on, e.g. `Txn`.
+  final String model;
+
+  /// The index parts to declare, `-` prefixing a descending part, e.g.
+  /// `['accountId', '-bookedOn']` — the argument of the `index add` command.
+  final List<String> fields;
+
+  /// The query's shape, e.g. `where(accountId == ?, status == ?);
+  /// orderBy(-bookedOn)` — names and operators, not values.
+  final String query;
+
+  /// The one-line command that edits the model to declare the index.
+  final String fixCommand;
+
+  /// When the first query in this process hit the missing index.
+  final DateTime firstSeen;
+
+  @override
+  String toString() =>
+      '$model: ${fields.join(', ')} ($query). Fix: $fixCommand';
+}
+
+/// The decision for a query no index serves, made by the debug
+/// [MissingIndexMode.scanAndWarn] fallback: return `true` to run the query as
+/// a full scan, `false` to throw [error]. [model], [fields] (the index parts
+/// to declare) and [queryShape] describe what the caller should record.
+@internal
+typedef MissingIndexScanDecision =
+    bool Function(
+      MissingIndexException error, {
+      required String model,
+      required List<String> fields,
+      required String queryShape,
+    });
+
+/// The missing indexes already printed in this process, keyed by fix command:
+/// one warning per distinct missing index, however many databases or queries
+/// hit it.
+final Set<String> _warnedMissingIndexes = {};
+
+/// Prints [error] (the message with its `Fix:` line) once per distinct
+/// missing index per process, on the `dart:developer` log and stderr.
+@internal
+void warnMissingIndexOnce(MissingIndexException error) {
+  final command = error.fixCommand;
+  if (command == null || !_warnedMissingIndexes.add(command)) {
+    return;
+  }
+  log(
+    error.toString(),
+    name: 'cocoon',
+    level: 900, // WARNING
+  );
+  stderr.writeln('[cocoon] $error');
+}
+
+/// Test seam for [warnMissingIndexOnce]'s process-wide once-only set.
+@internal
+@visibleForTesting
+void resetMissingIndexWarnings() => _warnedMissingIndexes.clear();
+
+/// Whether asserts are enabled in this isolate: debug and
+/// profile-with-asserts builds. [MissingIndexMode.scanAndWarn] is honoured
+/// only when they are.
+bool get _assertsEnabled {
+  var enabled = false;
+  assert(() {
+    enabled = true;
+    return true;
+  }());
+  return enabled;
+}
+
+/// Whether a query whose plan found no index runs as a full scan under
+/// [MissingIndexMode.scanAndWarn]: only in a build with asserts enabled.
+/// A release build always throws, whatever the option says.
+@internal
+bool get missingIndexScanPossible => _assertsEnabled;
 
 /// One sort key of a query: a model field or path param name with its
 /// direction. The document id is always appended as the final tiebreaker.
@@ -126,9 +245,10 @@ bool _serves(
   return allSame || allReversed;
 }
 
-/// The `Index([...])` declaration that would serve a query, or `null` when
-/// the query has no filters and no sort keys to anchor an index on.
-String? suggestedIndexDdl({
+/// The index parts (`-` prefixing a descending part) that would serve a
+/// query, or `null` when the query has no filters and no sort keys to anchor
+/// an index on.
+List<String>? suggestedIndexParts({
   required List<String> equalityNamesInOrder,
   required String? rangeName,
   required bool hasUserOrder,
@@ -144,7 +264,50 @@ String? suggestedIndexDdl({
   if (parts.isEmpty) {
     return null;
   }
-  return "Index([${parts.map((part) => "'$part'").join(', ')}])";
+  return parts;
+}
+
+/// The `Index([...])` declaration that would serve a query, or `null` when
+/// the query has no filters and no sort keys to anchor an index on.
+String? suggestedIndexDdl({
+  required List<String> equalityNamesInOrder,
+  required String? rangeName,
+  required bool hasUserOrder,
+  required List<QueryOrder> orders,
+}) => switch (suggestedIndexParts(
+  equalityNamesInOrder: equalityNamesInOrder,
+  rangeName: rangeName,
+  hasUserOrder: hasUserOrder,
+  orders: orders,
+)) {
+  null => null,
+  final parts => indexDeclaration(parts),
+};
+
+/// The `Index([...])` source for [parts] (`-` prefixing a descending part).
+String indexDeclaration(List<String> parts) =>
+    "Index([${parts.map((part) => "'$part'").join(', ')}])";
+
+/// The `dart run cocoon_generator:index add` command that edits [model]'s
+/// source to declare the index [parts].
+String indexFixCommand(String model, List<String> parts) =>
+    'dart run cocoon_generator:index add $model ${parts.join(',')}';
+
+/// What the fix command writes for [parts]: `@Indexed()` on the field for a
+/// one-field index over a model field, the `Index([...])` composite
+/// otherwise (path params are not fields, so they always stay in the
+/// class-level composite).
+String indexFixDeclaration(List<String> parts, Set<String> paramNames) {
+  if (parts.length == 1) {
+    final part = parts.single;
+    final name = part.startsWith('-') ? part.substring(1) : part;
+    if (!paramNames.contains(name)) {
+      return part.startsWith('-')
+          ? '@Indexed(descending: true) on $name'
+          : '@Indexed() on $name';
+    }
+  }
+  return '${indexDeclaration(parts)} in @Collection(indexes: [...])';
 }
 
 /// The executable form of a planned query: SQL, bound arguments, the cursor
@@ -221,6 +384,7 @@ ResolvedFilters resolveQueryFilters({
   required List<QueryFilter> filters,
   required List<QueryOrder> orders,
   required bool fullScan,
+  MissingIndexScanDecision? onMissingIndex,
 }) {
   final scopeValues = scopePath == null
       ? const <String, String>{}
@@ -251,17 +415,19 @@ ResolvedFilters resolveQueryFilters({
     (filter.isEqualityClass ? equalityNames : rangeNames).add(filter.name);
   }
 
-  // Which index serves the query (or none, for a full scan). The engine
-  // holds the query while that index is deferred by a bulk writer.
+  // Which index serves the query (or none, for a full scan — or for a query
+  // the debug scanAndWarn fallback accepts as a scan). The engine holds the
+  // query while that index is deferred by a bulk writer.
   final serving = fullScan
       ? null
-      : _servingIndexOrThrow(
+      : _servingIndexOrNull(
           entry,
           allFilters,
           equalityNames,
           rangeNames,
           orders,
           effectiveOrders,
+          onMissingIndex,
         );
 
   final filterWhere = <String>[
@@ -294,6 +460,7 @@ PlannedQuery planQuery({
   required int? limit,
   required String? cursor,
   required bool fullScan,
+  MissingIndexScanDecision? onMissingIndex,
 }) {
   final resolved = resolveQueryFilters(
     entry: entry,
@@ -301,6 +468,7 @@ PlannedQuery planQuery({
     filters: filters,
     orders: orders,
     fullScan: fullScan,
+    onMissingIndex: onMissingIndex,
   );
   final effectiveOrders = resolved.effectiveOrders;
   final fingerprint = _fingerprint(entry, scopePath, filters, effectiveOrders);
@@ -395,6 +563,7 @@ PlannedAggregate planAggregate({
   required int? limit,
   required bool fullScan,
   required List<AggregateFunction<Object?>> specs,
+  MissingIndexScanDecision? onMissingIndex,
 }) {
   if (specs.isEmpty) {
     throw ArgumentError.value(
@@ -416,6 +585,7 @@ PlannedAggregate planAggregate({
     filters: filters,
     orders: orders,
     fullScan: fullScan,
+    onMissingIndex: onMissingIndex,
   );
   final where = resolved.whereFragments.isEmpty
       ? ''
@@ -479,6 +649,7 @@ PlannedAggregate planGroupAggregate({
   required bool fullScan,
   required List<GroupKeySpec<Object?, Object?>> keys,
   required List<AggregateFunction<Object?>> specs,
+  MissingIndexScanDecision? onMissingIndex,
 }) {
   if (keys.isEmpty) {
     throw ArgumentError.value(keys, 'keys', 'Needs at least one key');
@@ -510,6 +681,7 @@ PlannedAggregate planGroupAggregate({
     filters: filters,
     orders: orders,
     fullScan: fullScan,
+    onMissingIndex: onMissingIndex,
   );
   final where = resolved.whereFragments.isEmpty
       ? ''
@@ -774,15 +946,22 @@ Object? _keyValueOf(GroupKeySpec<Object?, Object?> key, Object? raw) =>
       CalendarKey() => raw as int?,
     };
 
-/// The first index that can serve the query, throwing a
-/// [MissingIndexException] when none does.
-IndexPlan _servingIndexOrThrow(
+/// The first index that can serve the query: `null` when none does and the
+/// query may run as a full scan (`.allowFullScan()`, or the debug
+/// scanAndWarn fallback accepted it), otherwise the serving index.
+///
+/// Throws a [MissingIndexException] when no index serves the query and the
+/// fallback did not accept a scan: the message ends with a `Fix:` line naming
+/// the `dart run cocoon_generator:index add` command whenever there is
+/// something to declare.
+IndexPlan? _servingIndexOrNull(
   RegistryEntry entry,
   List<QueryFilter> allFilters,
   Set<String> equalityNames,
   Set<String> rangeNames,
   List<QueryOrder> orders,
   List<QueryOrder> effectiveOrders,
+  MissingIndexScanDecision? onMissingIndex,
 ) {
   final target = '${entry.adapter.model} (${entry.adapter.pattern})';
   if (rangeNames.length > 1) {
@@ -809,22 +988,69 @@ IndexPlan _servingIndexOrThrow(
       equalityInOrder.add(filter.name);
     }
   }
-  final suggestion = suggestedIndexDdl(
+  final parts = suggestedIndexParts(
     equalityNamesInOrder: equalityInOrder,
     rangeName: rangeName,
     hasUserOrder: orders.isNotEmpty,
     orders: orders,
   );
-  throw MissingIndexException(
-    suggestion == null
-        ? 'No index serves this query on $target, and it has no filters or '
-              'sort keys to anchor one. Call .allowFullScan() to read it anyway.'
-        : 'No index serves this query on $target. Add $suggestion to its '
-              "@Collection(indexes: [...]), or call .allowFullScan() to read "
-              'it anyway.',
+  if (parts == null) {
+    throw MissingIndexException(
+      'No index serves this query on $target, and it has no filters or '
+      'sort keys to anchor one. Call .allowFullScan() to read it anyway.',
+    );
+  }
+  final suggestion = indexDeclaration(parts);
+  final fixCommand = indexFixCommand(entry.adapter.model, parts);
+  final error = MissingIndexException(
+    'No index serves this query on $target. Add ${indexDeclaration(parts)} '
+    "to its @Collection(indexes: [...]), or call .allowFullScan() to read "
+    'it anyway.\n'
+    'Fix: $fixCommand (writes ${indexFixDeclaration(parts, entry.paramNames.toSet())})',
     suggestedIndex: suggestion,
+    fixCommand: fixCommand,
   );
+  if (onMissingIndex != null &&
+      onMissingIndex(
+        error,
+        model: entry.adapter.model,
+        fields: List.unmodifiable(parts),
+        queryShape: missingIndexQueryShape(allFilters, orders),
+      )) {
+    return null;
+  }
+  throw error;
 }
+
+/// The query's shape for a [MissingIndexReport]: filter names and operators,
+/// then the sort keys — never the bound values.
+String missingIndexQueryShape(
+  List<QueryFilter> filters,
+  List<QueryOrder> orders,
+) {
+  final shape = <String>[];
+  if (filters.isNotEmpty) {
+    shape.add(
+      'where ${[for (final f in filters) '${f.name} ${_opSymbol(f.op)}'].join(', ')}',
+    );
+  }
+  if (orders.isNotEmpty) {
+    shape.add('orderBy ${orders.join(', ')}');
+  }
+  return shape.join('; ');
+}
+
+String _opSymbol(FilterOp op) => switch (op) {
+  FilterOp.equal => '==',
+  FilterOp.notEqual => '!=',
+  FilterOp.less => '<',
+  FilterOp.lessEqual => '<=',
+  FilterOp.greater => '>',
+  FilterOp.greaterEqual => '>=',
+  FilterOp.inList => 'IN',
+  FilterOp.isNull => 'IS NULL',
+  FilterOp.isNotNull => 'IS NOT NULL',
+};
 
 String _selectSql(RegistryEntry entry, List<QueryOrder> orders) {
   // The param columns travel with every page so a row can be turned back

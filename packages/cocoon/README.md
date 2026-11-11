@@ -103,9 +103,10 @@ class Address {
   final String? line2;
 }
 
-@Collection('accounts', indexes: [Index(['name'])])
+@Collection('accounts')
 class Account {
   const Account({required this.name, this.tags = const [], this.address});
+  @Indexed() // same as Index(['name']) on the class
   final String name;
   final List<String> tags;
   final Address? address;
@@ -156,6 +157,18 @@ Rules the generator enforces (build errors say exactly what to fix):
   list, empty map, epoch UTC, first enum value).
 - Maps cannot be indexed: an `Index([...])` naming a map field is a build
   error ("lists, maps and embedded classes live inside the document blob").
+- `@Indexed()` on a field declares the one-field index `Index(['field'])`
+  (or `Index(['-field'])` with `descending: true`, `unique: true` for a
+  `UNIQUE` index) exactly as if it were written on the class. The generator
+  merges field-level and class-level indexes into one list — an index
+  declared both ways is one index — and the physical index name comes from
+  the canonical form, so moving a one-field index from the class to the
+  field changes nothing: no schema version bump, no rebuild, no lock
+  change. Allowed on the types an index field allows (`int`, `double`,
+  `bool`, `String`, `DateTime`, `Uint8List`, enums); a list, map, embedded
+  class or an `@Embedded`-class field is a build error naming the field and
+  the supported types. Path params cannot carry it; they stay in
+  class-level composites.
 - `@Mirrored()` on a field copies it into its own `f_` column — aggregates
   and `groupBy` read it — without creating an index. Allowed on the types an
   index field allows (`int`, `double`, `bool`, `String`, `DateTime`,
@@ -477,11 +490,23 @@ re-sort what you already know. Reads by id never wait for a running
 
 Filters and sorts are built from the typed handles. Every query needs an
 index that serves it (the implicit `(params..., id)` index counts) —
-otherwise `get()` throws a `MissingIndexException` whose message spells the
-`Index([...])` to declare. `.allowFullScan()` opts out explicitly. A
-`@Mirrored()` field (see the Aggregates section below) has a column but no
-index: filtering or sorting on one throws the same `MissingIndexException`
-— the annotation mirrors it for totals, it does not serve queries.
+otherwise `get()` throws a `MissingIndexException` whose message ends with a
+`Fix:` line: the ready `dart run cocoon_generator:index add <Model> <fields>`
+command that edits the model for you (plus the declaration it writes), and
+the two follow-up commands (`migrate`, then `build_runner build -d`).
+`.allowFullScan()` opts out explicitly. A `@Mirrored()` field (see the
+Aggregates section below) has a column but no index: filtering or sorting on
+one throws the same `MissingIndexException` — the annotation mirrors it for
+totals, it does not serve queries.
+
+While you are still shaping the schema,
+`CocoonOptions(onMissingIndex: MissingIndexMode.scanAndWarn)` gives a
+debug-only fallback: such queries run as a full scan, the missing index is
+printed once per distinct missing index per process (with its `Fix:` line)
+and listed in `db.missingIndexes`. It is honoured only while asserts are
+enabled — a release build throws like the default, so a forgotten
+`.allowFullScan()` can never silently degrade a shipped query. The fallback
+never creates an index at runtime.
 
 ```dart
 final q = a1.collection(txns)
@@ -892,6 +917,7 @@ final db = await Cocoon.open(
     tempStoreInMemory: true, // PRAGMA temp_store = MEMORY
     walAutoCheckpointPages: 8000, // PRAGMA wal_autocheckpoint; <= 0 = default
     compactAfterUpgrade: true, // VACUUM once after a storage-format upgrade that left > 1/5 of the file free
+    onMissingIndex: MissingIndexMode.throwError, // or .scanAndWarn: debug-only full-scan fallback (asserts on) that logs once per index and fills db.missingIndexes
   ),
 );
 ```
@@ -1214,7 +1240,10 @@ butterfly cocoon migrate
 project's `dart run cocoon_generator:migrate` with inherited stdio (the
 interactive rename/drop menus work exactly as when run directly) and exits
 with the same code; `butterfly cocoon build` runs `dart run build_runner
-build -d` the same way. Both check your pubspec for `cocoon_generator` and
+build -d` the same way. `butterfly cocoon index add <Model> <fields>` forwards
+to `dart run cocoon_generator:index add` — the one-line fix a
+`MissingIndexException` names: run it, then the migrate and build commands it
+prints. All three check your pubspec for `cocoon_generator` and
 `build_runner` first and print the exact `dart pub add` lines when something
 is missing — the CLI never edits your pubspec. In a project without a
 `cocoon.lock` yet, the first migrate just writes the initial lock and

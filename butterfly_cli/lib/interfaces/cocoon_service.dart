@@ -42,6 +42,12 @@ abstract class ICocoonService {
   /// or written, 1 refused/aborted/`--check` would change, 2 usage error).
   Future<int> migrate([List<String> args = const []]);
 
+  /// Runs `dart run cocoon_generator:index add [args]` in the project root
+  /// with inherited stdio and returns its exit code unchanged (0 added or
+  /// already declared, 1 refused/not found, 2 usage error). [args] starts
+  /// after `add`: the model name and the comma-separated fields.
+  Future<int> indexAdd([List<String> args = const []]);
+
   /// Runs `dart run build_runner build -d` in the project root with
   /// inherited stdio and returns its exit code.
   Future<int> build();

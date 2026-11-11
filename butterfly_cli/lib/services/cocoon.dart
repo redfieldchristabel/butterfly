@@ -117,6 +117,15 @@ class CocoonService implements ICocoonService {
   }
 
   @override
+  Future<int> indexAdd([List<String> args = const []]) {
+    ensureDependencies();
+    _logger.detail(
+        'Running dart run cocoon_generator:index add with inherited stdio');
+    return _processRunner.runInherited(
+        'dart', ['run', 'cocoon_generator:index', 'add', ...args]);
+  }
+
+  @override
   Future<int> build() {
     ensureDependencies();
     _logger.detail('Running dart run build_runner build -d');

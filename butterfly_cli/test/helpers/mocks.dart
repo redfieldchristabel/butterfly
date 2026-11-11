@@ -218,5 +218,8 @@ class MockCocoonService implements ICocoonService {
   Future<int> migrate([List<String> args = const []]) async => 0;
 
   @override
+  Future<int> indexAdd([List<String> args = const []]) async => 0;
+
+  @override
   Future<int> build() async => 0;
 }

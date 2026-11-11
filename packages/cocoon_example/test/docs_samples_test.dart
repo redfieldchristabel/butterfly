@@ -157,7 +157,9 @@ final class SAccountAdapter extends CollectionAdapter<SAccount> {
   List<FieldColumn<SAccount, Object?>> get columns => [saccountName];
 
   @override
-  List<IndexDef> get indexes => [IndexDef.fromFields(['name'])];
+  List<IndexDef> get indexes => [
+    IndexDef.fromFields(['name']),
+  ];
 
   @override
   Uint8List encode(SAccount value) {
@@ -199,14 +201,13 @@ STxn stxn({
   int amountMinor = -4299,
   String currency = 'MYR',
   STxnStatus status = STxnStatus.posted,
-}) =>
-    STxn(
-      bookedOn: bookedOn,
-      amountMinor: amountMinor,
-      currency: currency,
-      status: status,
-      createdAt: DateTime.utc(2026, 1, 15, 12, 30),
-    );
+}) => STxn(
+  bookedOn: bookedOn,
+  amountMinor: amountMinor,
+  currency: currency,
+  status: status,
+  createdAt: DateTime.utc(2026, 1, 15, 12, 30),
+);
 
 void main() {
   tearDown(() async {
@@ -216,15 +217,20 @@ void main() {
   });
 
   test('aggregate: count, sum, average, minOf, maxOf', () async {
-    final db = await Cocoon.open(await tempDbPath(),
-        collections: [saccounts, stxns]);
+    final db = await Cocoon.open(
+      await tempDbPath(),
+      collections: [saccounts, stxns],
+    );
     final a1 = db.collection(saccounts).doc('a1');
     await a1.set(const SAccount(name: 'Acme'));
     await a1.collection(stxns).add(stxn(amountMinor: -100));
     await a1.collection(stxns).add(stxn(amountMinor: -300));
-    await a1.collection(stxns).add(stxn(amountMinor: 50, status: STxnStatus.pending));
+    await a1
+        .collection(stxns)
+        .add(stxn(amountMinor: 50, status: STxnStatus.pending));
 
-    final snapshot = await a1.collection(stxns)
+    final snapshot = await a1
+        .collection(stxns)
         .where(stxnBookedOn.isGreaterThanOrEqualTo(20260101))
         .aggregate([count(), sum(stxnAmountMinor), average(stxnAmountMinor)])
         .get();
@@ -232,25 +238,26 @@ void main() {
     expect(snapshot.getSum(stxnAmountMinor), -350);
     expect(snapshot.getAverage(stxnAmountMinor), closeTo(-116.66, 0.01));
 
-    final extremes = await a1.collection(stxns)
-        .aggregate([minOf(stxnAmountMinor), maxOf(stxnAmountMinor)])
-        .get();
+    final extremes = await a1.collection(stxns).aggregate([
+      minOf(stxnAmountMinor),
+      maxOf(stxnAmountMinor),
+    ]).get();
     expect(extremes.getMin(stxnAmountMinor), -300);
     expect(extremes.getMax(stxnAmountMinor), 50);
 
     // allowFullScan before aggregate, per the query rules.
-    final any = await a1.collection(stxns)
-        .query()
-        .allowFullScan()
-        .aggregate([count()])
-        .get();
+    final any = await a1.collection(stxns).query().allowFullScan().aggregate([
+      count(),
+    ]).get();
     expect(any.count, 3);
     await db.close();
   });
 
   test('groupBy: key, bucket, paramKey, calendar keys, limit', () async {
-    final db = await Cocoon.open(await tempDbPath(),
-        collections: [saccounts, stxns]);
+    final db = await Cocoon.open(
+      await tempDbPath(),
+      collections: [saccounts, stxns],
+    );
     final a1 = db.collection(saccounts).doc('a1');
     await a1.set(const SAccount(name: 'Acme'));
     for (final day in [1, 2, 3]) {
@@ -258,7 +265,8 @@ void main() {
     }
     final statusKey = key(stxnStatus);
     final monthKey = bucket(stxnBookedOn, width: 100);
-    final groups = await a1.collection(stxns)
+    final groups = await a1
+        .collection(stxns)
         .where(stxnBookedOn.isGreaterThanOrEqualTo(20260101))
         .groupBy([statusKey, monthKey])
         .aggregate([sum(stxnAmountMinor), count()])
@@ -269,12 +277,20 @@ void main() {
       group.getSum(stxnAmountMinor);
       group.count;
     }
-    final capped =
-        await a1.collection(stxns).groupBy([key(stxnStatus)]).aggregate([count()]).limit(1).get();
+    final capped = await a1
+        .collection(stxns)
+        .groupBy([key(stxnStatus)])
+        .aggregate([count()])
+        .limit(1)
+        .get();
     expect(capped.length, 1);
 
-    final createdAtDay = day(stxnCreatedAt, utcOffset: const Duration(hours: 8));
-    final cal = await a1.collection(stxns)
+    final createdAtDay = day(
+      stxnCreatedAt,
+      utcOffset: const Duration(hours: 8),
+    );
+    final cal = await a1
+        .collection(stxns)
         .groupBy([
           month(stxnCreatedAt, utcOffset: const Duration(hours: 8)),
           year(stxnCreatedAt, utcOffset: const Duration(hours: 8)),
@@ -298,16 +314,20 @@ void main() {
   });
 
   test('aggregate and groupBy watch()', () async {
-    final db = await Cocoon.open(await tempDbPath(),
-        collections: [saccounts, stxns]);
+    final db = await Cocoon.open(
+      await tempDbPath(),
+      collections: [saccounts, stxns],
+    );
     final a1 = db.collection(saccounts).doc('a1');
     await a1.set(const SAccount(name: 'Acme'));
-    final totals = await a1.collection(stxns)
+    final totals = await a1
+        .collection(stxns)
         .aggregate([sum(stxnAmountMinor)])
         .watch()
         .first;
     expect(totals.getSum(stxnAmountMinor), 0);
-    final groups = await a1.collection(stxns)
+    final groups = await a1
+        .collection(stxns)
         .groupBy([key(stxnStatus)])
         .aggregate([count()])
         .watch()
@@ -317,8 +337,10 @@ void main() {
   });
 
   test('bulkWriter: queue, flush, close, options', () async {
-    final db = await Cocoon.open(await tempDbPath(),
-        collections: [saccounts, stxns]);
+    final db = await Cocoon.open(
+      await tempDbPath(),
+      collections: [saccounts, stxns],
+    );
     final a1 = db.collection(saccounts).doc('a1');
     await a1.set(const SAccount(name: 'Acme'));
 
@@ -343,8 +365,10 @@ void main() {
   });
 
   test('getAll: collection, db, tx', () async {
-    final db = await Cocoon.open(await tempDbPath(),
-        collections: [saccounts, stxns]);
+    final db = await Cocoon.open(
+      await tempDbPath(),
+      collections: [saccounts, stxns],
+    );
     final a1 = db.collection(saccounts).doc('a1');
     final a2 = db.collection(saccounts).doc('a2');
     await a1.set(const SAccount(name: 'Acme'));
@@ -376,8 +400,10 @@ void main() {
   });
 
   test('batch: set/update/delete/commit', () async {
-    final db = await Cocoon.open(await tempDbPath(),
-        collections: [saccounts, stxns]);
+    final db = await Cocoon.open(
+      await tempDbPath(),
+      collections: [saccounts, stxns],
+    );
     final a1 = db.collection(saccounts).doc('a1');
     await a1.set(const SAccount(name: 'Acme'));
     final t1 = await a1.collection(stxns).add(stxn());
@@ -427,19 +453,56 @@ void main() {
       durability: Durability.normal,
       cacheSize: 2000,
       keepChanges: false,
-      changeRetention: ChangeRetention(maxChanges: 50000, maxAge: Duration(days: 30)),
+      changeRetention: ChangeRetention(
+        maxChanges: 50000,
+        maxAge: Duration(days: 30),
+      ),
       pageCacheMiB: 64,
       tempStoreInMemory: true,
       walAutoCheckpointPages: 8000,
       compactAfterUpgrade: true,
       onCompactionFailed: _ignore,
+      onMissingIndex: MissingIndexMode.scanAndWarn,
     );
     expect(options.durability, Durability.normal);
   });
 
+  test('the debug scanAndWarn fallback fills db.missingIndexes', () async {
+    // The queries.mdx shape: a query no declared index serves runs as a full
+    // scan while asserts are on, and the report names the ready fix command.
+    final db = await Cocoon.open(
+      await tempDbPath(),
+      collections: [saccounts, stxns],
+      options: const CocoonOptions(
+        onMissingIndex: MissingIndexMode.scanAndWarn,
+      ),
+    );
+    final a1 = db.collection(saccounts).doc('a1');
+    await a1.set(const SAccount(name: 'Acme'));
+    await a1.collection(stxns).add(stxn());
+    // amountMinor has a column but no index: the scopeless group query runs
+    // as a full scan, and the report names the ready fix command.
+    final page = await db
+        .collectionGroup(stxns)
+        .where(stxnAmountMinor.isEqualTo(100))
+        .get();
+    expect(page.docs, hasLength(0));
+    final reports = db.missingIndexes;
+    expect(reports, hasLength(1));
+    expect(reports.single.model, 'STxn');
+    expect(reports.single.fields, ['amountMinor']);
+    expect(
+      reports.single.fixCommand,
+      'dart run cocoon_generator:index add STxn amountMinor',
+    );
+    await db.close();
+  });
+
   test('change log primitives', () async {
-    final db = await Cocoon.open(await tempDbPath(),
-        collections: [saccounts, stxns]);
+    final db = await Cocoon.open(
+      await tempDbPath(),
+      collections: [saccounts, stxns],
+    );
     final a1 = db.collection(saccounts).doc('a1');
     await a1.set(const SAccount(name: 'Acme'));
     final changes = await db.changesSince(0);

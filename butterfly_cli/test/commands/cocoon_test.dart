@@ -10,10 +10,10 @@ import '../helpers/mocks.dart';
 
 void main() {
   group('CocoonCommand', () {
-    test('registers migrate and build subcommands', () {
+    test('registers migrate, index and build subcommands', () {
       final cmd = CocoonCommand(MockCocoonService());
       expect(cmd.name, equals('cocoon'));
-      expect(cmd.subcommands.keys, containsAll(['migrate', 'build']));
+      expect(cmd.subcommands.keys, containsAll(['migrate', 'index', 'build']));
     });
   });
 
@@ -98,6 +98,60 @@ void main() {
             'hint',
             allOf(contains('dart pub add cocoon'),
                 contains('dart pub add --dev cocoon_generator build_runner')))),
+      );
+      expect(process.calls, isEmpty);
+    });
+  });
+
+  group('CocoonIndexAddCommand', () {
+    test('has correct command path', () {
+      final cmd = CocoonIndexCommand(MockCocoonService());
+      expect(cmd.name, equals('index'));
+      expect(cmd.subcommands.keys, equals(['add']));
+    });
+
+    test('passes model and fields verbatim to index add with inherited stdio',
+        () async {
+      final process = MockProcessRunner();
+      final runner = _runner(process, <int>[]);
+      await runner
+          .run(['cocoon', 'index', 'add', 'Txn', 'accountId,-bookedOn']);
+
+      final call = process.calls.single;
+      expect(call.executable, equals('dart'));
+      expect(
+          call.arguments,
+          equals([
+            'run',
+            'cocoon_generator:index',
+            'add',
+            'Txn',
+            'accountId,-bookedOn',
+          ]));
+      expect(call.inheritedStdio, isTrue);
+    });
+
+    test('propagates a failing exit code', () async {
+      final exits = <int>[];
+      final runner = _runner(MockProcessRunner()..nextExitCode = 1, exits);
+      await runner.run(['cocoon', 'index', 'add', 'Txn', 'nope']);
+      expect(exits, equals([1]));
+    });
+
+    test(
+        'throws a ReadableException when the tools are missing, without '
+        'running anything', () async {
+      final process = MockProcessRunner();
+      getIt.reset();
+      getIt.registerSingleton<ILoggerService>(MockLoggerService());
+      getIt.registerSingleton<IDirectoryService>(MockDirectoryService());
+      final runner = CommandRunner<void>('test', 'Test runner');
+      runner.addCommand(CocoonCommand(
+          _service(process, MockPubspecService(dependencies: {}))));
+
+      await expectLater(
+        runner.run(['cocoon', 'index', 'add', 'Txn', 'name']),
+        throwsA(isA<ReadableException>()),
       );
       expect(process.calls, isEmpty);
     });

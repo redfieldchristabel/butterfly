@@ -242,6 +242,31 @@ void main() {
     expect(gone.isEmpty, isFalse);
   });
 
+  test('reordering or re-homing indexes declares the same set', () {
+    // The lock pins one index; the same index moved to a field annotation
+    // (or anywhere else in the list) is the same set, so the diff stays
+    // empty: no version bump, no rebuild, no lock change.
+    final fields = v1.collections['Staff']!.fields
+        .map((f) => DeclaredField(f.name, f.type))
+        .toList();
+    final reordered = SchemaDiff.compute(
+      SchemaDiff.compute(v1, [
+        staff(fields, indexes: const [
+          ['email'],
+          ['name'],
+        ]),
+      ]).resolve().lock,
+      [
+        staff(fields, indexes: const [
+          ['name'],
+          ['email'],
+        ]),
+      ],
+    );
+    expect(reordered.collections.single.indexesChanged, isFalse);
+    expect(reordered.isEmpty, isTrue);
+  });
+
   test('lock file text is deterministic and round-trips', () {
     final source = v1.toSource();
     expect(SchemaLock.parse(source).toSource(), source);

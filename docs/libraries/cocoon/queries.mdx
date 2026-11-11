@@ -43,14 +43,23 @@ Rules on ordering:
 ## The index rule
 
 A query runs only when a declared (or implicit) index serves it — otherwise
-`get()` and `count()` throw a `MissingIndexException` whose message spells
-the `Index([...])` to declare:
+`get()` and `count()` throw a `MissingIndexException` whose message ends with
+a `Fix:` line: the ready one-line command that edits the model for you, plus
+the declaration it would write:
 
 ```text
 MissingIndexException: No index serves this query on Txn
 (accounts/{accountId}/txns). Add Index(['accountId', '-memo']) to its
 @Collection(indexes: [...]), or call .allowFullScan() to read it anyway.
+Fix: dart run cocoon_generator:index add Txn accountId,-memo (writes Index(['accountId', '-memo']) in @Collection(indexes: [...]))
 ```
+
+Run that command and it declares the index — `@Indexed()` on the field when
+it is a single model field, an appended `Index([...])` for composites and
+path params — then prints the two follow-up commands (`migrate`, then
+`build_runner build -d`). Adding an index to an existing collection changes
+the lock version, so `migrate` comes first. It is a development tool like
+`migrate`, never a CI step.
 
 An index serves a query when it has, in order:
 
@@ -74,6 +83,37 @@ final anyOrder = await a1.collection(txns).query().allowFullScan().get();
 never gets the id appended (otherwise the constraint could never fire), and
 it is unique across the whole collection group — add the path param, e.g.
 `Index(['accountId', 'ref'], unique: true)`, to make it unique per parent.
+
+### The debug-only full-scan fallback
+
+While you are still shaping the schema, throwing on every exploratory query
+can get in the way. `CocoonOptions(onMissingIndex: MissingIndexMode.scanAndWarn)`
+runs such queries as a full scan instead: the missing index is printed once
+per distinct missing index per process (with its `Fix:` line, on the
+`dart:developer` log and stderr) and listed in `db.missingIndexes` —
+model, index parts, query shape, fix command, first seen. Nothing is ever
+created at runtime.
+
+```dart
+final db = await Cocoon.open(
+  file,
+  collections: [accounts, txns],
+  options: const CocoonOptions(
+    onMissingIndex: MissingIndexMode.scanAndWarn, // debug aid, not a default
+  ),
+);
+// ... later:
+for (final report in db.missingIndexes) {
+  print(report); // Txn: amountMinor (where amountMinor ==). Fix: dart run ...
+}
+```
+
+The fallback is honoured **only while asserts are enabled** (debug and
+profile-with-asserts builds). In a release build it behaves exactly like the
+default: the query throws, so a forgotten `.allowFullScan()` can never
+silently degrade a shipped query. Multi-range and no-anchor queries throw
+under every mode — there is no index to suggest, so there is nothing to
+debug-scan.
 
 ## Collection-group queries
 

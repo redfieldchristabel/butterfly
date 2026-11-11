@@ -1,5 +1,6 @@
 import 'package:dart_mcp/server.dart';
 
+import '../tools/cocoon_index_add.dart';
 import '../tools/cocoon_migrate_check.dart';
 import '../tools/generate_cocoon_model.dart';
 import '../tools/generate_model.dart';
@@ -21,6 +22,7 @@ base class McpServerService extends MCPServer with ToolsSupport {
       GenerateModelTool(),
       GenerateCocoonModelTool(),
       CocoonMigrateCheckTool(),
+      CocoonIndexAddTool(),
     ];
     for (final t in tools) {
       registerTool(t.definition, t.call);

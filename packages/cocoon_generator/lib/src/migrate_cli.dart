@@ -168,7 +168,7 @@ Future<int> runMigrate({
 
 Future<int> _run(String? packageRoot, List<String> args, MigrateIo io) async {
   final options = _parseArgs(args);
-  final root = _findPackageRoot(packageRoot);
+  final root = findPackageRoot(packageRoot);
   final libPath = '$root/lib';
   if (!Directory(libPath).existsSync()) {
     throw MigrateException(
@@ -1603,8 +1603,8 @@ _Options _parseArgs(List<String> args) {
 }
 
 /// Walks up from [start] (default: the working directory) to the nearest
-/// `pubspec.yaml`.
-String _findPackageRoot(String? start) {
+/// `pubspec.yaml`. Shared with the `index add` command.
+String findPackageRoot(String? start) {
   var dir = Directory(start ?? Directory.current.path).absolute.path;
   if (dir.endsWith(Platform.pathSeparator)) {
     dir = dir.substring(0, dir.length - 1);

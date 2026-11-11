@@ -17,6 +17,7 @@ The `butterfly` CLI (`butterfly_cli`) automates repetitive project tasks: genera
 | `butterfly commit` | `c`, `comit`, `commits`, `cm` | Interactive or flag-driven conventional `git commit` |
 | `butterfly cocoon migrate [args...]` | | Runs the project's `cocoon_generator:migrate` with args passed through verbatim (see [Cocoon shortcuts](#cocoon-shortcuts-optional)) |
 | `butterfly cocoon build` | | Runs the project's `build_runner build -d` (see [Cocoon shortcuts](#cocoon-shortcuts-optional)) |
+| `butterfly cocoon index add <Model> <fields>` | | Adds a missing index to a `@Collection` model: the one-line fix a `MissingIndexException` names (see [Cocoon shortcuts](#cocoon-shortcuts-optional)) |
 | `butterfly mcp-server` | `mcp`, `mcp-srv` | Launches the stdio Model Context Protocol (MCP) server |
 
 <Info>
@@ -187,15 +188,26 @@ butterfly cocoon migrate --rename Txn.bookedOn=day --yes
 
 # The codegen build with the project's pinned build_runner
 butterfly cocoon build
+
+# Declare the index a MissingIndexException asked for, then run the two
+# commands it prints (migrate, then build)
+butterfly cocoon index add Txn accountId,-bookedOn
 ```
 
 `cocoon migrate [args...]` forwards every argument verbatim to the project's
 `dart run cocoon_generator:migrate` with inherited stdio and exits with the
 same code (0 up to date or written, 1 refused/aborted/`--check` would change,
 2 usage error or a missing non-interactive decision). `cocoon build` runs
-`dart run build_runner build -d` the same way. Both first check the project's
-pubspec for `cocoon_generator` (dev_)dependency and `build_runner` and fail
-with a readable message when they are missing.
+`dart run build_runner build -d` the same way. `cocoon index add <Model>
+<fields>` forwards to `dart run cocoon_generator:index add` the same way:
+`fields` is a comma list in index order, `-` prefixing a descending part; a
+single model field becomes `@Indexed()` on the field, composites and path
+params append `Index([...])` to `@Collection(indexes: [...])`, the edited
+file is dart-formatted, and the command is idempotent (an already-declared
+index is a no-op) — exit codes 0 added/declared, 1 refused, 2 usage error.
+All three first check the project's pubspec for `cocoon_generator`
+(dev_)dependency and `build_runner` and fail with a readable message when
+they are missing.
 
 `migrate` is a development tool, not a CI step: run it on your machine after
 changing a model, answer its questions, then commit `cocoon.lock` and

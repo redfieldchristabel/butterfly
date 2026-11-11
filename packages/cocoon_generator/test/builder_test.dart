@@ -1306,4 +1306,193 @@ int upgradeTxnBookedOn(String old) => int.parse(old.replaceAll('-', ''));
       expect(run.errors, isEmpty);
     });
   });
+
+  group('@Indexed() on a field', () {
+    // The same one-field index declared the two ways: on the class and on
+    // the field. The lock cannot tell them apart — the canonical form is
+    // the identity, so moving the declaration bumps nothing.
+    const classIndexedModel = '''
+@Collection('txns', indexes: [Index(['amountMinor'])])
+class Txn {
+  const Txn({required this.amountMinor});
+  final int amountMinor;
+}
+''';
+    const fieldIndexedModel = '''
+@Collection('txns')
+class Txn {
+  const Txn({required this.amountMinor});
+  @Indexed()
+  final int amountMinor;
+}
+''';
+    final amountMinorLock = lockText(
+      collections: {
+        'Txn': TestCollection(
+          'txns',
+          const {'amountMinor': 'int'},
+          indexes: const [
+            ['amountMinor'],
+          ],
+        ),
+      },
+    );
+
+    test('emits the same canonical index as the class-level form', () async {
+      final fromField = await runCocoonBuilder(
+        _head + fieldIndexedModel,
+        amountMinorLock,
+      );
+      final fromClass = await runCocoonBuilder(
+        _head + classIndexedModel,
+        amountMinorLock,
+      );
+      expect(fromField.succeeded, isTrue, reason: fromField.errors.join('\n'));
+      expect(fromClass.succeeded, isTrue, reason: fromClass.errors.join('\n'));
+      const declaration = "IndexDef.fromFields(const ['amountMinor'])";
+      expect(fromField.code, contains(declaration));
+      expect(fromClass.code, contains(declaration));
+      // Exactly one index either way — the declaration moved, nothing was
+      // added.
+      expect(declaration.allMatches(fromField.code), hasLength(1));
+      expect(declaration.allMatches(fromClass.code), hasLength(1));
+    });
+
+    test('descending and unique flags reach the IndexDef', () async {
+      const model = '''
+@Collection('txns')
+class Txn {
+  const Txn({required this.amountMinor, required this.currency});
+  @Indexed(descending: true)
+  final int amountMinor;
+  @Indexed(unique: true)
+  final String currency;
+}
+''';
+      final run = await runCocoonBuilder(
+        _head + model,
+        lockText(
+          collections: {
+            'Txn': TestCollection(
+              'txns',
+              const {'amountMinor': 'int', 'currency': 'String'},
+              indexes: const [
+                ['-amountMinor'],
+                ['currency'],
+              ],
+            ),
+          },
+        ),
+      );
+      expect(run.succeeded, isTrue, reason: run.errors.join('\n'));
+      expect(run.code, contains("IndexDef.fromFields(const ['-amountMinor'])"));
+      expect(
+        run.code,
+        contains("IndexDef.fromFields(const ['currency'], unique: true)"),
+      );
+    });
+
+    test('an index declared both ways is one index', () async {
+      const model = '''
+@Collection('txns', indexes: [Index(['currency'])])
+class Txn {
+  const Txn({required this.currency});
+  @Indexed()
+  final String currency;
+}
+''';
+      // The lock declares the index once; the build only passes while the
+      // merge keeps it at one.
+      final run = await runCocoonBuilder(
+        _head + model,
+        lockText(
+          collections: {
+            'Txn': TestCollection(
+              'txns',
+              const {'currency': 'String'},
+              indexes: const [
+                ['currency'],
+              ],
+            ),
+          },
+        ),
+      );
+      expect(run.succeeded, isTrue, reason: run.errors.join('\n'));
+      expect(
+        "IndexDef.fromFields(const ['currency'])".allMatches(run.code),
+        hasLength(1),
+      );
+    });
+
+    test(
+      'indexing an unsupported field type fails like @Mirrored does',
+      () async {
+        const model = '''
+@Collection('things')
+class Thing {
+  const Thing({required this.tags});
+  @Indexed()
+  final List<String> tags;
+}
+''';
+        final run = await runCocoonBuilder(
+          _head + model,
+          lockText(
+            collections: {
+              'Thing': TestCollection(
+                'things',
+                const {'tags': 'List<String>'},
+                indexes: const [
+                  ['tags'],
+                ],
+              ),
+            },
+          ),
+        );
+        expect(run.succeeded, isFalse);
+        final message = run.errors.join('\n');
+        expect(message, contains('Field "tags" of Thing cannot be indexed'));
+        expect(message, contains('List<String> has no column'));
+        expect(message, contains('Only int, double, bool, String, DateTime,'));
+      },
+    );
+
+    test('a @Indexed field inside an @Embedded class fails', () async {
+      const model = '''
+@Collection('things')
+class Thing {
+  const Thing({required this.address});
+  final Address address;
+}
+
+@Embedded()
+class Address {
+  const Address({required this.city});
+  @Indexed()
+  final String city;
+}
+''';
+      final run = await runCocoonBuilder(
+        _head + model,
+        lockText(
+          collections: {
+            'Thing': TestCollection('things', const {
+              'address': 'embedded:Address',
+            }),
+          },
+          embedded: {
+            'Address': const {'city': 'String'},
+          },
+        ),
+      );
+      expect(run.succeeded, isFalse);
+      expect(
+        run.errors.join('\n'),
+        contains(
+          'Field "city" of Address cannot be @Indexed: the annotation is '
+          'only allowed on @Collection model fields',
+        ),
+      );
+    });
+  });
 }

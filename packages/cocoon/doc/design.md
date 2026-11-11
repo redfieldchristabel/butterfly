@@ -256,6 +256,38 @@ on the docs site under **Cocoon**:
   `benchmarks/cocoon_rivals/STORAGE.md`. A compaction that cannot run (a
   full disk) is reported through `CocoonOptions.onCompactionFailed` and
   never fails the open; normal opens never compact.
+- **`@Indexed()` on the field: the one-field index lives where the field is.**
+  Single-field indexes were class-level `Index([...])` lines physically far
+  from the field they index. `@Indexed()` (with `descending:`/`unique:`)
+  declares exactly `Index(['field'])` on the field itself; the generator
+  merges field-level and class-level declarations into one list, an index
+  declared both ways is one index, and the physical index name comes from
+  the canonical form — so moving a one-field index between the two places
+  is a source cosmetic: the canonical form is identical, the schema diff
+  compares index SETS (declaration order ignored) and the table shape hash
+  sorts index canonicals, so no schema version bump, no rebuild, no lock
+  change. Composites (two or more parts) and path params stay class-level:
+  path params are not fields. The same types and embedded-class rules as
+  `@Mirrored()` apply (generator errors in the same style).
+- **The missing-index error carries its fix, and a debug-only fallback.**
+  The `MissingIndexException` message ends with exactly one `Fix:` line:
+  `dart run cocoon_generator:index add <Model> <fields>` (the ready command)
+  plus the declaration it would write — `@Indexed()` on the field for a
+  single model field, the appended `Index([...])` otherwise. Decided with
+  the maintainer: indexes live in the model, never in YAML and never in
+  `cocoon.lock`, so the fix is a source edit the command performs (analyzer
+  model discovery, did-you-mean validation, narrow literal edits only, dart
+  format, idempotent re-runs). For schema exploration,
+  `CocoonOptions.onMissingIndex = MissingIndexMode.scanAndWarn` runs a
+  suggestable missing-index query as a full scan, prints the message once
+  per distinct missing index per process (`dart:developer` log + stderr)
+  and records a typed report in `db.missingIndexes` (model, index parts,
+  query shape, fix command, first seen). It is honoured ONLY while asserts
+  are enabled: a release build throws like the default, so a forgotten
+  `allowFullScan()` can never silently degrade a shipped query — the reason
+  this is an option and not a global default. It never creates an index at
+  runtime; multi-range and no-anchor queries still throw (nothing to
+  suggest, nothing to debug-scan).
 - **The change log is the app's to bound.** `pruneChanges` returns the rows
   deleted; `earliestChangeSeq` reports the oldest readable seq; reading
   from a pruned watermark throws `ChangesPrunedException` (the Firestore
@@ -303,7 +335,10 @@ executor, so it is deferred.
 
 | Piece | State |
 |---|---|
-| Annotations (`Collection`, `Index`, `Embedded`, `Ignore`) | done |
+| Annotations (`Collection`, `Index`, `Indexed`, `Mirrored`, `Embedded`, `Ignore`) | done |
+| Field-level `@Indexed()` (one-field index on the field; merged with class-level composites, same canonical form either way — moving one bumps nothing) | done |
+| Missing-index ready fix: `MissingIndexException.fixCommand` + the message's `Fix:` line; `dart run cocoon_generator:index add <Model> <fields>` (analyzer discovery, did-you-mean, narrow literal edits, dart format, idempotent); `butterfly cocoon index add` passthrough + MCP tool | done |
+| Debug-only missing-index fallback: `CocoonOptions.onMissingIndex = MissingIndexMode.scanAndWarn` (asserts-enabled builds only), warn-once per process, `db.missingIndexes` reports, never creates an index | done |
 | Paths (`CollectionPattern`, `CollectionPath`, `DocPath`) | done |
 | Canonical wire codec (`WireWriter`, `WireReader`) | done |
 | Cursors (`CursorCodec`, `queryFingerprint`) | done |

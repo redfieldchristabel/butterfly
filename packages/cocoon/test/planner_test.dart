@@ -10,6 +10,30 @@ void main() {
   final registry = SchemaRegistry.build([accounts, txns, splits]);
   final entry = registry.byPattern(txns.pattern)!;
 
+  // Runs planQuery the way the message tests do and returns the
+  // MissingIndexException it throws; fails the test when the query plans
+  // without one.
+  MissingIndexException throwing({
+    CollectionPath? scopePath,
+    List<QueryFilter> filters = const [],
+    List<QueryOrder> orders = const [],
+  }) {
+    try {
+      planQuery(
+        entry: entry,
+        scopePath: scopePath,
+        filters: filters,
+        orders: orders,
+        limit: 10,
+        cursor: null,
+        fullScan: false,
+      );
+    } on MissingIndexException catch (error) {
+      return error;
+    }
+    fail('planQuery did not throw a MissingIndexException');
+  }
+
   IndexPlan? serve({
     required Set<String> equalityNames,
     String? rangeName,
@@ -264,6 +288,48 @@ void main() {
                 "Index(['accountId', 'currency'])",
               ),
         ),
+      );
+    });
+
+    test('ends with the Fix: line and the ready fix command', () {
+      final error = throwing(
+        scopePath: txns.pattern.resolve({'accountId': 'a1'}),
+        filters: [txnCurrency.isEqualTo('USD')],
+      );
+      expect(
+        error.fixCommand,
+        'dart run cocoon_generator:index add Txn accountId,currency',
+      );
+      // The message ends with exactly one Fix: line, holding the command and
+      // the declaration it would write.
+      final lines = error.message.split('\n');
+      expect(lines.where((line) => line.startsWith('Fix: ')), hasLength(1));
+      expect(lines.last, startsWith('Fix: dart run cocoon_generator:index'));
+      expect(
+        lines.last,
+        contains("writes Index(['accountId', 'currency'])"),
+      );
+    });
+
+    test('a one-field descending suggestion fixes with @Indexed', () {
+      // A collection-group query ordered by amountMinor descending:
+      // amountMinor is @Mirrored — a column, deliberately unindexed — so
+      // nothing serves it; the suggestion is the one-field -amountMinor
+      // index, which the command writes as @Indexed(descending: true) on
+      // the field.
+      final error = throwing(
+        scopePath: null,
+        orders: const [QueryOrder('amountMinor', descending: true)],
+      );
+      expect(error.suggestedIndex, "Index(['-amountMinor'])");
+      expect(
+        error.fixCommand,
+        'dart run cocoon_generator:index add Txn -amountMinor',
+      );
+      expect(
+        error.message.split('\n').last,
+        'Fix: dart run cocoon_generator:index add Txn -amountMinor '
+        '(writes @Indexed(descending: true) on amountMinor)',
       );
     });
 

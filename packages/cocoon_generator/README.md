@@ -119,3 +119,53 @@ non-interactive decision. Output is colored only when stdout is a terminal.
 The flow is also importable as `runMigrate` (from
 `package:cocoon_generator/migrate.dart`) with an injectable terminal for
 tests.
+
+## Adding an index: `index add`
+
+A `MissingIndexException` names the index a query needs and ends with a
+ready fix:
+
+```text
+Fix: dart run cocoon_generator:index add Txn accountId,-bookedOn (writes Index(['accountId', '-bookedOn']) in @Collection(indexes: [...]))
+```
+
+Run exactly that:
+
+```sh
+dart run cocoon_generator:index add Txn accountId,-bookedOn
+```
+
+`fields` is a comma list in index order with `-` prefixing a descending
+part; model fields and path params are both allowed. The command finds the
+`@Collection` class under `lib/` with the analyzer (like `migrate`),
+validates every name (an unknown name exits 1 with a "did you mean"), and
+edits the model's source:
+
+- one field that is not a path param gets `@Indexed()` (or
+  `@Indexed(descending: true)`) on the field;
+- everything else — composites and path params — appends
+  `Index([...])` to the `@Collection(indexes: [...])` list, creating the
+  named argument when it is missing.
+
+It then `dart format`s the edited file and prints the two next steps:
+
+```sh
+dart run cocoon_generator:migrate   # an index on an existing collection changes the lock version
+dart run build_runner build -d
+```
+
+Re-running an index that is already declared in exactly that order changes
+nothing and says where it is declared. The edits are narrow: an `indexes:`
+list the command does not fully understand — built from a const variable, a
+spread or a non-literal part — or a field that already carries `@Indexed()`
+is refused with exit 1 and the exact `Index([...])` text to paste by hand.
+
+Like `migrate`, this is a development tool for your machine (or an AI agent
+working in a checkout), never a CI step. Exit codes: 0 added or already
+declared, 1 refused (unknown name, unsupported shape, model not found), 2
+usage error. The flow is also importable as `runIndexAdd` (from
+`package:cocoon_generator/index.dart`) with an injectable terminal for
+tests; the Butterfly CLI forwards it as
+`butterfly cocoon index add <Model> <fields>`, and its MCP server exposes
+`index add` because — unlike `migrate`'s questions — it is exactly the
+source edit the asking agent wants.

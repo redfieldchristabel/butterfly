@@ -30,7 +30,29 @@ All annotations come from `package:cocoon/cocoon.dart`:
   One composite index. Field (or path param) names in sort order; a `-`
   prefix sorts that part descending. The document id is always appended as
   the final tiebreaker so keyset pagination stays stable. `unique: true`
-  creates a `UNIQUE` index.
+  creates a `UNIQUE` index. For an index over ONE field prefer `@Indexed()`
+  on the field itself; use this class for composites (two or more parts) and
+  for indexes over path params.
+</Property>
+
+<Property
+  name="@Indexed(descending: false, unique: false)"
+  type="field/getter annotation"
+>
+  Indexes a single field: it declares exactly `Index(['field'])` (or
+  `Index(['-field'])` with `descending: true`, `Index(['field'],
+  unique: true)` with `unique: true`) as if it were written in
+  `@Collection(indexes: [...])`. The generator merges field-level and
+  class-level indexes into one list — an index declared both ways is one
+  index — and the physical index name comes from the canonical form, so
+  moving a one-field `Index([...])` from the class to `@Indexed()` on the
+  field changes nothing: no schema version bump, no rebuild, no lock change.
+  Allowed on the same types an index field allows (`int`, `double`, `bool`,
+  `String`, `DateTime`, `Uint8List`, enums); a list, a map or an embedded
+  class is a build error, and so is the annotation inside an `@Embedded`
+  class (embedded fields have no column). Not for path params — they are not
+  fields and stay in class-level composites. A field that is both
+  `@Mirrored()` and `@Indexed()` is just indexed: one column, one index.
 </Property>
 
 <Property
@@ -119,6 +141,7 @@ class Txn {
   });
   final int bookedOn;
   final int amountMinor;
+  @Indexed() // same as Index(['currency']) on the class
   final String currency;
   final TxnStatus status;
   final DateTime createdAt;
@@ -207,6 +230,13 @@ Build errors say exactly what to fix:
   list, empty map, epoch UTC, first enum value).
 - Maps cannot be indexed: an `Index([...])` naming a map field is a build
   error.
+- `@Indexed()` is allowed on exactly the types an index field allows (`int`,
+  `double`, `bool`, `String`, `DateTime`, `Uint8List`, enums) and, like
+  `@Mirrored()`, is a build error inside `@Embedded` classes: embedded
+  fields live inside the document blob and have no column, so there is
+  nothing to index. Anything else — a list, a map, an embedded class — is a
+  build error naming the field and the supported types. Path params cannot
+  carry it; they stay in class-level composites.
 - `@Mirrored()` is allowed on exactly the types an index field allows
   (`int`, `double`, `bool`, `String`, `DateTime`, `Uint8List`, enums) and
   inside `@Embedded` classes only as an error: embedded fields live inside

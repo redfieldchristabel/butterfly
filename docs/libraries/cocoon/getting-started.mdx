@@ -64,9 +64,10 @@ import 'package:cocoon/cocoon.dart';
 
 part 'models.cocoon.dart';
 
-@Collection('accounts', indexes: [Index(['name'])])
+@Collection('accounts')
 class Account {
   const Account({required this.name, required this.active});
+  @Indexed()
   final String name;
   final bool active;
 }
@@ -84,8 +85,10 @@ class Txn {
 ```
 
 `@Collection` marks the model and its path (`{param}` segments are path
-params); `Index` declares the composite indexes queries are served from.
-The full annotation set and the generator's rules live in
+params). An index over one field sits on the field itself: `@Indexed()` on
+`name` declares exactly `Index(['name'])`. `Index` on the class declares the
+composite indexes (two or more parts, or path params) queries are served
+from. The full annotation set and the generator's rules live in
 [Models & Code Generation](/libraries/cocoon/models).
 
 ## Generate the code

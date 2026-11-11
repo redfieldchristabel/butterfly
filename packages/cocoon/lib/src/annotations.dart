@@ -30,6 +30,10 @@ class Collection {
 ///
 /// Prefix a field with `-` to sort it descending. The document id is always
 /// appended as the final tiebreaker so keyset pagination stays stable.
+///
+/// For an index over ONE model field, prefer [Indexed] on the field itself;
+/// this class is for composites (two or more parts) and for indexes over path
+/// params.
 class Index {
   /// Indexes [fields] in order; set [unique] to make the combination unique
   /// within the collection.
@@ -39,6 +43,48 @@ class Index {
   final List<String> fields;
 
   /// Whether the indexed fields must be unique within the collection.
+  final bool unique;
+}
+
+/// Indexes a single field: the annotation declares the one-field index
+/// `Index(['field'])` (or `Index(['-field'])` when [descending]) exactly as
+/// if it were written in `@Collection(indexes: [...])`.
+///
+/// For one field prefer this over the class-level [Index] list: the
+/// declaration sits on the field it indexes, and the generator produces the
+/// same index either way — same canonical form, same physical index name, no
+/// schema version bump when a one-field index moves between the two. Composite
+/// indexes (two or more parts, or any path param) stay on the class: path
+/// params are not fields and cannot carry this annotation.
+///
+/// ```dart
+/// @Collection('accounts/{accountId}/txns', indexes: [
+///   Index(['accountId', '-bookedOn']),
+/// ])
+/// class Txn {
+///   @Indexed()
+///   final String currency; // same index as Index(['currency']) on the class
+///   ...
+/// }
+/// ```
+///
+/// Allowed on the field types an index field allows (`int`, `double`, `bool`,
+/// `String`, `DateTime`, `Uint8List`, enums); anything else (lists, maps,
+/// embedded classes) is a generator error, in the same style as `@Mirrored()`.
+/// Not allowed inside `@Embedded` classes: embedded fields live inside the
+/// document blob and have no column. A field that is both `@Mirrored()` and
+/// `@Indexed()` is just indexed — one column, one index, no duplicate.
+/// `@Indexed(unique: true)` makes the field's value unique within the
+/// collection, like `Index(['field'], unique: true)`.
+@Target({TargetKind.field, TargetKind.getter})
+class Indexed {
+  /// Declares the single-field index for the annotated field.
+  const Indexed({this.descending = false, this.unique = false});
+
+  /// Whether the index sorts the field descending (`Index(['-field'])`).
+  final bool descending;
+
+  /// Whether the field's value must be unique within the collection.
   final bool unique;
 }
 

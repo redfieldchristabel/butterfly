@@ -28,6 +28,8 @@ export 'src/engine/query.dart'
         CocoonQuery,
         GroupByQuery,
         MissingIndexException,
+        MissingIndexMode,
+        MissingIndexReport,
         QueryPage,
         maxAggregatesPerCall,
         maxGroupKeys;
