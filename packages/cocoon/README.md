@@ -30,9 +30,7 @@ dart pub add cocoon
 dart pub add --dev cocoon_generator build_runner
 ```
 
-Flutter apps also add
-[`sqlite3_flutter_libs`](https://pub.dev/packages/sqlite3_flutter_libs),
-which bundles the native SQLite library (see
+That's all, in Flutter apps too: SQLite itself is bundled automatically (see
 ["The native SQLite library"](#the-native-sqlite-library) below). A runnable
 tour of the core API lives in [example/main.dart](example/main.dart).
 
@@ -1180,15 +1178,15 @@ final db = await Cocoon.open(
 
 Cocoon talks to SQLite through `sqlite_async` and `package:sqlite3`.
 
-- **Flutter**: add [`sqlite3_flutter_libs`](https://pub.dev/packages/sqlite3_flutter_libs)
-  to the app; it bundles the right native SQLite for Android, iOS, macOS,
-  Linux and Windows.
-- **Dart CLI / server**: nothing to install with current `package:sqlite3`
-  releases — its build hook compiles the bundled SQLite amalgamation (a C
-  toolchain must be available at build time) or fetches a precompiled
-  binary. On older SDKs without native-assets support, install the system
-  SQLite development package instead (`apt install libsqlite3-dev` or your
-  platform's equivalent). Native platforms only; there is no web build.
+There is nothing to add, for Flutter apps and Dart CLIs/servers alike.
+Cocoon depends on `package:sqlite3` 3.x, whose build hook bundles a
+precompiled SQLite into the app on Android, iOS, macOS, Linux and Windows
+(downloaded from that package's GitHub releases at build time; see its docs
+to compile SQLite yourself or to use SQLCipher instead).
+
+- **Don't add `sqlite3_flutter_libs`.** With sqlite3 3.x it is no longer
+  needed; sqlite3's own upgrade guide says to drop it. If another package in your app still pulls in `sqlite3_flutter_libs` 0.5.x (the old, 2.x-era version with its own build scripts), upgrade it to `^0.6.0`, which is an empty placeholder, so only one SQLite ships.
+- Native platforms only; there is no web build.
 
 ## Using the Butterfly CLI (optional)
 

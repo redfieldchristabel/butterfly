@@ -70,38 +70,24 @@ dart pub add cocoon
 dart pub add --dev cocoon_generator build_runner
 ```
 
-Flutter apps also add
-[`sqlite3_flutter_libs`](https://pub.dev/packages/sqlite3_flutter_libs) for
-the bundled native SQLite. The full walkthrough — install, first model,
+That's all, in Flutter apps too: the native SQLite is bundled
+automatically. The full walkthrough — install, first model,
 codegen, open, first query and watch — is in
 [Getting Started](/libraries/cocoon/getting-started).
 
 ## The native SQLite library
 
 Cocoon talks to SQLite through `sqlite_async` on top of `package:sqlite3`
-(FFI). Native SQLite must be available at runtime:
+(FFI). **There is nothing to install**, for Flutter apps and Dart
+CLIs/servers alike: `package:sqlite3` 3.x bundles a precompiled SQLite into
+the app through its build hook on Android, iOS, macOS, Linux and Windows
+(downloaded from that package's GitHub releases at build time; its docs cover
+compiling SQLite yourself or switching to SQLCipher).
 
-<Tabs>
-  <TabItem label="Flutter" value="flutter">
-    Add [`sqlite3_flutter_libs`](https://pub.dev/packages/sqlite3_flutter_libs)
-    to the app; it bundles the right native SQLite for Android, iOS, macOS,
-    Linux and Windows:
-
-    ```yaml title="pubspec.yaml"
-    dependencies:
-      sqlite3_flutter_libs: ^0.5.0
-    ```
-  </TabItem>
-  <TabItem label="Dart CLI / server" value="dart-cli">
-    Nothing to install with current `package:sqlite3` releases — its build
-    hook compiles the bundled SQLite amalgamation (a C toolchain must be
-    available at build time) or fetches a precompiled binary.
-
-    On older SDKs without native-assets support, install the system SQLite
-    development package instead (`apt install libsqlite3-dev` or your
-    platform's equivalent).
-  </TabItem>
-</Tabs>
+<Warning>
+  **Don't add `sqlite3_flutter_libs`.** It was needed with sqlite3 2.x; since
+  3.x sqlite3's own upgrade guide says to drop it. If another package in your app still pulls in `sqlite3_flutter_libs` 0.5.x (the old, 2.x-era version with its own build scripts), upgrade it to `^0.6.0`, which is an empty placeholder, so only one SQLite ships.
+</Warning>
 
 <Warning>
   **Native platforms only.** The wire codec relies on Dart's native 64-bit

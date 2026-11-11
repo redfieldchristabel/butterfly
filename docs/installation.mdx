@@ -132,7 +132,7 @@ Every library lives under `packages/<package_name>` in the monorepo. Add only th
           path: packages/cocoon_generator
     ```
 
-    In a Flutter app also add `sqlite3_flutter_libs` so the native SQLite is bundled; see [Cocoon: Overview & Why Cocoon](/libraries/cocoon).
+    Nothing else to add, in Flutter apps too: `package:sqlite3` bundles the native SQLite automatically through its build hook. Don't add `sqlite3_flutter_libs`; see [Cocoon: Overview & Why Cocoon](/libraries/cocoon).
   </TabItem>
 </Tabs>
 

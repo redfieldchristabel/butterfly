@@ -13,14 +13,13 @@ dart pub add cocoon
 dart pub add --dev cocoon_generator build_runner
 ```
 
-Flutter apps also add
-[`sqlite3_flutter_libs`](https://pub.dev/packages/sqlite3_flutter_libs),
-which bundles the right native SQLite for every platform Cocoon supports:
+That's all, in Flutter apps too: `package:sqlite3` (which Cocoon depends on)
+bundles the native SQLite automatically through its build hook, so there is
+no `sqlite3_flutter_libs` to add. Your pubspec ends up as:
 
 ```yaml title="pubspec.yaml"
 dependencies:
   cocoon: ^0.1.0
-  sqlite3_flutter_libs: ^0.5.0
 
 dev_dependencies:
   build_runner: ^2.4.13
