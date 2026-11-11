@@ -128,12 +128,17 @@
       "icon": "database",
       "pages": [
         { "title": "Overview & Why Cocoon", "href": "/libraries/cocoon", "icon": "house" },
+        { "title": "Getting Started", "href": "/libraries/cocoon/getting-started", "icon": "rocket" },
         { "title": "Models & Code Generation", "href": "/libraries/cocoon/models", "icon": "tags" },
         { "title": "Collections & Documents", "href": "/libraries/cocoon/collections", "icon": "folder-tree" },
         { "title": "Queries & Indexes", "href": "/libraries/cocoon/queries", "icon": "magnifying-glass" },
+        { "title": "Aggregates & Group By", "href": "/libraries/cocoon/aggregates", "icon": "calculator" },
+        { "title": "Bulk Loads & Batch Reads", "href": "/libraries/cocoon/bulk", "icon": "boxes" },
         { "title": "Realtime: Watches & Change Log", "href": "/libraries/cocoon/realtime", "icon": "bolt" },
         { "title": "Schema Migrations", "href": "/libraries/cocoon/migrations", "icon": "arrows-rotate" },
+        { "title": "Backup & Restore", "href": "/libraries/cocoon/backup", "icon": "box-archive" },
         { "title": "DevTools Inspector", "href": "/libraries/cocoon/inspector", "icon": "gauge-high" },
+        { "title": "Performance", "href": "/libraries/cocoon/performance", "icon": "chart-line" },
         { "title": "Internals & Storage Layout", "href": "/libraries/cocoon/internals", "icon": "screwdriver-wrench" }
       ]
     },

@@ -1,0 +1,137 @@
+---
+title: Backup & Restore
+description: backupTo takes a consistent, compacted copy of a live database; inspectBackup and restoreBackup put it back safely. The engine owns two file primitives - the app owns the policy.
+---
+
+Cocoon owns two engine primitives — a consistent whole-file copy and a safe
+swap of a database file for one of those copies. Everything else is the
+app's policy: when to back up and where the file lives, which collections
+matter, compression, encryption, files stored outside the database (they are
+not part of any backup — copy them alongside and restore them yourself),
+extra validation, UI. There is deliberately no app-level backup file format
+and no bundled cryptography.
+
+## Backing up: `backupTo`
+
+```dart
+// A consistent, compacted copy of the whole database while the app keeps
+// reading and writing. Refuses an existing path unless overwrite: true.
+final info = await db.backupTo('/backups/cocoon-2026-11-10.db');
+```
+
+- **Consistent under writes.** The copy is one read snapshot (SQLite's
+  `VACUUM INTO`): a write that commits while the backup runs is either
+  fully in the copy or not at all, and the copy's change log,
+  `lastChangeSeq`, schema version and bulk-writer state (deferred indexes
+  included — opening a restored copy rebuilds them, like any crash
+  mid-load) are exactly the snapshot's.
+- **Atomic on failure.** The copy is written to `<path>.partial`, fsynced
+  and renamed onto `path`; a failure leaves no file at `path` and removes
+  the partial.
+- **Compacted.** The backup is the file's compacted form — a `backupTo`
+  also reclaims the freelist an in-place upgrade or backfill left behind.
+- **`keepChanges: false` databases back up too** — the copy's change log is
+  simply empty, like the source's.
+
+## Reading one back: `inspectBackup`
+
+```dart
+// Is it a Cocoon backup, does it pass integrity_check, and what does it
+// carry. Never modifies the file.
+final known = await Cocoon.inspectBackup('/backups/cocoon-2026-11-10.db');
+print('${known.bytes} bytes, schema v${known.schemaVersion}, '
+    'seq #${known.lastChangeSeq}, Cocoon ${known.cocoonVersion}');
+```
+
+`inspectBackup` verifies that the file IS a Cocoon backup and that
+`PRAGMA integrity_check` passes, then reports what it carries:
+`bytes`, `createdAt`, `formatVersion`, `schemaVersion`, `lastChangeSeq`,
+`cocoonVersion` and the `storageFormatVersion` the source wrote. Typed
+errors separate the three failure modes: `NotCocoonBackupException` (the
+file is not a Cocoon backup — a live database file isn't one either),
+`BackupDamagedException` (unreadable bytes or a failed integrity check) and
+`BackupFormatTooNewException` (a newer app's format version wrote it).
+
+## Restoring: `restoreBackup`
+
+```dart
+// Swap the (closed!) database file for a verified backup.
+await db.close();
+await Cocoon.restoreBackup(
+  backup: '/backups/cocoon-2026-11-10.db',
+  path: file,
+  collections: [accounts, txns],
+  schemaVersion: 1, // the same value you pass to Cocoon.open
+  keepPrevious: true, // keep the replaced database as <path>.before-restore
+);
+final db = await Cocoon.open(file, collections: [accounts, txns]);
+```
+
+- **The database at `path` must be closed** in this isolate — a `Cocoon`
+  still holding it open is refused before anything moves.
+- **Compatibility checked like `open`, before the target is touched.** A
+  backup written by a NEWER schema version (`SchemaTooNewException`) or a
+  NEWER storage format (`StorageFormatTooNewException`) is refused; an
+  older one is fine — the normal migrations run at the next `open`, and an
+  older storage format's tables are rebuilt at that open (measured at 1M:
+  ~5-9 s, then a `backupTo` compacts 390 → 305 MiB).
+- **`keepPrevious` (the default) keeps a safety copy.** The replaced
+  database moves to `<path>.before-restore` — a same-folder copy you keep
+  until you have validated the restore, deleted automatically when
+  `keepPrevious` is false. Stale `-wal`/`-shm`/`-journal` sidecars of the
+  target are removed: they belong to the replaced bytes and must never pair
+  with the restored one.
+- **Atomic on failure.** The backup is verified, copied to
+  `<path>.restoring`, and swapped in; a failure at any point puts the
+  previous database back where it was. A crash mid-restore (the process
+  dying, not an exception) leaves the pieces on disk — re-run the restore,
+  or move a piece into place by hand.
+
+The app then calls `Cocoon.open` as usual.
+
+## What the app wraps
+
+A backup is a plain SQLite file — one self-contained file in
+rollback-journal mode, so it never has WAL/SHM sidecars and moving it is
+copying one file. The app compresses (gzip the bytes before uploading) or
+encrypts (before the file leaves the device) as it likes;
+decompress/decrypt into a file and hand it to `inspectBackup` or
+`restoreBackup`.
+
+## Sync consumers: the instance id
+
+Every database gets a random instance id when it is created
+(`db.instanceId`). A restore replaces the change log with the backup's, so
+a watermark you saved can now be AHEAD of the database — the guarantee that
+`lastChangeSeq` never goes backwards holds within one database instance,
+not across a restore.
+
+Save the instance id durably next to the watermark and compare the two
+after every open: a different id means the watermark must be discarded (or
+reconciled). `restoreBackup` re-rolls the id, so a restored database is
+always detected:
+
+```dart
+if (db.instanceId != savedInstanceId) {
+  // A restore happened: the saved watermark is meaningless — resync fully.
+}
+```
+
+## The measured numbers
+
+Measured on the rivals dataset at 1,000,000 transactions (a 388 MB file,
+`Durability.full`; single runs on the shared build box, where the rivals
+methodology holds ±30%):
+
+| measurement | result |
+|---|---|
+| `backupTo` | 0.8-1.0 s |
+| backup file size | 388 MB — 1.7% smaller than the source database file, 5% smaller than the source with its WAL |
+| single writes during the backup | 2.3-2.8 ms p50, 4.9-5.2 ms p95 (the no-backup baseline p50 is 1.8 ms) — the app stays usable |
+| `restoreBackup` | 6.9-7.5 s, including the whole-file `integrity_check`, the copy and the swap |
+
+Reproduce with `dart run tool/backup_measure.dart --size 1000000` in
+`benchmarks/cocoon_rivals`. The file-level protocol behind these
+guarantees — `VACUUM INTO`, the `.partial`/`.restoring`/`.before-restore`
+dance, the failure-injection seams — is described in
+[Internals](/libraries/cocoon/internals).

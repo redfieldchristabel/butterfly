@@ -12,7 +12,7 @@ runner applies for you.
 
 | Change | What happens |
 | --- | --- |
-| Add a field | Fresh number. Old documents decode the default. Nothing to run. |
+| Add a field | Fresh number. Old documents decode the default. Nothing to run — unless the field is non-nullable with no constructor default on an existing collection: `migrate` then asks what the old documents should read (see below). |
 | Remove a field | Its number is reserved forever. Confirm the drop in `migrate`. |
 | Reorder fields | Nothing — order never mattered. |
 | Add/drop an index | Applied by diffing on open; no migration file. |
@@ -102,6 +102,39 @@ their `String` name, and only present values are converted — documents
 without the old field are skipped, and a conversion returning `null` drops
 the value.
 
+## New required fields: the backfill question
+
+One more question, for an added field of an **existing** collection that is
+non-nullable and has no constructor default: such a field would silently
+read its proto3 zero value (`''`, `0`, `false`, the epoch for `DateTime`,
+the first enum value) in every document written before it existed — for
+money and dates, a quiet data bug. The command shows the exact value the
+old documents would read and asks:
+
+```text
+Txn: `currency` (String) is new and required. Existing documents would read ''.
+  1) Write a backfill stub (a migration sets the value for existing documents) [default]
+  2) Keep the zero value ('')
+  3) Abort (add a default or make it nullable first)
+```
+
+The default writes a backfill stub into the new migration file — a function
+that receives each decoded old document and returns the value to store, so
+it can depend on the document's other fields:
+
+```dart
+// lib/cocoon_migrations/m0004_txn_currency_backfill.dart
+String backfillTxnCurrency(Txn doc) => doc.memo == null ? 'MYR' : 'USD';
+```
+
+Implement the stubs — the build fails while any `UnimplementedError`
+remains — and on the device the engine runs the backfill over every
+existing document inside the open's one transaction: batched, one
+change-log row per document, crash-safe, progress through
+`onMigrationProgress`, a throwing stub rolls the whole open back. Choice 2
+records the decision in the lock so the question is never asked again. A
+brand-new collection asks nothing — it has no existing documents.
+
 ## Flags for scripts and CI
 
 Scripts and pre-commit hooks drive the command without a terminal:
@@ -111,8 +144,10 @@ Scripts and pre-commit hooks drive the command without a terminal:
 | `--rename Model.old=new` | Decide a rename without the menu (repeatable). |
 | `--drop Model.field` | Drop a removed field, reserving its number (repeatable). |
 | `--drop-collection Model` | Confirm a removed collection or embedded class (repeatable). |
-| `--yes` | Accept the default answer of every rename menu; **never** covers drops. |
-| `--check` | Exit 1 when the run would change anything; writes nothing. |
+| `--backfill Model.field` | Decide an added required field with a backfill stub, without the menu (repeatable). |
+| `--keep-zero Model.field` | Record the keep-the-zero decision for an added required field (repeatable). |
+| `--yes` | Accept the default answer of every rename menu; **never** covers drops; for an added required field it picks the default — a backfill stub, never a silent keep-zero. |
+| `--check` | Exit 1 when the run would change anything; writes nothing, and reports pending required-field decisions. |
 
 ```sh
 # Pre-commit gate: fail when the lock is out of date, never write it
@@ -165,3 +200,31 @@ On the device, opening compares the schema version stored in the internal
   included — rolls the whole open back.
 - A database written by a **newer** app version refuses to open with a
   `SchemaTooNewException`; upgrade the app instead.
+
+## Old files: storage-format upgrades
+
+Files also carry a storage-format version in the internal `_cocoon_meta`
+table, separate from your schema version. A file written by an older Cocoon
+is upgraded on open — its collection tables are rebuilt to the current
+layout (no stored `path` column; a document's identity is its path params
+plus id) table by table, inside the open, crash-safe, with progress
+reported through `onMigrationProgress` — and a file written by a newer
+version refuses to open with a `StorageFormatTooNewException`.
+
+Measured on a 1M file: the one-time upgrade takes ~5-9 s, keeps every
+document and change-log row, and the file transiently grows to ~519 MiB —
+the dropped tables' pages sit on the freelist. After the upgrade's
+transaction commits, the open compacts the file once (`VACUUM`) when more
+than a fifth of it is reclaimable: 390 → 305 MiB with the freelist back to
+zero, ~1 s of `VACUUM` at 1M, ~34 ms on a 0.5 MiB file.
+
+- `compactAfterUpgrade: false` keeps the old behavior — the next
+  `backupTo`, which always compacts, reclaims the space instead (see
+  [Backup & Restore](/libraries/cocoon/backup)).
+- A compaction that cannot run — most often a full disk, since `VACUUM`
+  needs about the file size in free space — is reported through
+  `onCompactionFailed` and never fails the open.
+- Normal opens never compact.
+
+The wire-level mechanics of the rebuild are in
+[Internals](/libraries/cocoon/internals).

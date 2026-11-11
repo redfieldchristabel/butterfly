@@ -1,0 +1,188 @@
+---
+title: Bulk Loads & Batch Reads
+description: bulkWriter() for import-shaped loads (chunked commits, deferred indexes, crash recovery, skipping the change log), db.batch() for one-transaction batches, and getAll for many documents by id in one trip.
+---
+
+Two tools for moving many documents, one for reading them back:
+
+- **`db.batch()`** — hundreds to thousands of documents that must commit or
+  roll back **as one**.
+- **`db.bulkWriter()`** — bulk-shaped work too big for one transaction:
+  restoring a backup, a first sync, loading a dataset.
+- **`getAll`** — when the app already knows the ids and wants them in one
+  trip.
+
+## One transaction: `db.batch()`
+
+Queue the writes synchronously — they validate and queue, touching nothing
+on disk — then commit them as one transaction:
+
+```dart
+final batch = db.batch();
+batch.set(a1.collection(txns).doc('t1'), txn); // upsert
+batch.update(a1.collection(txns).doc('t2'), edited); // must already exist
+batch.delete(staleRef); // removes the document and its subtree
+await batch.commit();
+```
+
+`commit()` runs every queued operation, in call order, inside ONE write
+transaction: consecutive same-SQL operations group into one batched
+statement (one round trip per ~2,000 documents instead of one per
+document), every touched document's change-log row lands in one batch, and
+the watches receive exactly one commit event. Any failure rolls everything
+back — no rows, no cache updates, no watch event. Semantics per operation
+are the standalone ones: a `set` earlier in the same batch satisfies a
+later `update` of the same document, and a `delete` in between fails it. A
+batch is single-use (`commit` twice throws); committing an empty batch is a
+no-op.
+
+## Many chunks: `bulkWriter()`
+
+`db.bulkWriter()` queues `set`/`update`/`delete` synchronously and commits
+them in chunks, the way Firestore's server SDKs do it:
+
+```dart
+final bulk = db.bulkWriter(); // 10,000 rows per chunk; indexes deferred
+for (final t in allTxns) {
+  bulk.set(
+    db.collection(accounts).doc(t.accountId).collection(txns).doc(t.id),
+    t,
+  ); // synchronous, buffered
+}
+await bulk.close(); // flushes, finishes the indexes, resolves when durable
+```
+
+- **Atomic per chunk, not as a whole.** Every 10,000 rows (tune with
+  `BulkWriterOptions(chunkSize:)`) commit as one write transaction, so a
+  crash leaves a prefix of committed chunks, never a half chunk, and each
+  chunk honours the database's `Durability`. Use `db.batch()` instead when
+  the whole queue must commit or roll back as one.
+- **`flush()` and `close()`.** `flush()` commits the operations queued so
+  far and resolves (later operations keep buffering); `close()` flushes the
+  rest, finishes the indexes and resolves. Using the writer after `close` —
+  or closing it twice — throws. A failed chunk (a failed `update`, a SQL
+  error) rolls back whole, the buffered operations after it are discarded,
+  and the error surfaces from `flush()`/`close()`.
+- **Per-operation semantics are the standalone ones**, as for
+  `WriteBatch`: `set` upserts, `update` replaces an existing document and
+  fails its chunk when the document is missing — a `set` queued earlier, in
+  the same chunk or an earlier committed one, satisfies it — and `delete`
+  removes the document and its whole subtree. Operations commit in call
+  order; the last write of a document wins inside its chunk.
+- **Deferred secondary indexes (the default).** When the load defers a
+  table's indexes — the table is empty, or the writer has buffered more
+  rows than the table already holds — the writer drops the table's
+  secondary indexes during the load and rebuilds them in `close()`'s one
+  write transaction. The scope index is never dropped, so reads by id never
+  wait. A query whose plan needs a deferred index waits until the writer
+  closes, then runs. Watches fire once per chunk commit; a query watch
+  whose plan needs a deferred index re-runs only after the writer closes.
+- **Crash recovery.** While the indexes are deferred they are recorded in
+  the internal `_cocoon_bulk` table, in the same transaction that drops
+  them. A database opened with rows left there (a crash mid-load) rebuilds
+  those indexes before the app sees it.
+- **Skip the change log for pure imports.**
+  `db.bulkWriter(const BulkWriterOptions(logChanges: false))` writes no log
+  rows — ~52 MB of the file at 1M. In-process watches still fire per
+  chunk, but the log has a hole where the load ran: a sync consumer
+  resuming from a saved `lastChangeSeq` would silently skip the loaded
+  documents, so give it a full resync (a fresh snapshot plus the changes
+  after the load).
+- **Bound the buffer.** It holds every queued operation until its chunk
+  commits. For a load that streams faster than it commits, call `flush()`
+  every few thousand operations.
+
+### The measured numbers
+
+On the rivals dataset at 1,000,000 transactions, `Durability.full`: the
+default `bulkWriter()` imports in ~13 s where `db.batch()` per 1,000 rows
+takes 103 s on the same dataset and indexes — within ~1.4x of raw SQLite's
+own 9.5 s deferred-index ceiling. Through each engine's best documented bulk
+API at 1M: Isar 5.7 s, Hive 7.9 s, ObjectBox 8.8 s, **Cocoon `bulkWriter()`
+12.6 s**, drift 18.7 s, sembast 46.5 s — ahead of drift and sembast, behind
+the in-RAM engines (Isar 2.2x, Hive 1.6x, ObjectBox 1.4x).
+
+The chunk-size curve (wall time for the 1M import) — a shallow U with its
+knee at the default:
+
+| `chunkSize` | 1,000 | 10,000 (default) | 50,000 | 100,000 | 1,000,000 |
+|---|---|---|---|---|---|
+| wall | 17.9 s | 13.3 s | 14.0 s | 14.6 s | 17.6 s |
+
+Deferral only engages when it pays, and the measured cross-over sits right
+where the rule draws it: adding 300k rows to a pre-filled 1M table keeps the
+indexes (10.9 s either way), while adding 1.1M rows defers them — 22.9 s
+against 66.4 s of maintaining them through every chunk. Details, the lever
+ladder and the rejected ideas:
+[IMPORT.md][cocoon-import], [CEILING.md][cocoon-ceiling],
+[RESULTS.md][cocoon-results].
+
+## Many documents by id: `getAll`
+
+When the app already knows the ids — a split's participants, linked
+accounts, a sync batch — fetch them in one call instead of one `get()` per
+document:
+
+```dart
+final snaps = await a1.collection(txns)
+    .getAll(['t1', 't2', 't3']); // List<DocSnapshot<Txn>?>
+
+// or across parents of the same collection, from the database directly:
+final snaps2 = await db.getAll([
+  for (final id in participantIds) a1.collection(txns).doc(id),
+  for (final id in linkedTxnIds) a2.collection(txns).doc(id),
+]);
+```
+
+Three entry points, one engine: `collection.getAll(ids)` when you have the
+collection in hand, `db.getAll(refs)` across parents, and `tx.getAll(refs)`
+inside a transaction.
+
+- **Order and nulls.** Results come back in the same order as the
+  ids/refs, `null` at every position whose document does not exist;
+  duplicate ids are allowed and every position is answered. An empty list
+  answers immediately, without SQL.
+- **One call answers one model type.** Refs of different parents and
+  subcollections of that model mix freely; a `<DocRef<Object>>[...]` list
+  mixes models at the cost of an untyped `.data`.
+- **One consistent snapshot.** Documents the hot cache holds come back
+  without SQL; only the misses go to SQLite, grouped per collection table
+  and fetched with one statement per 500 scope keys, all inside one read
+  transaction. Every fetched document lands in the cache exactly like
+  `get()` does.
+- **Never waits for a bulk load.** Reads by id never wait for a running
+  `bulkWriter()` — the scope index is never deferred.
+- **Inside a transaction**, `tx.getAll(refs)` sees the transaction's own
+  writes exactly like `tx.get(ref)`, and caches nothing until the commit
+  succeeds.
+
+Reach for `getAll` instead of a query when the id set is known and the
+order is yours — a query would need an index that serves it and would
+re-sort what you already know.
+
+### The measured numbers
+
+On the rivals 1M database, medians of 5 in-process reps
+([GETALL.md][cocoon-getall]):
+
+| ids | `get()` one-by-one | `getAll` cold | `getAll` warm | drift `isIn` |
+|---|---|---|---|---|
+| 50 | 13.7 ms | 2.8 ms | 0.03 ms | 1.5 ms |
+| 1,000 | 75.0 ms | **8.7 ms** | **0.20 ms** | 9.6 ms |
+| 10,000 | 409 ms | 93 ms | 77 ms * | 64 ms |
+
+\* Not honestly warm: the hot-document cache holds 2,000 documents
+(`CocoonOptions.cacheSize`), so a second 10,000-id call re-reads ~8,000 of
+them. Warm repeats at 1,000 ids are pure cache hits — no SQL at all.
+
+At 1,000 ids `getAll` is ~8.6x faster than the one-by-one gets it replaces
+and at parity with drift's single `isIn` statement. Where the remaining
+time goes (cold, 1,000 ids): ~5.7 ms isolate round trips (the SQL itself is
+~0.1 ms), 0.9 ms decoding 1,000 wire blobs, ~2.1 ms engine Dart work — the
+floor is the isolate hops, not SQLite, and the shipped 500-keys-per-statement
+chunk sits within ~10% of the statement-size floor.
+
+[cocoon-import]: https://github.com/redfieldchristabel/butterfly/blob/master/benchmarks/cocoon_rivals/IMPORT.md
+[cocoon-ceiling]: https://github.com/redfieldchristabel/butterfly/blob/master/benchmarks/cocoon_rivals/CEILING.md
+[cocoon-results]: https://github.com/redfieldchristabel/butterfly/blob/master/benchmarks/cocoon_rivals/RESULTS.md
+[cocoon-getall]: https://github.com/redfieldchristabel/butterfly/blob/master/benchmarks/cocoon_rivals/GETALL.md

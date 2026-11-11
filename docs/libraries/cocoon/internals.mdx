@@ -106,7 +106,9 @@ CREATE TABLE txn (
 
 ## Many documents by id
 
-`db.getAll(refs)` answers from the bounded cache where it can; only the
+`db.getAll(refs)` — the user-facing behaviour and its measured numbers are
+on [Bulk Loads & Batch Reads](/libraries/cocoon/bulk) — answers from the
+bounded cache where it can; only the
 misses reach SQLite, grouped per collection table and fetched in chunks of
 500 scope keys, with every chunk of one call inside one `BEGIN IMMEDIATE`
 read transaction on a reader connection — one consistent snapshot, one
@@ -194,6 +196,8 @@ CREATE TABLE _cocoon_bulk (tbl TEXT NOT NULL, index_name TEXT NOT NULL, sql TEXT
 
 ### How bulk-index deferral works
 
+The behaviour an app sees — what waits, what runs, crash recovery — is on
+[Bulk Loads & Batch Reads](/libraries/cocoon/bulk); this is the mechanism.
 A `BulkWriter` load with the default `deferIndexes: true` skips secondary
 index maintenance while it runs. On the first chunk that touches a table,
 inside the same write transaction as the chunk's rows, the writer decides —
@@ -226,6 +230,8 @@ declares is not resurrected — the reconciler's decision wins.
 
 ### How backups and restores move files
 
+The API and what the app owns vs what the engine owns are on
+[Backup & Restore](/libraries/cocoon/backup); this is the file protocol.
 `db.backupTo()` runs SQLite's `VACUUM INTO` against the source file inside
 `Isolate.run` (raw connections in `sqlite_executor.dart`, the only file that
 imports the SQLite packages): the statement takes one read snapshot of the
@@ -276,7 +282,9 @@ Cocoon stores integers exactly — use that for money:
 ## Aggregates
 
 `query.aggregate([...])` and `query.groupBy([...])` compute in SQLite over
-the mirrored `f_` columns — the document blob is never decoded, and one
+the mirrored `f_` columns — the app-facing API, semantics and measured
+numbers are on [Aggregates & Group By](/libraries/cocoon/aggregates). The
+document blob is never decoded, and one
 `get()` is exactly one read statement. The filters are planned by the same
 code as `get()`: same index rule, same `MissingIndexException`, same
 `.allowFullScan()`, and the same wait when a bulk writer has the serving
@@ -348,7 +356,9 @@ the index rule still refuses filters on it).
 The storage contract above is measured in `packages/cocoon_bench` — full
 tables in its `RESULTS.md` — against sembast on finance-shaped data
 (10k/100k/300k txns), fresh process per run, memory reported against a
-measured harness-only baseline.
+measured harness-only baseline. The engine-vs-engine comparison (drift,
+Isar, ObjectBox, Hive CE, sembast) and the tuning knobs are on
+[Performance](/libraries/cocoon/performance).
 
 - **Bounded RAM, measured.** The engine's own share of RSS is flat across
   the 30x data range: indistinguishable from the bare harness right after

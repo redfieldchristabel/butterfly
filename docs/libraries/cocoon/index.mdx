@@ -6,8 +6,9 @@ description: A typed, disk-backed, Firestore-style local database for Dart and F
 **Cocoon** (`package:cocoon`) is a typed, disk-backed, Firestore-style local
 database for Dart and Flutter, built on SQLite. Collections, documents and
 subcollections (`accounts/{accountId}/txns`), indexed queries with keyset
-pagination, realtime watches and a change log — with your model classes as
-the schema.
+pagination, SQLite-computed aggregates and group-by, bulk loads and batch
+reads by id, realtime watches backed by a durable change log, and whole-file
+backups — with your model classes as the schema.
 
 <Info>
   <Icon name="plug" /> **Standalone:** Cocoon depends on no other Butterfly
@@ -64,30 +65,16 @@ writes the adapters, typed query handles (`Txn$.bookedOn`) and codecs. See
 
 ## Installation
 
-Cocoon is not on pub.dev; install it from the Butterfly repository as a git
-dependency. `cocoon_generator` and `build_runner` are needed for code
-generation.
-
-```yaml title="pubspec.yaml"
-dependencies:
-  cocoon:
-    git:
-      url: https://github.com/redfieldchristabel/butterfly.git
-      ref: master
-      path: packages/cocoon
-
-dev_dependencies:
-  build_runner: ^2.4.13
-  cocoon_generator:
-    git:
-      url: https://github.com/redfieldchristabel/butterfly.git
-      ref: master
-      path: packages/cocoon_generator
+```sh
+dart pub add cocoon
+dart pub add --dev cocoon_generator build_runner
 ```
 
-After editing `pubspec.yaml`, run `dart pub get` (or `flutter pub get` in a
-Flutter app), then follow [Models & Code Generation](/libraries/cocoon/models)
-to wire up `build.yaml` and annotate your first model.
+Flutter apps also add
+[`sqlite3_flutter_libs`](https://pub.dev/packages/sqlite3_flutter_libs) for
+the bundled native SQLite. The full walkthrough — install, first model,
+codegen, open, first query and watch — is in
+[Getting Started](/libraries/cocoon/getting-started).
 
 ## The native SQLite library
 
@@ -124,6 +111,9 @@ Cocoon talks to SQLite through `sqlite_async` on top of `package:sqlite3`
 ## Where to go next
 
 <CardGroup cols={2}>
+  <Card title="Getting Started" icon="rocket" href="/libraries/cocoon/getting-started">
+    Install, first model, codegen, open, first query and watch.
+  </Card>
   <Card title="Models & Code Generation" icon="tags" href="/libraries/cocoon/models">
     Annotate plain classes; let `cocoon_generator` write the rest.
   </Card>
@@ -133,11 +123,23 @@ Cocoon talks to SQLite through `sqlite_async` on top of `package:sqlite3`
   <Card title="Queries & Indexes" icon="magnifying-glass" href="/libraries/cocoon/queries">
     Filters, ordering, the index rule and keyset pagination.
   </Card>
+  <Card title="Aggregates & Group By" icon="calculator" href="/libraries/cocoon/aggregates">
+    Totals in SQLite with Firestore semantics, plus the groupBy extension.
+  </Card>
+  <Card title="Bulk Loads & Batch Reads" icon="boxes" href="/libraries/cocoon/bulk">
+    bulkWriter(), db.batch() and getAll for import-shaped work.
+  </Card>
   <Card title="Realtime" icon="bolt" href="/libraries/cocoon/realtime">
     Doc and query watches, plus the durable change log.
   </Card>
   <Card title="Schema Migrations" icon="arrows-rotate" href="/libraries/cocoon/migrations">
     The interactive `migrate` command and the on-device runner.
+  </Card>
+  <Card title="Backup & Restore" icon="box-archive" href="/libraries/cocoon/backup">
+    Consistent copies of a live database, verified restores, the instance id.
+  </Card>
+  <Card title="Performance" icon="chart-line" href="/libraries/cocoon/performance">
+    The rivals benchmark at 1M transactions, the honest losses, the knobs.
   </Card>
   <Card title="Internals" icon="screwdriver-wrench" href="/libraries/cocoon/internals">
     Storage layout, the canonical wire format and money guidance.

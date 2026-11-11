@@ -1,0 +1,218 @@
+---
+title: Getting Started
+description: Install Cocoon, write and generate your first model, open the database and run your first set, get, query and watch.
+---
+
+This page takes you from an empty project to a working database: install,
+annotate one model, run the generator, then read, write, query and watch.
+
+## Install
+
+```sh
+dart pub add cocoon
+dart pub add --dev cocoon_generator build_runner
+```
+
+Flutter apps also add
+[`sqlite3_flutter_libs`](https://pub.dev/packages/sqlite3_flutter_libs),
+which bundles the right native SQLite for every platform Cocoon supports:
+
+```yaml title="pubspec.yaml"
+dependencies:
+  cocoon: ^0.1.0
+  sqlite3_flutter_libs: ^0.5.0
+
+dev_dependencies:
+  build_runner: ^2.4.13
+  cocoon_generator: ^0.1.0
+```
+
+<Info>
+  Prefer to track the repository directly instead of a pub.dev release? Pin
+  the packages as git dependencies:
+
+  ```yaml title="pubspec.yaml"
+  dependencies:
+    cocoon:
+      git:
+        url: https://github.com/redfieldchristabel/butterfly.git
+        ref: master
+        path: packages/cocoon
+
+  dev_dependencies:
+    build_runner: ^2.4.13
+    cocoon_generator:
+      git:
+        url: https://github.com/redfieldchristabel/butterfly.git
+        ref: master
+        path: packages/cocoon_generator
+  ```
+</Info>
+
+<Warning>
+  **Native platforms only.** Cocoon runs on Android, iOS, macOS, Linux and
+  Windows — the data is one SQLite file on the device. The wire codec relies
+  on Dart's native 64-bit `int`, so there is no web build. A Dart CLI or
+  server needs nothing extra with current `package:sqlite3` releases.
+</Warning>
+
+## Your first model
+
+Annotate plain Dart classes and declare the part file the generator writes:
+
+```dart title="lib/models.dart"
+import 'package:cocoon/cocoon.dart';
+
+part 'models.cocoon.dart';
+
+@Collection('accounts', indexes: [Index(['name'])])
+class Account {
+  const Account({required this.name, required this.active});
+  final String name;
+  final bool active;
+}
+
+@Collection(
+  'accounts/{accountId}/txns',
+  indexes: [Index(['accountId', '-bookedOn'])],
+)
+class Txn {
+  const Txn({required this.bookedOn, required this.amountMinor, this.memo});
+  final int bookedOn; // yyyymmdd
+  final int amountMinor; // minor units; may be negative
+  final String? memo;
+}
+```
+
+`@Collection` marks the model and its path (`{param}` segments are path
+params); `Index` declares the composite indexes queries are served from.
+The full annotation set and the generator's rules live in
+[Models & Code Generation](/libraries/cocoon/models).
+
+## Generate the code
+
+Point build_runner at the lock and run the two commands every Cocoon project
+uses:
+
+```yaml title="build.yaml"
+targets:
+  $default:
+    sources:
+      - lib/**
+      - cocoon.lock.json
+      - $package$
+```
+
+```sh
+dart run cocoon_generator:migrate # writes the initial cocoon.lock.json; a fresh project asks nothing
+dart run build_runner build -d    # writes *.cocoon.dart and lib/cocoon_schema.g.dart
+```
+
+The build fails until the lock exists — the builder never writes it, the
+`migrate` command does. Field numbers are pinned by name in the committed
+`cocoon.lock.json`, so reordering or adding fields later needs nothing; see
+[Schema Migrations](/libraries/cocoon/migrations).
+
+Per model the generator writes an adapter instance (`accounts`, `txns`),
+typed query handles on a `$` holder (`Txn$.bookedOn`, `Txn$.accountId`) and
+the canonical codec.
+
+## Open the database
+
+```dart
+final db = await Cocoon.open(file, collections: [accounts, txns]);
+```
+
+Register every collection the app stores exactly once. One `Cocoon` instance
+must own its database file — do not open the same file from two instances or
+two processes.
+
+## Set, get, add
+
+```dart
+final a1 = db.collection(accounts).doc('a1'); // DocRef<Account>
+
+await a1.set(const Account(name: 'Acme', active: true)); // upsert
+final snap = await a1.get(); // DocSnapshot<Account>? — null when missing
+
+final txRef = await a1.collection(txns).add(
+  const Txn(bookedOn: 20261111, amountMinor: -1250, memo: 'Groceries'),
+); // DocRef<Txn>, fresh time-ordered id (UUIDv7)
+
+await a1.delete(); // deletes a1 AND its whole subtree
+```
+
+Subcollections are checked at the type level of the pattern:
+`a1.collection(txns)` only compiles when `txns`' pattern is a child of
+`accounts`. Deletes cascade to the whole subtree. See
+[Collections & Documents](/libraries/cocoon/collections).
+
+## Query
+
+```dart
+final recent = await a1.collection(txns)
+    .where(Txn$.bookedOn.isGreaterThanOrEqualTo(20260101))
+    .orderBy(Txn$.bookedOn, descending: true)
+    .limit(50)
+    .get(); // QueryPage<Txn>: .docs, .nextCursor
+```
+
+Every query needs an index that serves it — the one declared above
+(`accountId`, newest `bookedOn` first) serves this — otherwise `get()`
+throws a `MissingIndexException` spelling the `Index([...])` to declare.
+Filters, keyset pagination and the index rule are covered in
+[Queries & Indexes](/libraries/cocoon/queries).
+
+## Watch
+
+```dart
+// Emits the current value on listen (null when missing), then re-reads
+// only when a commit touched this exact path.
+final sub = txRef.watch().listen((snap) {
+  // snap is DocSnapshot<Txn>? — null after a delete.
+});
+
+await sub.cancel(); // stops the stream and unregisters the watcher
+```
+
+Query watches, anchored live ranges and the change log are covered in
+[Realtime: Watches & Change Log](/libraries/cocoon/realtime).
+
+<Info>
+  <Icon name="terminal" /> **Optional: the Butterfly CLI.** Cocoon works
+  entirely without it — everything above is plain `build_runner` and
+  `cocoon_generator`, pinned in your pubspec. If `butterfly_cli` happens to
+  be installed, it can save you some typing:
+
+  ```sh
+  butterfly generate model Txn --cocoon          # scaffold a starter model
+  butterfly cocoon migrate                       # same as dart run cocoon_generator:migrate
+  butterfly cocoon build                         # same as dart run build_runner build -d
+  ```
+
+  The CLI only scaffolds and delegates to your project's own pinned tools —
+  it never generates or diffs anything itself. Cocoon never needs Butterfly.
+</Info>
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Models & Code Generation" icon="tags" href="/libraries/cocoon/models">
+    Annotations, supported types and what the generator emits.
+  </Card>
+  <Card title="Collections & Documents" icon="folder-tree" href="/libraries/cocoon/collections">
+    Refs, cascade deletes, transactions and the hot-document cache.
+  </Card>
+  <Card title="Queries & Indexes" icon="magnifying-glass" href="/libraries/cocoon/queries">
+    Filters, the index rule, collection groups and keyset pagination.
+  </Card>
+  <Card title="Aggregates & Group By" icon="calculator" href="/libraries/cocoon/aggregates">
+    Totals in SQLite with Firestore semantics, plus the groupBy extension.
+  </Card>
+  <Card title="Bulk Loads & Batch Reads" icon="boxes" href="/libraries/cocoon/bulk">
+    bulkWriter(), db.batch() and getAll for import-shaped work.
+  </Card>
+  <Card title="Realtime: Watches & Change Log" icon="bolt" href="/libraries/cocoon/realtime">
+    Live documents and queries, plus the durable change log.
+  </Card>
+</CardGroup>

@@ -612,15 +612,16 @@ nothing.
 per group, in one statement:
 
 ```dart
+final currencyKey = key(txnCurrency);
 final monthKey = bucket(txnBookedOn, width: 100); // yyyymmdd -> yyyymm00
 final groups = await a1.collection(txns)
     .where(txnBookedOn.isGreaterThanOrEqualTo(20260101))
-    .groupBy([key(txnCurrency), monthKey])
+    .groupBy([currencyKey, monthKey])
     .aggregate([sum(txnAmountMinor), count()])
     .get();
 for (final group in groups) {
   final month = group.key(monthKey) ~/ 100; // yyyymm
-  print('${group.key(txnCurrency)} $month: ${group.getSum(txnAmountMinor)}');
+  print('${group.key(currencyKey)} $month: ${group.getSum(txnAmountMinor)}');
 }
 ```
 
@@ -631,7 +632,9 @@ Four key kinds:
   group, sorted first.
 - `paramKey(param)` — a path param, so a collection-group query can
   aggregate one group per parent:
-  `db.collectionGroup(txns).groupBy([paramKey(txnAccountId)])`.
+  `db.collectionGroup(txns).query().allowFullScan().groupBy([paramKey(txnAccountId)])`
+  (a collection group has no single index; with no filter or order to
+  anchor one, the group query needs `.allowFullScan()`).
 - `bucket(field, width: w)` — fixed-width bands `floor(v / w) * w`:
   `yyyymmdd` days into months (`width: 100`), prices into bands. Integer
   fields with integer widths give `int` keys (exact floor division, no

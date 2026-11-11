@@ -1186,12 +1186,13 @@ final class CocoonQuery<T extends Object> {
   /// buckets this query's results by [keys] and aggregates per group.
   ///
   /// ```dart
+  /// final currencyKey = key(txnCurrency);
   /// final groups = await a1.collection(txns)
-  ///     .groupBy([key(txnCurrency), bucket(txnBookedOn, width: 100)])
+  ///     .groupBy([currencyKey, bucket(txnBookedOn, width: 100)])
   ///     .aggregate([sum(txnAmountMinor), count()])
   ///     .get();
   /// for (final group in groups) {
-  ///   print('${group.key(txnCurrency)}: ${group.getSum(txnAmountMinor)}');
+  ///   print('${group.key(currencyKey)}: ${group.getSum(txnAmountMinor)}');
   /// }
   /// ```
   ///

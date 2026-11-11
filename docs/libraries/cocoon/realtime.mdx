@@ -188,3 +188,21 @@ await db.pruneChanges(upToSeq: watermark); // returns the rows deleted
   a 1M-document import then writes no log rows; sync consumers must resync
   fully afterwards.
 </Info>
+
+## After a restore: the instance id
+
+Save `db.instanceId` durably next to the watermark and compare the two after
+every open. The guarantee that `lastChangeSeq` never goes backwards holds
+within one database instance — restoring a backup rewinds the change log to
+the backup's, so a watermark you saved can end up AHEAD of the database.
+`restoreBackup` re-rolls the instance id, and that is how you detect it: a
+different id means the watermark must be discarded (or reconciled), exactly
+like a pruned one.
+
+```dart
+if (db.instanceId != savedInstanceId) {
+  // A restore happened: the saved watermark is meaningless — resync fully.
+}
+```
+
+See [Backup & Restore](/libraries/cocoon/backup).

@@ -45,7 +45,8 @@ All annotations come from `package:cocoon/cocoon.dart`:
   indexed — one column, one index. Adding the annotation to an existing
   collection adds and backfills the column on the next open; removing it
   drops the column. Use it for fields you total or group by but never
-  filter or sort on.
+  filter or sort on. See [Aggregates & Group By](/libraries/cocoon/aggregates)
+  for the query-side rules and the measured storage cost.
 </Property>
 
 <Property name="@Embedded()" type="class annotation">
