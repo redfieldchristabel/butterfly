@@ -84,6 +84,15 @@ the same code (0 up to date or written, 1 refused/aborted/`--check` would
 change, 2 usage error or missing non-interactive decision). `cocoon build`
 runs `dart run build_runner build -d` the same way.
 
+`migrate` is a development tool, not a CI step: run it on your machine after
+changing a model, answer its questions, then commit `cocoon.lock` and
+`lib/cocoon_migrations/` together. CI only builds — `build_runner build`
+fails when the models and the committed lock disagree, so a model change
+that skipped `migrate` cannot pass CI, and the fix is always "run migrate
+locally and commit". The non-interactive flags exist for scripted runs on a
+developer machine; `--check` is read-only but redundant in CI, because the
+build already fails.
+
 Both subcommands check the project's pubspec for `cocoon_generator`
 (dev_)dependency and `build_runner` first; when something is missing they
 fail with a readable message containing the `dart pub add` lines above
@@ -95,3 +104,7 @@ instead of editing the pubspec.
 model scaffold is exposed as `generate_cocoon_model`, and the read-only
 `cocoon_migrate_check` tool runs the project's `cocoon_generator:migrate
 --check` (capturing output — the server's stdio carries the MCP protocol).
+It is deliberately the only exposed migrate tool: `migrate`'s questions
+(rename vs drop, backfill vs zero) need a human to keep stored data
+correct, so an agent gets the read-only check and runs the real `migrate`
+on its checkout with the flags when the check fails.

@@ -1,5 +1,5 @@
 /// Test helpers for cocoon_generator: run the real `cocoonBuilder` over
-/// in-memory model files with a test `cocoon.lock.json`.
+/// in-memory model files with a test `cocoon.lock`.
 ///
 /// build_test's analyzer only sees assets written into its in-memory
 /// filesystem, so the real sources of `cocoon` and its dependency closure are
@@ -7,12 +7,13 @@
 /// `package:cocoon/cocoon.dart` and have `@Collection` resolve.
 library;
 
-import 'dart:convert';
 import 'dart:isolate';
 
 import 'package:build/build.dart';
 import 'package:build_test/build_test.dart';
+import 'package:cocoon/cocoon.dart';
 import 'package:cocoon_generator/builder.dart';
+import 'package:cocoon_generator/src/lock_yaml.dart';
 import 'package:glob/glob.dart';
 import 'package:package_config/package_config.dart';
 
@@ -74,7 +75,8 @@ final class TestCollection {
   final List<String> mirrored;
 }
 
-/// Builds `cocoon.lock.json` text. Fields are numbered 1..n in map order.
+/// Builds `cocoon.lock` text (the YAML shape `migrate` writes). Fields are
+/// numbered 1..n in map order.
 String lockText({
   int version = 1,
   Map<String, TestCollection> collections = const {},
@@ -110,7 +112,7 @@ String lockText({
           },
       },
   };
-  return '${const JsonEncoder.withIndent('  ').convert(json)}\n';
+  return lockYamlSource(SchemaLock.fromJson(json));
 }
 
 /// The outcome of one builder run over a test library.
@@ -135,9 +137,10 @@ final class BuildRun {
 }
 
 /// Runs the real `cocoonBuilder` on `lib/models.dart` containing [models],
-/// with [lock] as the package's `cocoon.lock.json` (empty string = no lock).
+/// with [lock] as the package's `cocoon.lock` (empty string = no lock).
 /// [extraFiles] adds further assets, e.g. migration stub files under
-/// `lib/cocoon_migrations/` (asset paths like `a|lib/cocoon_migrations/m.dart`).
+/// `lib/cocoon_migrations/` (asset paths like `a|lib/cocoon_migrations/m.dart`)
+/// or a second lock file (`a|cocoon.lock.json`) for the both-files failure.
 Future<BuildRun> runCocoonBuilder(
   String models,
   String lock, [
@@ -147,7 +150,7 @@ Future<BuildRun> runCocoonBuilder(
     cocoonBuilder(const BuilderOptions({})),
     {
       'a|lib/models.dart': models,
-      if (lock != '') 'a|cocoon.lock.json': lock,
+      if (lock != '') 'a|$lockFileName': lock,
       ...extraFiles,
     },
     readerWriter: await _freshReaderWriter(),
@@ -156,18 +159,19 @@ Future<BuildRun> runCocoonBuilder(
   return BuildRun(result, AssetId('a', 'lib/models.cocoon.dart'));
 }
 
-/// Runs the schema-version builder on a `cocoon.lock.json` input and returns
+/// Runs the schema-version builder on a `cocoon.lock` input and returns
 /// the outcome; [BuildRun.code] reads the generated `lib/cocoon_schema.g.dart`
 /// when the build succeeded. [extraFiles] adds further assets, e.g. migration
 /// stub files under `lib/cocoon_migrations/` (asset paths like
-/// `a|lib/cocoon_migrations/m.dart`).
+/// `a|lib/cocoon_migrations/m.dart`) or a second lock file
+/// (`a|cocoon.lock.json`) for the both-files failure.
 Future<BuildRun> runSchemaVersionBuilder(
   String lock, [
   Map<String, String> extraFiles = const {},
 ]) async {
   final result = await testBuilder(
     cocoonSchemaVersionBuilder(const BuilderOptions({})),
-    {'a|cocoon.lock.json': lock, ...extraFiles},
+    {'a|$lockFileName': lock, ...extraFiles},
     readerWriter: await _freshReaderWriter(),
     flattenOutput: true,
   );

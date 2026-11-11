@@ -1,10 +1,10 @@
 targets:
   $default:
-    # cocoon_generator reads the committed `cocoon.lock.json` from the package
+    # cocoon_generator reads the committed `cocoon.lock` from the package
     # root, which build_runner does not include in its default source set.
     sources:
       - lib/**
-      - cocoon.lock.json
+      - cocoon.lock
       - $package$
     builders:
       # isar_community_generator matches its `@Collection` annotation by bare

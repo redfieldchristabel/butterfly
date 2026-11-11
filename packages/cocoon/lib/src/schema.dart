@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:meta/meta.dart';
 
+import 'lock_text.dart';
 import 'path.dart';
 
 /// The lock file format version.
@@ -145,7 +146,7 @@ class CollectionSpec {
        mirrored = List<String>.unmodifiable(mirrored),
        keepZero = List<String>.unmodifiable(keepZero);
 
-  /// Restores the lock entry [model] from its `cocoon.lock.json` JSON.
+  /// Restores the lock entry [model] from the lock file's JSON shape.
   factory CollectionSpec.fromJson(String model, Map<String, Object?> json) {
     final fields = (json['fields']! as Map<String, Object?>).entries.map((e) {
       final value = e.value! as Map<String, Object?>;
@@ -218,8 +219,7 @@ class CollectionSpec {
   int get nextNumber =>
       [0, ...fields.map((f) => f.number), ...reserved].reduce(math.max) + 1;
 
-  /// The `cocoon.lock.json` JSON shape for this entry (the model name is the
-  /// JSON key).
+  /// The lock file's JSON shape for this entry (the model name is the key).
   Map<String, Object> toJson() => {
     'path': path,
     'fields': {for (final f in fields) f.name: f.toJson()},
@@ -249,7 +249,7 @@ class EmbeddedSpec {
        ),
        reserved = Set<int>.unmodifiable(reserved);
 
-  /// Restores the lock entry [name] from its `cocoon.lock.json` JSON.
+  /// Restores the lock entry [name] from the lock file's JSON shape.
   factory EmbeddedSpec.fromJson(String name, Map<String, Object?> json) {
     final fields = (json['fields']! as Map<String, Object?>).entries.map((e) {
       final value = e.value! as Map<String, Object?>;
@@ -290,15 +290,14 @@ class EmbeddedSpec {
   int get nextNumber =>
       [0, ...fields.map((f) => f.number), ...reserved].reduce(math.max) + 1;
 
-  /// The `cocoon.lock.json` JSON shape for this entry (the class name is the
-  /// JSON key).
+  /// The lock file's JSON shape for this entry (the class name is the key).
   Map<String, Object> toJson() => {
     'fields': {for (final f in fields) f.name: f.toJson()},
     'reserved': [...reserved]..sort(),
   };
 }
 
-/// The committed `cocoon.lock.json`: the source of truth for field numbers.
+/// The committed `cocoon.lock`: the source of truth for field numbers.
 @immutable
 class SchemaLock {
   /// Builds a lock from parsed pieces; prefer [parse]/[fromJson] for files.
@@ -313,12 +312,11 @@ class SchemaLock {
   factory SchemaLock.empty() =>
       SchemaLock(version: 0, collections: const {}, embedded: const {});
 
-  /// Restores the lock from its `cocoon.lock.json` JSON (must carry the
-  /// current `format`).
+  /// Restores the lock from its file (must carry the current `format`).
   factory SchemaLock.fromJson(Map<String, Object?> json) {
     final format = json['format'];
     if (format != schemaLockFormat) {
-      throw FormatException('Unsupported cocoon.lock.json format $format');
+      throw FormatException('Unsupported cocoon.lock format $format');
     }
     final collections = json['collections']! as Map<String, Object?>;
     final embedded = json['embedded'] as Map<String, Object?>? ?? const {};
@@ -338,9 +336,11 @@ class SchemaLock {
     );
   }
 
-  /// Parses lock file text.
-  factory SchemaLock.parse(String source) =>
-      SchemaLock.fromJson(jsonDecode(source) as Map<String, Object?>);
+  /// Parses lock file text: the YAML block style `cocoon.lock` uses (the
+  /// shape `cocoon_generator migrate` writes), or the JSON shape older
+  /// projects committed as `cocoon.lock.json`. Both restore the same lock,
+  /// so the same lock read either way carries the same fingerprint.
+  factory SchemaLock.parse(String source) => parseLockText(source);
 
   /// Schema version; bumped once per generated migration.
   final int version;
@@ -351,7 +351,7 @@ class SchemaLock {
   /// Embedded classes keyed by type name.
   final Map<String, EmbeddedSpec> embedded;
 
-  /// The `cocoon.lock.json` JSON shape for the whole lock.
+  /// The lock file's JSON shape for the whole lock.
   Map<String, Object> toJson() {
     final models = collections.keys.toList()..sort();
     final json = <String, Object>{

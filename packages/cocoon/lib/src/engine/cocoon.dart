@@ -289,7 +289,7 @@ final class Cocoon {
   /// [onMigrationProgress] reports `(documents processed, documents total)`
   /// per batch while the steps run. See the README's "Schema migrations".
   ///
-  /// With [schemaLock] (the parsed `cocoon.lock.json`) the DevTools
+  /// With [schemaLock] (the parsed `cocoon.lock`) the DevTools
   /// inspector's schema view can also show pinned field numbers and
   /// reserved numbers; without it, it shows only what the engine knows.
   static Future<Cocoon> open(

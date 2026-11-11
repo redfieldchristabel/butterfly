@@ -99,18 +99,18 @@ targets:
   $default:
     sources:
       - lib/**
-      - cocoon.lock.json
+      - cocoon.lock
       - $package$
 ```
 
 ```sh
-dart run cocoon_generator:migrate # writes the initial cocoon.lock.json; a fresh project asks nothing
+dart run cocoon_generator:migrate # writes the initial cocoon.lock; a fresh project asks nothing
 dart run build_runner build -d    # writes *.cocoon.dart and lib/cocoon_schema.g.dart
 ```
 
 The build fails until the lock exists — the builder never writes it, the
 `migrate` command does. Field numbers are pinned by name in the committed
-`cocoon.lock.json`, so reordering or adding fields later needs nothing; see
+`cocoon.lock`, so reordering or adding fields later needs nothing; see
 [Schema Migrations](/libraries/cocoon/migrations).
 
 Per model the generator writes an adapter instance (`accounts`, `txns`),

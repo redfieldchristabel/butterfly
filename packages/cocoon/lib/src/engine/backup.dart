@@ -69,7 +69,7 @@ final class BackupInfo {
   /// the app opened it without `schemaVersion:` tracking.
   final int? schemaVersion;
 
-  /// The fingerprint of the `cocoon.lock.json` the source app passed to
+  /// The fingerprint of the `cocoon.lock` the source app passed to
   /// `Cocoon.open` (`schemaLock:`), or `null` when it did not. Identical
   /// locks hash equal, so this pins the field numbering of the backup's
   /// wire data.

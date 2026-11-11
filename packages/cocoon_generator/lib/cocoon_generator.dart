@@ -3,7 +3,7 @@
 /// typed query handles and canonical wire codec the storage engine needs.
 ///
 /// Add the package as a dev dependency and run build_runner; see the Cocoon
-/// README for the full workflow, including the committed `cocoon.lock.json`
+/// README for the full workflow, including the committed `cocoon.lock`
 /// that pins field numbers.
 ///
 /// ```dart

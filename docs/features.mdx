@@ -197,6 +197,13 @@ same code (0 up to date or written, 1 refused/aborted/`--check` would change,
 pubspec for `cocoon_generator` (dev_)dependency and `build_runner` and fail
 with a readable message when they are missing.
 
+`migrate` is a development tool, not a CI step: run it on your machine after
+changing a model, answer its questions, then commit `cocoon.lock` and
+`lib/cocoon_migrations/` together. CI only builds — the build fails when the
+models and the committed lock disagree, so a model change that skipped
+`migrate` cannot pass CI, and the fix is always "run migrate locally and
+commit".
+
 ---
 
 ## Stamp app version (`generate version`)
@@ -267,7 +274,7 @@ butterfly mcp-server
 ---
 
 <Property name="cocoon_migrate_check" type="MCP tool" required>
-  Runs the project's read-only `dart run cocoon_generator:migrate --check` and returns its captured output and exit code (1 = the models changed and a real migrate is needed). The interactive `cocoon migrate` menus are not exposed over MCP; output is captured rather than inherited because the server's stdio carries the MCP protocol.
+  Runs the project's read-only `dart run cocoon_generator:migrate --check` and returns its captured output and exit code (1 = the models changed and a real migrate is needed). It is deliberately the only exposed migrate tool: `migrate`'s questions (rename vs drop, backfill vs zero) need a human to keep stored data correct, so an agent gets the read-only check and runs the real `migrate` on its checkout with the flags when the check fails — migrate is a development tool, never a CI step. Output is captured rather than inherited because the server's stdio carries the MCP protocol.
 </Property>
 
 ---

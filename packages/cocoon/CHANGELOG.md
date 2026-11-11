@@ -1,5 +1,21 @@
 ## Unreleased
 
+- **The schema lock is a YAML `cocoon.lock` now** — Dart's own lock file
+  (`pubspec.lock`) is YAML too, so reviews read it without braces-and-quotes
+  noise next to the migration files. `SchemaLock.parse` reads both shapes
+  and the lock's fingerprint is unchanged, so existing databases see the
+  same hash and nothing re-migrates. One `dart run cocoon_generator:migrate`
+  converts a project: it reads the legacy `cocoon.lock.json`, writes
+  `cocoon.lock`, deletes the old file and reminds you to commit both
+  changes; both files present is an error, never a guess.
+- **`migrate` is documented as a development tool, not a CI step.** Run it
+  on your machine after changing a model, answer its questions, then
+  commit `cocoon.lock` and `lib/cocoon_migrations/` together. CI only
+  builds: the build fails when the models and the committed lock disagree,
+  so a model change that skipped `migrate` cannot pass CI — the fix is
+  always "run migrate locally and commit", never "run migrate in CI", and
+  `--check` is read-only but redundant there.
+
 - **`migrate` now asks before a new required field silently reads its zero
   value.** Adding a non-nullable field with no constructor default to an
   existing collection used to book every old document at the proto3 zero
@@ -265,7 +281,7 @@ the first published release. Everything below is in it.
 
 - Schema migrations, end to end. `dart run cocoon_generator:migrate` asks
   only what a human must answer (renames, drops), updates the committed
-  `cocoon.lock.json` and, when stored data must change, writes a numbered
+  `cocoon.lock` and, when stored data must change, writes a numbered
   migration file with one conversion stub per type change. Implement the
   stubs, commit both, and pass `schemaVersion: cocoonSchemaVersion` and
   `migrations: cocoonMigrations` to `Cocoon.open`: pending migrations run
@@ -284,7 +300,7 @@ the first published release. Everything below is in it.
 - Code generation: annotate plain classes with `@Collection` (and nested
   value classes with `@Embedded`) and `cocoon_generator` writes the adapter,
   typed query handles (`Txn$.bookedOn`) and the canonical codec. Field numbers
-  come from the committed `cocoon.lock.json`, so reordering fields never
+  come from the committed `cocoon.lock`, so reordering fields never
   matters, and the build stops with a clear message when the models and the
   lock disagree instead of silently writing data under the wrong numbers.
 - Documents written before a field existed still load: the field takes the

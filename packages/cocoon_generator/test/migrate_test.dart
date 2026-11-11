@@ -14,6 +14,7 @@ import 'dart:isolate';
 
 import 'package:cocoon/cocoon.dart';
 import 'package:cocoon_generator/migrate.dart';
+import 'package:cocoon_generator/src/lock_yaml.dart';
 import 'package:package_config/package_config.dart';
 import 'package:test/test.dart';
 
@@ -31,12 +32,14 @@ final class FakeTerminal implements MigrateIo {
   bool stdoutIsTerminal = false;
 
   final StringBuffer out = StringBuffer();
+  final StringBuffer err = StringBuffer();
   Queue<String> _lines = Queue<String>();
 
   /// Prepares the terminal for one [migrate] call.
   void reset(List<String> lines, {required bool tty}) {
     _lines = Queue<String>.of(lines);
     out.clear();
+    err.clear();
     stdinIsTerminal = tty;
     stdoutIsTerminal = tty;
   }
@@ -46,6 +49,9 @@ final class FakeTerminal implements MigrateIo {
 
   @override
   void write(String text) => out.write(text);
+
+  @override
+  void writeError(String text) => err.write(text);
 }
 
 // -- Throwaway packages ---------------------------------------------------------
@@ -80,6 +86,7 @@ final createdDirs = <Directory>[];
 Future<Directory> tempPackage({
   required String models,
   String? lock,
+  String? legacyLock,
   String? extraFile,
   String? extraContent,
 }) async {
@@ -91,7 +98,10 @@ Future<Directory> tempPackage({
   Directory('${dir.path}/lib').createSync();
   File('${dir.path}/lib/models.dart').writeAsStringSync(models);
   if (lock != null) {
-    File('${dir.path}/cocoon.lock.json').writeAsStringSync(lock);
+    File('${dir.path}/$lockFileName').writeAsStringSync(lock);
+  }
+  if (legacyLock != null) {
+    File('${dir.path}/$legacyLockFileName').writeAsStringSync(legacyLock);
   }
   if (extraFile != null) {
     File('${dir.path}/$extraFile')
@@ -403,8 +413,19 @@ final staffAddedRequiredLockV2 = lockText(
   },
 );
 
+/// The v1 staff lock as the legacy JSON text, for the fallback tests.
+final staffV1JsonLock = parseLockYaml(staffV1Lock).toSource();
+
 String lockFileOf(Directory pkg) =>
-    File('${pkg.path}/cocoon.lock.json').readAsStringSync();
+    File('${pkg.path}/$lockFileName').readAsStringSync();
+
+String legacyLockFileOf(Directory pkg) =>
+    File('${pkg.path}/$legacyLockFileName').readAsStringSync();
+
+bool legacyLockExists(Directory pkg) =>
+    File('${pkg.path}/$legacyLockFileName').existsSync();
+
+SchemaLock lockOf(Directory pkg) => parseLockYaml(lockFileOf(pkg));
 
 bool migrationDirExists(Directory pkg) =>
     Directory('${pkg.path}/lib/cocoon_migrations').existsSync();
@@ -452,7 +473,7 @@ void main() {
 
     final exit = await migrate(pkg);
     expect(exit, 0);
-    final lock = SchemaLock.parse(lockFileOf(pkg));
+    final lock = lockOf(pkg);
     expect(lock.version, 2);
     final staff = lock.collections['Staff']!;
     expect(staff.mirrored, ['total']);
@@ -486,7 +507,7 @@ void main() {
         contains('2) drop staffId (its number is reserved forever)'),
       );
 
-      final lock = SchemaLock.parse(lockFileOf(pkg));
+      final lock = lockOf(pkg);
       expect(lock.version, 2);
       final staff = lock.collections['Staff']!;
       expect(staff.field('staffUid')!.number, 2); // keeps the old number
@@ -507,7 +528,7 @@ void main() {
       expect(exit, 0);
       expect(lastIo.out.toString(), contains('2) drop staffId'));
 
-      final lock = SchemaLock.parse(lockFileOf(pkg));
+      final lock = lockOf(pkg);
       final staff = lock.collections['Staff']!;
       expect(staff.field('staffUid')!.number, 3); // a fresh number
       expect(staff.reserved, [2]);
@@ -535,7 +556,7 @@ void main() {
       );
       final exit = await migrate(pkg, tty: true, lines: ['', '']);
       expect(exit, 0);
-      final lock = SchemaLock.parse(lockFileOf(pkg));
+      final lock = lockOf(pkg);
       final staff = lock.collections['Staff']!;
       expect(staff.field('staffUid')!.number, 2);
       expect(staff.field('tag')!.number, 3);
@@ -584,7 +605,7 @@ void main() {
       ); // staffUid is offered exactly once: not to `code`
       expect(out, contains('1) code2 (int)  rename, convert data'));
 
-      final lock = SchemaLock.parse(lockFileOf(pkg));
+      final lock = lockOf(pkg);
       expect(lock.version, 2);
       final staff = lock.collections['Staff']!;
       expect(staff.field('staffUid')!.number, 2); // rename keeps the number
@@ -642,7 +663,7 @@ void main() {
       final exit = await migrate(pkg); // non-interactive: nothing to ask
       expect(exit, 0);
 
-      final lock = SchemaLock.parse(lockFileOf(pkg));
+      final lock = lockOf(pkg);
       expect(lock.version, 2);
       final staff = lock.collections['Staff']!;
       expect(staff.field('staffId')!.number, 3);
@@ -746,7 +767,7 @@ class Ledger {
       final exit = await migrate(pkg); // non-interactive: nothing to ask
       expect(exit, 0);
 
-      final lock = SchemaLock.parse(lockFileOf(pkg));
+      final lock = lockOf(pkg);
       expect(lock.version, 2);
       final ledger = lock.collections['Ledger']!;
       expect(ledger.field('meta')!.number, 2);
@@ -834,7 +855,7 @@ class Ledger {
         contains('Change the field in two steps instead'),
       );
       // Nothing was written.
-      expect(SchemaLock.parse(lockFileOf(pkg)).version, 1);
+      expect(lockOf(pkg).version, 1);
     },
   );
 
@@ -912,7 +933,7 @@ class Ledger {
         args: ['--rename', 'Staff.staffId=staffUid'],
       );
       expect(exit, 0);
-      final lock = SchemaLock.parse(lockFileOf(pkg));
+      final lock = lockOf(pkg);
       expect(lock.collections['Staff']!.field('staffUid')!.number, 2);
       expect(migrationDirExists(pkg), isFalse);
     },
@@ -931,7 +952,7 @@ class Ledger {
         args: ['--drop', 'Staff.staffId', '--keep-zero', 'Staff.staffUid'],
       );
       expect(exit, 0);
-      final lock = SchemaLock.parse(lockFileOf(pkg));
+      final lock = lockOf(pkg);
       final staff = lock.collections['Staff']!;
       expect(staff.field('staffUid')!.number, 3);
       expect(staff.reserved, [2]);
@@ -948,12 +969,7 @@ class Ledger {
       );
       final exit = await migrate(pkg, args: ['--yes'], tty: true);
       expect(exit, 0);
-      expect(
-        SchemaLock.parse(
-          lockFileOf(pkg),
-        ).collections['Staff']!.field('staffUid')!.number,
-        2,
-      );
+      expect(lockOf(pkg).collections['Staff']!.field('staffUid')!.number, 2);
 
       // --yes cannot answer a drop: without candidates and without a flag it
       // still exits 2 on non-interactive stdin.
@@ -996,7 +1012,7 @@ class Ledger {
       );
       expect(
         lastIo.out.toString(),
-        contains('cocoon.lock.json was not written (--check).'),
+        contains('cocoon.lock was not written (--check).'),
       );
       expect(lockFileOf(pkg), staffV1Lock);
     },
@@ -1009,6 +1025,98 @@ class Ledger {
       final pkg = await tempPackage(models: staffV1Models, lock: staffV1Lock);
       final exit = await migrate(pkg, args: ['--check']);
       expect(exit, 0);
+    },
+  );
+
+  test(
+    'a legacy cocoon.lock.json is read, noted on stderr, and converted',
+    timeout: const Timeout(Duration(minutes: 2)),
+    () async {
+      final pkg = await tempPackage(
+        models: staffV1Models,
+        legacyLock: staffV1JsonLock,
+      );
+      final exit = await migrate(pkg);
+      expect(exit, 0, reason: lastIo.out.toString());
+      expect(
+        lastIo.err.toString(),
+        contains('reading the legacy cocoon.lock.json'),
+      );
+      // Converted: the YAML lock replaces the JSON, byte-identical to a
+      // native lock of the same schema, and no migration file is written.
+      expect(lockFileOf(pkg), staffV1Lock);
+      expect(legacyLockExists(pkg), isFalse);
+      expect(migrationDirExists(pkg), isFalse);
+      expect(
+        lastIo.out.toString(),
+        contains('Converted the legacy cocoon.lock.json to cocoon.lock'),
+      );
+    },
+  );
+
+  test(
+    '--check treats a pending JSON -> YAML conversion as would-change',
+    timeout: const Timeout(Duration(minutes: 2)),
+    () async {
+      final pkg = await tempPackage(
+        models: staffV1Models,
+        legacyLock: staffV1JsonLock,
+      );
+      final exit = await migrate(pkg, args: ['--check']);
+      expect(exit, 1);
+      expect(
+        lastIo.out.toString(),
+        contains(
+          'cocoon.lock.json would be converted to cocoon.lock '
+          '(schema version 1 is unchanged)',
+        ),
+      );
+      expect(
+        lastIo.out.toString(),
+        contains('cocoon.lock was not written (--check).'),
+      );
+      expect(legacyLockExists(pkg), isTrue);
+      expect(File('${pkg.path}/$lockFileName').existsSync(), isFalse);
+    },
+  );
+
+  test(
+    '--check reports the conversion alongside a schema change',
+    timeout: const Timeout(Duration(minutes: 2)),
+    () async {
+      final pkg = await tempPackage(
+        models: staffRenamedModels,
+        legacyLock: staffV1JsonLock,
+      );
+      final exit = await migrate(pkg, args: ['--check']);
+      expect(exit, 1);
+      final out = lastIo.out.toString();
+      expect(out, contains('The schema would change:'));
+      expect(
+        out,
+        contains('cocoon.lock.json would be converted to cocoon.lock.'),
+      );
+      expect(legacyLockFileOf(pkg), staffV1JsonLock); // nothing written
+    },
+  );
+
+  test(
+    'both lock files present is refused, nothing is touched',
+    timeout: const Timeout(Duration(minutes: 2)),
+    () async {
+      final pkg = await tempPackage(
+        models: staffV1Models,
+        lock: staffV1Lock,
+        legacyLock: staffV1JsonLock,
+      );
+      final exit = await migrate(pkg);
+      expect(exit, 1);
+      expect(
+        lastIo.out.toString(),
+        contains('Both cocoon.lock and cocoon.lock.json exist'),
+      );
+      expect(lockFileOf(pkg), staffV1Lock);
+      expect(legacyLockExists(pkg), isTrue);
     },
   );
 
@@ -1043,7 +1151,7 @@ class Ledger {
         contains('  3) Abort (add a default or make it nullable first)'),
       );
 
-      final lock = SchemaLock.parse(lockFileOf(pkg));
+      final lock = lockOf(pkg);
       expect(lock.version, 2);
       final staff = lock.collections['Staff']!;
       expect(staff.field('title')!.number, 3);
@@ -1100,7 +1208,7 @@ class Ledger {
       );
       final exit = await migrate(pkg, tty: true, lines: ['2']);
       expect(exit, 0, reason: lastIo.out.toString());
-      final lock = SchemaLock.parse(lockFileOf(pkg));
+      final lock = lockOf(pkg);
       expect(lock.collections['Staff']!.keepZero, ['title']);
       expect(migrationDirExists(pkg), isFalse); // no rewrite, no stub
 
@@ -1188,10 +1296,7 @@ class Staff {
         ).existsSync(),
         isTrue,
       );
-      expect(
-        SchemaLock.parse(lockFileOf(pkg)).collections['Staff']!.keepZero,
-        isEmpty,
-      );
+      expect(lockOf(pkg).collections['Staff']!.keepZero, isEmpty);
     },
   );
 
@@ -1206,9 +1311,7 @@ class Staff {
       final exit = await migrate(pkg, args: ['--keep-zero', 'Staff.title']);
       expect(exit, 0, reason: lastIo.out.toString());
       expect(migrationDirExists(pkg), isFalse);
-      expect(SchemaLock.parse(lockFileOf(pkg)).collections['Staff']!.keepZero, [
-        'title',
-      ]);
+      expect(lockOf(pkg).collections['Staff']!.keepZero, ['title']);
     },
   );
 
@@ -1228,10 +1331,7 @@ class Staff {
         ).existsSync(),
         isTrue,
       );
-      expect(
-        SchemaLock.parse(lockFileOf(pkg)).collections['Staff']!.keepZero,
-        isEmpty,
-      );
+      expect(lockOf(pkg).collections['Staff']!.keepZero, isEmpty);
 
       // Without a terminal --yes still refuses to decide (same rule as
       // renames): the exact flags come back with exit 2.
@@ -1593,7 +1693,7 @@ class Staff {
         lastIo.out.toString(),
         contains('Collection Team has no model anymore. Drop it'),
       );
-      final lock = SchemaLock.parse(lockFileOf(pkg));
+      final lock = lockOf(pkg);
       expect(lock.collections.keys, ['Staff']);
       expect(lock.version, 2);
 
@@ -1607,7 +1707,7 @@ class Staff {
         args: ['--drop-collection', 'Team'],
       );
       expect(flaggedExit, 0);
-      expect(SchemaLock.parse(lockFileOf(flagged)).collections.keys, ['Staff']);
+      expect(lockOf(flagged).collections.keys, ['Staff']);
     },
   );
 
@@ -1659,7 +1759,7 @@ class Staff {
 
       // The written lock is byte-for-byte the committed one.
       final committedLock = File(
-        '../cocoon_example/cocoon.lock.json',
+        '../cocoon_example/$lockFileName',
       ).readAsStringSync();
       expect(lockFileOf(pkg), committedLock);
     },
@@ -1727,14 +1827,28 @@ class Staff {
 /// field addition, one version back. The committed lock is its `migrate`
 /// output.
 String exampleV2Lock() {
-  final committed =
-      jsonDecode(File('../cocoon_example/cocoon.lock.json').readAsStringSync())
-          as Map<String, Object?>;
-  final collections = committed['collections']! as Map<String, Object?>;
-  final txn = collections['Txn']! as Map<String, Object?>;
-  (txn['fields']! as Map<String, Object?>).remove('meta');
-  committed['version'] = 2;
-  return '${const JsonEncoder.withIndent('  ').convert(committed)}\n';
+  final committed = parseLockYaml(
+    File('../cocoon_example/$lockFileName').readAsStringSync(),
+  );
+  final txn = committed.collections['Txn']!;
+  return lockYamlSource(
+    SchemaLock(
+      version: 2,
+      collections: {
+        ...committed.collections,
+        'Txn': CollectionSpec(
+          model: txn.model,
+          path: txn.path,
+          fields: txn.fields.where((f) => f.name != 'meta').toList(),
+          reserved: txn.reserved,
+          indexes: txn.indexes,
+          mirrored: txn.mirrored,
+          keepZero: txn.keepZero,
+        ),
+      },
+      embedded: committed.embedded,
+    ),
+  );
 }
 
 /// The example package's v1 lock: the current schema with `Txn.bookedOn`

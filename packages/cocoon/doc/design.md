@@ -53,7 +53,7 @@ on the docs site under **Cocoon**:
   read documents gives Hive-like hot reads while RAM stays capped. This
   requires one `Cocoon` instance to own the database file.
 - **Models are the schema**: field identity is the field number, pinned per
-  model in the committed `cocoon.lock.json`; reordering fields never
+  model in the committed `cocoon.lock`; reordering fields never
   matters. Adds, drops, reorders and index changes need no migration; renames
   are confirmed in the interactive `migrate` command; type changes move the
   field to a fresh number (the old reserved forever) and write a typed
@@ -336,6 +336,8 @@ executor, so it is deferred.
 | Added-required-field decisions: `migrate` asks when a new non-nullable field without a constructor default joins an existing collection (backfill stub vs recorded keep-zero vs abort; `--backfill`/`--keep-zero`/`--yes` for scripts), generated `BackfillMigration` runs over existing documents in the open transaction like any migration | done |
 | Post-upgrade compaction: `CocoonOptions.compactAfterUpgrade` (default on) runs one `VACUUM` after a storage-format upgrade that left > 20% of the file on the freelist, `onCompactionFailed` reports a failure without failing the open; measured at 1M and on a small file in `benchmarks/cocoon_rivals/STORAGE.md` | done |
 | Butterfly CLI shortcuts (`butterfly generate model --cocoon`, `butterfly cocoon migrate`/`build`): scaffold + delegate only, the CLI never imports `cocoon_generator` or reimplements generation/diff | done |
+| YAML `cocoon.lock` (replaces `cocoon.lock.json`): written deterministically by `migrate` like `pubspec.lock`, byte-stable, same in-memory shape and lock fingerprint; the builder and `migrate` fall back to the legacy JSON, both present is an error, `--check` flags a pending conversion; `SchemaLock.parse` reads both shapes | done |
+| `migrate` documented as a development tool, not a CI step (CI only builds; `--check` is the only migrate form the Butterfly CLI's MCP server exposes, and why) | done |
 | pub.dev packaging (both packages at 0.1.0: repository/issue_tracker/topics metadata, install + quick-start README with a runnable generator-free `example/`, CHANGELOG released, `dart pub publish --dry-run` verified) | done |
 | Publishing to pub.dev (maintainer: push, then `dart pub publish` in cocoon, then cocoon_generator) | planned |
 | Export/import streams (documents through the public API, NDJSON-shaped) | planned |

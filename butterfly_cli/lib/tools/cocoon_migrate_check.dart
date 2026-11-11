@@ -6,17 +6,23 @@ import 'package:butterfly_cli/tools/base.dart';
 import 'package:dart_mcp/client.dart';
 
 /// MCP tool running this project's `dart run cocoon_generator:migrate
-/// --check` — the read-only form of `butterfly cocoon migrate`. Output is
-/// captured (never inherited) because the MCP server's stdio carries the
-/// protocol traffic.
+/// --check` — the read-only form of `butterfly cocoon migrate`. It is the
+/// only exposed migrate tool on purpose: migrate is a development tool whose
+/// prompts (rename vs drop, backfill vs zero) need a human, so an agent gets
+/// the read-only check and runs the real `migrate` on its checkout with the
+/// flags when the check fails. Output is captured (never inherited) because
+/// the MCP server's stdio carries the protocol traffic.
 class CocoonMigrateCheckTool extends BaseTool {
   @override
   Tool get definition => Tool(
         name: 'cocoon_migrate_check',
         description: 'Check whether this project\'s Cocoon models match '
-            'cocoon.lock.json without writing anything (runs the project\'s '
+            'cocoon.lock without writing anything (runs the project\'s '
             'own `dart run cocoon_generator:migrate --check`). Exit code 1 '
-            'means the models changed and a real migrate is needed.',
+            'means the models changed and a real migrate is needed — run '
+            'the project\'s migrate locally (it is interactive on purpose: '
+            'rename/drop/backfill decisions keep stored data correct), '
+            'never generate migrations in CI.',
         inputSchema: ObjectSchema(
           description: 'No parameters',
           properties: {},

@@ -6,7 +6,6 @@
 /// These tests are pure Dart: no database involved.
 library;
 
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -79,12 +78,7 @@ void main() {
       status: TxnStatus.pending,
       createdAt: DateTime.utc(2026),
       rate: 1,
-      meta: {
-        'zebra': 'z',
-        'card': 'c',
-        'apple': 'a',
-        'mango': 'm',
-      },
+      meta: {'zebra': 'z', 'card': 'c', 'apple': 'a', 'mango': 'm'},
     );
     final ordered = Txn(
       bookedOn: 1,
@@ -93,12 +87,7 @@ void main() {
       status: TxnStatus.pending,
       createdAt: DateTime.utc(2026),
       rate: 1,
-      meta: const {
-        'apple': 'a',
-        'card': 'c',
-        'mango': 'm',
-        'zebra': 'z',
-      },
+      meta: const {'apple': 'a', 'card': 'c', 'mango': 'm', 'zebra': 'z'},
     );
     // Equal maps give equal bytes whatever order their entries were added.
     final bytes = txns.encode(shuffled);
@@ -268,9 +257,7 @@ void main() {
   });
 
   test('the generated schema version constant matches the committed lock', () {
-    final lock =
-        jsonDecode(File('cocoon.lock.json').readAsStringSync())
-            as Map<String, Object?>;
-    expect(cocoonSchemaVersion, lock['version']);
+    final lock = SchemaLock.parse(File('cocoon.lock').readAsStringSync());
+    expect(cocoonSchemaVersion, lock.version);
   });
 }

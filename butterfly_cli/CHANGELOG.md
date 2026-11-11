@@ -7,6 +7,9 @@
    build_runner build -d` with inherited stdio and unchanged exit codes.
  - **FEAT**: expose `generate_cocoon_model` and the read-only
    `cocoon_migrate_check` tools on the MCP server.
+ - **DOCS**: the `cocoon_migrate_check` tool description and the README state
+   why `migrate --check` is the only exposed migrate tool (migrate is a
+   development tool, not a CI step) and that the lock file is `cocoon.lock`.
  - **FIX**: restore the process working directory after `FrameworkService`
    tests change it.
 

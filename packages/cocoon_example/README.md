@@ -8,7 +8,7 @@ A small finance-style Cocoon app model, used as the end-to-end test bed for
 - `Txn` at `accounts/{accountId}/txns`, amounts in integer minor units;
 - `Split` at `accounts/{accountId}/txns/{txnId}/splits`.
 
-`cocoon.lock.json` is committed and maintained by
+`cocoon.lock` is committed and maintained by
 `dart run cocoon_generator:migrate`, never by hand: schema v1 stored
 `Txn.bookedOn` as an ISO date String at field number 1, and migrating it to
 the current yyyymmdd int produced `lib/cocoon_migrations/` — the committed

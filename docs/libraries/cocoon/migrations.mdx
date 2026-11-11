@@ -1,12 +1,15 @@
 ---
 title: Schema Migrations
-description: The committed cocoon.lock.json, the interactive migrate command, the flags for scripts, and the on-device migration runner.
+description: The committed cocoon.lock, the interactive migrate command, the flags for scripts, and the on-device migration runner.
 ---
 
 Cocoon never needs hand-written migrations. Field numbers are pinned by name
-in a committed `cocoon.lock.json`, so most schema changes need nothing at
+in a committed `cocoon.lock`, so most schema changes need nothing at
 all — and a type change needs exactly one conversion line that the on-device
-runner applies for you.
+runner applies for you. The lock is YAML, formatted like `pubspec.lock`; a
+project still carrying the legacy `cocoon.lock.json` is converted by the
+next `migrate` run (which writes `cocoon.lock`, deletes the JSON and asks
+you to commit both changes).
 
 ## What each change needs
 
@@ -23,7 +26,7 @@ runner applies for you.
 
 ## The two tools
 
-Two tools compare the models against the committed `cocoon.lock.json`:
+Two tools compare the models against the committed `cocoon.lock`:
 
 - **build_runner** (local and CI) only generates codecs, typed fields and
   queries. It never writes the lock or migrations; it **fails** when models
@@ -73,7 +76,7 @@ The command then writes the updated lock and, when needed, the migration
 file:
 
 ```text
-Wrote cocoon.lock.json (version 3).
+Wrote cocoon.lock (version 3).
 Wrote lib/cocoon_migrations/m0003_txn_currency_to_currency_code.dart.
 Next: implement the `upgrade...` functions in the new migration file, then run build_runner.
 Wrote lib/cocoon_migrations/migrations.dart.
@@ -135,7 +138,7 @@ change-log row per document, crash-safe, progress through
 records the decision in the lock so the question is never asked again. A
 brand-new collection asks nothing — it has no existing documents.
 
-## Flags for scripts and CI
+## Flags for scripts
 
 Scripts and pre-commit hooks drive the command without a terminal:
 
@@ -147,10 +150,11 @@ Scripts and pre-commit hooks drive the command without a terminal:
 | `--backfill Model.field` | Decide an added required field with a backfill stub, without the menu (repeatable). |
 | `--keep-zero Model.field` | Record the keep-the-zero decision for an added required field (repeatable). |
 | `--yes` | Accept the default answer of every rename menu; **never** covers drops; for an added required field it picks the default — a backfill stub, never a silent keep-zero. |
-| `--check` | Exit 1 when the run would change anything; writes nothing, and reports pending required-field decisions. |
+| `--check` | Exit 1 when the run would change anything; writes nothing, and reports pending required-field decisions and a pending `cocoon.lock.json` -> `cocoon.lock` conversion. |
 
 ```sh
-# Pre-commit gate: fail when the lock is out of date, never write it
+# Scripted run on a developer machine (never in CI): fail when the lock is
+# out of date, never write it
 dart run cocoon_generator:migrate --check
 ```
 
@@ -167,11 +171,17 @@ change, `2` usage error or missing non-interactive decision. Output is
 colored only when stdout is a terminal.
 
 <Warning>
-  **CI never generates migrations.** Keep the interactive `migrate` run (and
-  its answers) on the developer's machine; the lock and migration files are
-  committed artifacts. CI only runs `build_runner build`, which fails when
-  someone forgot to run `migrate` or left a stub unimplemented — a useful
-  gate is `dart run cocoon_generator:migrate --check` before the build.
+  **`migrate` is a development tool, not a CI step.** Run it on your machine
+  after changing a model, answer its questions, then review and commit
+  `cocoon.lock` and `lib/cocoon_migrations/` together. CI only builds:
+  `dart run build_runner build` fails when the models and the committed lock
+  disagree, so a model change that skipped `migrate` cannot pass CI — the fix
+  is always "run migrate locally and commit", never "run migrate in CI".
+  Generating migrations in a pipeline would skip the human decisions (rename
+  vs drop, backfill vs zero) that keep stored data correct. The
+  non-interactive flags exist for scripted runs on a developer machine (an AI
+  agent working in a checkout, say), and `--check` is read-only but redundant
+  in CI, because the build already fails.
 </Warning>
 
 ## The on-device runner

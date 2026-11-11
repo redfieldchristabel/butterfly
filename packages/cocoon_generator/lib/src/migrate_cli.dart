@@ -1,11 +1,11 @@
 /// The `dart run cocoon_generator:migrate` command.
 ///
 /// Diffs the models of the current package against its committed
-/// `cocoon.lock.json`, asks the developer only the questions a human must
-/// answer — which removed field was renamed to which new one, and whether a
-/// field or collection is really dropped — and writes the new lock plus,
-/// only when stored data must change, a numbered migration file under
-/// `lib/cocoon_migrations/`.
+/// `cocoon.lock` (falling back to the retired `cocoon.lock.json`), asks the
+/// developer only the questions a human must answer — which removed field
+/// was renamed to which new one, and whether a field or collection is
+/// really dropped — and writes the new lock plus, only when stored data
+/// must change, a numbered migration file under `lib/cocoon_migrations/`.
 ///
 /// The whole flow is injectable for tests: [runMigrate] takes the package
 /// root, the argv and a [MigrateIo] (a fake terminal), and returns the
@@ -20,6 +20,7 @@ import 'package:cocoon/cocoon.dart';
 import 'package:source_gen/source_gen.dart';
 
 import 'extract.dart';
+import 'lock_yaml.dart';
 
 /// Exit code 1: refused, `--check` would change, or the run was aborted.
 const _exitAborted = 1;
@@ -61,6 +62,10 @@ abstract interface class MigrateIo {
 
   /// Writes output (prompts, menus, results). Callers include newlines.
   void write(String text);
+
+  /// Writes a diagnostic note to stderr (fallback notices that are not part
+  /// of the command's result output).
+  void writeError(String text);
 }
 
 final class _StdMigrateIo implements MigrateIo {
@@ -75,6 +80,9 @@ final class _StdMigrateIo implements MigrateIo {
 
   @override
   void write(String text) => stdout.write(text);
+
+  @override
+  void writeError(String text) => stderr.write(text);
 }
 
 /// The parsed command line.
@@ -111,7 +119,8 @@ final class _Options {
   /// Drop confirmations are never covered: drops must be explicit flags.
   final bool yes;
 
-  /// `--check`: exit 1 when the lock would change; never writes.
+  /// `--check`: exit 1 when the lock would change (a pending
+  /// `cocoon.lock.json` -> `cocoon.lock` conversion included); never writes.
   final bool check;
 }
 
@@ -170,17 +179,35 @@ Future<int> _run(String? packageRoot, List<String> args, MigrateIo io) async {
 
   final (:models, :embedded, :classes, :modelLibraries) =
       await _extractDeclarations(libPath);
-  final lockFile = File('$root/cocoon.lock.json');
-  final lock = lockFile.existsSync()
-      ? SchemaLock.parse(lockFile.readAsStringSync())
+  final lockYamlFile = File('$root/$lockFileName');
+  final legacyJsonFile = File('$root/$legacyLockFileName');
+  if (lockYamlFile.existsSync() && legacyJsonFile.existsSync()) {
+    throw MigrateException(
+      'Both $lockFileName and $legacyLockFileName exist in $root. Delete '
+      'one of them — migrate maintains $lockFileName; '
+      '$legacyLockFileName is the retired JSON name — and run again.',
+    );
+  }
+  final hasLegacyJson = legacyJsonFile.existsSync();
+  if (hasLegacyJson) {
+    io.writeError(
+      'Note: no $lockFileName found; reading the legacy '
+      '$legacyLockFileName. This run converts it to $lockFileName.\n',
+    );
+  }
+  final lock = lockYamlFile.existsSync()
+      ? parseLockYaml(lockYamlFile.readAsStringSync())
+      : hasLegacyJson
+      ? SchemaLock.parse(legacyJsonFile.readAsStringSync())
       : SchemaLock.empty();
+  final convertLockFile = hasLegacyJson;
   final diff = SchemaDiff.compute(
     lock,
     [for (final model in models) model.declared],
     [for (final e in embedded) e.declared],
   );
 
-  if (diff.isEmpty) {
+  if (diff.isEmpty && !convertLockFile) {
     io.write(
       '${_color('Schema is up to date (version ${lock.version}).', _ansiGreen, io.stdoutIsTerminal)}\n',
     );
@@ -198,16 +225,26 @@ Future<int> _run(String? packageRoot, List<String> args, MigrateIo io) async {
     );
   }
   if (options.check) {
-    io.write(_describeChanges(diff));
-    final pending = _pendingRequiredFields(diff, classes);
-    if (pending.isNotEmpty) {
-      io.write('New required fields need a decision:\n');
-      for (final (collection, field) in pending) {
-        io.write('  - ${_requiredFieldLine(collection, field)}\n');
+    if (!diff.isEmpty) {
+      io.write(_describeChanges(diff));
+      final pending = _pendingRequiredFields(diff, classes);
+      if (pending.isNotEmpty) {
+        io.write('New required fields need a decision:\n');
+        for (final (collection, field) in pending) {
+          io.write('  - ${_requiredFieldLine(collection, field)}\n');
+        }
       }
     }
+    if (convertLockFile) {
+      io.write(
+        'The lock file would change: $legacyLockFileName would be converted '
+        'to $lockFileName'
+        '${diff.isEmpty ? ' (schema version ${lock.version} is unchanged)' : ''}'
+        '.\n',
+      );
+    }
     io.write(
-      '${_color('cocoon.lock.json was not written (--check).', _ansiYellow, io.stdoutIsTerminal)}\n',
+      '${_color('$lockFileName was not written (--check).', _ansiYellow, io.stdoutIsTerminal)}\n',
     );
     return _exitAborted;
   }
@@ -243,10 +280,7 @@ Future<int> _run(String? packageRoot, List<String> args, MigrateIo io) async {
       _wireTypeOf(type, '$model.$field');
     }
   }
-  lockFile.writeAsStringSync(newLock.toSource());
-  io.write(
-    '${_color('Wrote cocoon.lock.json (version ${newLock.version}).', _ansiGreen, io.stdoutIsTerminal)}\n',
-  );
+  _writeLockFile(root, newLock, convertLockFile, io);
 
   if (upgrades.isNotEmpty || decisions.backfills.isNotEmpty) {
     _writeMigrationFile(
@@ -923,6 +957,31 @@ String _describeChanges(SchemaDiff diff) {
 }
 
 // -- Writes -------------------------------------------------------------------
+
+/// Writes the committed lock as `cocoon.lock` (YAML), deleting the legacy
+/// `cocoon.lock.json` when this run converted it. The conversion message
+/// tells the developer to commit both changes and to point build.yaml's
+/// sources at the new name — the builder can only read assets the target's
+/// sources list.
+void _writeLockFile(
+  String root,
+  SchemaLock lock,
+  bool converted,
+  MigrateIo io,
+) {
+  File('$root/$lockFileName').writeAsStringSync(lockYamlSource(lock));
+  io.write(
+    '${_color('Wrote $lockFileName (version ${lock.version}).', _ansiGreen, io.stdoutIsTerminal)}\n',
+  );
+  if (converted) {
+    File('$root/$legacyLockFileName').deleteSync();
+    io.write(
+      'Converted the legacy $legacyLockFileName to $lockFileName: commit '
+      'both changes (the new file and the deletion), and switch '
+      "build.yaml's sources entry to $lockFileName.\n",
+    );
+  }
+}
 
 /// Writes `lib/cocoon_migrations/m<NNNN>_<summary>.dart` with one typed
 /// conversion stub per upgrade and one document-backfill stub per added

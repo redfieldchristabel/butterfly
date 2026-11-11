@@ -141,7 +141,7 @@ class _SchemaPanelState extends State<SchemaPanel> {
           child: Text(
             'The app opened without a schema lock, so pinned field numbers '
             'and reserved numbers are not available. Pass the parsed '
-            'cocoon.lock.json to Cocoon.open to see them here.',
+            'cocoon.lock to Cocoon.open to see them here.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ),

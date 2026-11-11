@@ -19,6 +19,7 @@ dependencies:
   cocoon: ^0.1.0
   glob: ^2.1.2
   source_gen: ^4.2.0
+  yaml: ^3.1.0
 
 dev_dependencies:
   # Pinned: 3.5.17+ pulls newer build_runner versions than this workspace

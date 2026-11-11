@@ -1,3 +1,21 @@
+## Unreleased
+
+- **`migrate` writes a YAML `cocoon.lock` now**, formatted like
+  `pubspec.lock` so reviews next to the migration files stay quiet; the
+  file is byte-stable — writing, reading and writing again is
+  byte-identical — and the lock's fingerprint is unchanged, so nothing
+  re-migrates. A project's legacy `cocoon.lock.json` is read as a fallback
+  and converted in place: `migrate` writes `cocoon.lock`, deletes the JSON,
+  and tells you to commit both changes and point build.yaml's sources at
+  the new name. Both files present is an error, never a guess; `--check`
+  counts a pending conversion as would-change; the builder reads either
+  name and refuses to guess when both exist.
+- **`migrate` is a development tool, not a CI step.** CI only builds: the
+  build fails while the models and the committed lock disagree, so a model
+  change that skipped `migrate` cannot pass CI. The non-interactive flags
+  exist for scripted runs on a developer machine, and `--check` is
+  read-only but redundant in CI because the build already fails.
+
 ## 0.1.0
 
 This package is the build_runner code generator for
@@ -5,7 +23,7 @@ This package is the build_runner code generator for
 Firestore-style local database on SQLite. For every `@Collection` and
 `@Embedded` model it writes the `CollectionAdapter`, the typed query handles
 (`Txn$.bookedOn`) and the canonical protobuf wire codec, with field numbers
-pinned by the committed `cocoon.lock.json`; the interactive `migrate`
+pinned by the committed `cocoon.lock`; the interactive `migrate`
 command maintains that lock and writes on-device conversion stubs. First
 published release; everything below is in it.
 
@@ -22,7 +40,7 @@ published release; everything below is in it.
   written back sorted by key.
 
 - The interactive `dart run cocoon_generator:migrate` command. It diffs the
-  models against the committed `cocoon.lock.json`, asks only what a human
+  models against the committed `cocoon.lock`, asks only what a human
   must answer (renames via a numbered best-first menu, plain `y/N` confirms
   for drops), refuses collection path moves, and writes the updated lock —
   plus, when a type change moved a field to a fresh number, a numbered
@@ -41,5 +59,5 @@ published release; everything below is in it.
   no longer trips it.
 - First version: build_runner codegen for `@Collection` and `@Embedded`
   classes. Emits the adapter, typed query handles and canonical wire codec
-  using field numbers from the committed `cocoon.lock.json`, plus
+  using field numbers from the committed `cocoon.lock`, plus
   `cocoonSchemaVersion`. Fails the build when models and lock disagree.

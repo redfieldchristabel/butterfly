@@ -7,7 +7,7 @@ database on SQLite. Standalone: no Butterfly packages required.
 For every `@Collection` model it generates the `CollectionAdapter`, typed
 query handles (`Txn$.bookedOn`, `Txn$.accountId`) and the canonical protobuf
 codec; for every `@Embedded` class, a nested-message codec. Field numbers come
-from the committed `cocoon.lock.json` at the package root, and the build
+from the committed `cocoon.lock` at the package root, and the build
 fails when the models and the lock disagree. The builder never writes the
 lock.
 
@@ -23,7 +23,7 @@ dev_dependencies:
   cocoon_generator: ^0.1.0
 ```
 
-Add `cocoon.lock.json` to the build sources (`build.yaml`), declare
+Add `cocoon.lock` to the build sources (`build.yaml`), declare
 `part '<file>.cocoon.dart';` in each model file, then run
 `dart run build_runner build -d`. Supported types, defaults and naming are
 documented in the Cocoon README ("Models and code generation"); a complete
@@ -32,7 +32,7 @@ working setup lives in
 
 ## Maintaining the lock: `migrate`
 
-You never write `cocoon.lock.json` by hand. When a model changes, the build
+You never write `cocoon.lock` by hand. When a model changes, the build
 fails and tells you to run:
 
 ```sh
@@ -61,7 +61,7 @@ against the committed lock, and asks only what a human must answer:
   writes a conversion stub. Moving a collection to a different path is
   refused.
 
-It then writes the updated `cocoon.lock.json` and — only when stored data
+It then writes the updated `cocoon.lock` and — only when stored data
 must change — a numbered migration file under `lib/cocoon_migrations/`
 (`m0002_....dart`, plus the `migrations.dart` list that collects every
 file). Implement the `upgrade...` functions in the new file — the build
@@ -81,6 +81,25 @@ final db = await Cocoon.open(
 `Cocoon.open` applies pending migrations once, in order, in one transaction;
 see the Cocoon README's "Schema migrations" section.
 
+The lock is YAML, formatted like `pubspec.lock` so reviews next to the
+migration files stay quiet. `migrate` reads a project's legacy
+`cocoon.lock.json` and converts it in place (writes `cocoon.lock`, deletes
+the JSON, and reminds you to commit both changes and to point build.yaml's
+sources at the new name); both files present is an error, never a guess.
+
+### A development tool, not a CI step
+
+Run `migrate` on your machine after changing a model, answer its questions,
+then review and commit `cocoon.lock` and `lib/cocoon_migrations/` together.
+CI only builds: `dart run build_runner build` fails when the models and the
+committed lock disagree, so a model change that skipped `migrate` cannot
+pass CI, and the fix is always "run migrate locally and commit" — never
+"run migrate in CI". Generating migrations in a pipeline would skip the
+human decisions (rename vs drop, backfill vs zero) that keep stored data
+correct. The non-interactive flags below exist for scripted runs on a
+developer machine (an AI agent working in a checkout, say); `--check` is
+read-only but redundant in CI, because the build already fails.
+
 ### Flags for scripts
 
 | Flag | Meaning |
@@ -91,7 +110,7 @@ see the Cocoon README's "Schema migrations" section.
 | `--backfill Model.field` | Decide an added required field with a backfill stub (repeatable). |
 | `--keep-zero Model.field` | Decide an added required field to keep its zero value; recorded in the lock (repeatable). |
 | `--yes` | Accept the default answer of every rename menu and of every new-required-field question (a backfill stub, never keep-zero); never covers drops. |
-| `--check` | Exit 1 if the run would change anything — pending required-field decisions included; writes nothing. |
+| `--check` | Exit 1 if the run would change anything — pending required-field decisions and a pending `cocoon.lock.json` -> `cocoon.lock` conversion included; writes nothing. |
 
 When stdin is not a terminal and a decision is missing, the command exits 2
 and lists the flags that would resolve it. Exit codes: 0 up to date or

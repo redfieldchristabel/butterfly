@@ -6,7 +6,7 @@ description: Annotate plain Dart classes with @Collection and let cocoon_generat
 In Cocoon, your model class **is** the schema. Annotate plain Dart classes
 and `cocoon_generator` (build_runner) generates the `CollectionAdapter`, the
 typed query handles and the canonical protobuf codec for each. Field numbers
-come from the committed `cocoon.lock.json`, never from field order — see
+come from the committed `cocoon.lock`, never from field order — see
 [Schema Migrations](/libraries/cocoon/migrations).
 
 ## The annotations
@@ -147,7 +147,7 @@ targets:
   $default:
     sources:
       - lib/**
-      - cocoon.lock.json
+      - cocoon.lock
       - $package$
 ```
 
@@ -181,7 +181,7 @@ final recent = await db.collection(accounts).doc('a1').collection(txns)
 
 <Info>
   The generated `*.cocoon.dart` and `lib/cocoon_schema.g.dart` files are
-  build outputs, not committed source. `cocoon.lock.json` **is** committed —
+  build outputs, not committed source. `cocoon.lock` **is** committed —
   it is the source of truth for field numbers.
 </Info>
 
@@ -216,7 +216,7 @@ Build errors say exactly what to fix:
 - **Subcollection indexes start with the path params** (`accountId` above):
   a scoped query always filters them, so an index without them can't serve
   it. An index without params serves collection-group queries.
-- The build fails when the models and `cocoon.lock.json` disagree:
+- The build fails when the models and `cocoon.lock` disagree:
 
   ```text
   Cocoon schema changed for Txn: run "dart run cocoon_generator:migrate" (added: currencyCode; removed: currency).

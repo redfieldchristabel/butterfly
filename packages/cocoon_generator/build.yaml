@@ -11,6 +11,8 @@ builders:
     target: ":cocoon_generator"
     import: "package:cocoon_generator/builder.dart"
     builder_factories: ["cocoonSchemaVersionBuilder"]
-    build_extensions: {"cocoon.lock.json": ["lib/cocoon_schema.g.dart"]}
+    build_extensions:
+      "cocoon.lock": ["lib/cocoon_schema.g.dart"]
+      "cocoon.lock.json": ["lib/cocoon_schema.g.dart"]
     auto_apply: dependents
     build_to: source

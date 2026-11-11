@@ -11,7 +11,7 @@ built on SQLite.
 - **Real queries**: indexed filters and sorts with keyset pagination, like
   Firestore: a query runs only when an index serves it.
 - **No hand-written migrations**: field numbers are pinned by name in a
-  committed `cocoon.lock.json`, so reordering or adding fields needs nothing,
+  committed `cocoon.lock`, so reordering or adding fields needs nothing,
   reopening the database reconciles tables, columns and indexes on its own,
   and a type change needs exactly one conversion line that the on-device
   runner applies for you.
@@ -20,7 +20,7 @@ built on SQLite.
 
 > Status: the storage engine, the change log, realtime watches, the
 > `cocoon_generator` codegen (with the interactive `migrate` command that
-> maintains `cocoon.lock.json`), the on-device migration runner and the
+> maintains `cocoon.lock`), the on-device migration runner and the
 > DevTools inspector are in. See [doc/design.md](doc/design.md).
 
 ## Install
@@ -72,7 +72,7 @@ await a1.delete(); // deletes a1 AND its whole subtree
 
 Annotate plain Dart classes and let `cocoon_generator` write the adapter,
 the typed query handles and the canonical codec. Field numbers come from the
-committed `cocoon.lock.json`, never from field order.
+committed `cocoon.lock`, never from field order.
 
 ```yaml
 # pubspec.yaml
@@ -89,7 +89,7 @@ targets:
   $default:
     sources:
       - lib/**
-      - cocoon.lock.json
+      - cocoon.lock
       - $package$
 ```
 
@@ -168,19 +168,31 @@ Rules the generator enforces (build errors say exactly what to fix):
 - **Subcollection indexes start with the path params** (`accountId` above):
   a scoped query always filters them, so an index without them can't serve
   it. An index without params serves collection-group queries.
-- The build fails when the models and `cocoon.lock.json` disagree:
+- The build fails when the models and `cocoon.lock` disagree:
   `Cocoon schema changed for <Model>: run "dart run cocoon_generator:migrate"`.
   The builder never writes the lock; the migrate command does — see the next
   section.
 
 ## Schema migrations
 
-Two tools compare the models against the committed `cocoon.lock.json`. The
+Two tools compare the models against the committed `cocoon.lock`. The
 build only *fails* when they disagree; `migrate` *fixes* the disagreement:
 
 ```sh
 dart run cocoon_generator:migrate
 ```
+
+**`migrate` is a development tool, not a CI step.** Run it on your machine
+after changing a model, answer its questions, then review and commit
+`cocoon.lock` and `lib/cocoon_migrations/` together. CI only builds:
+`dart run build_runner build` fails when the models and the committed lock
+disagree, so a model change that skipped `migrate` cannot pass CI — and the
+fix is always "run migrate locally and commit", never "run migrate in CI".
+Never generate migrations in a pipeline: it would skip the human decisions
+(rename vs drop, backfill vs zero) that keep stored data correct. The
+non-interactive flags exist for scripted runs on a developer machine (an AI
+agent working in a checkout, say); `--check` is read-only but redundant in
+CI, because the build already fails.
 
 It asks only what a human must answer. For every removed field with new
 fields alongside it, a numbered menu offers the rename candidates — best
@@ -264,7 +276,8 @@ Scripts and pre-commit hooks drive the command without a terminal:
 `--keep-zero Model.field` (decide an added required field without the
 menu; `--yes` picks the default — a backfill stub, never a silent
 keep-zero), `--check` (exit 1 when the lock would change, no writes; it
-reports pending required-field decisions), and a missing decision on
+reports pending required-field decisions and a pending `cocoon.lock.json`
+conversion), and a missing decision on
 non-interactive stdin exits 2 listing the flags that would resolve it. See
 the cocoon_generator README.
 
@@ -404,7 +417,7 @@ final txns = TxnAdapter();
 ```
 
 Field numbers are the identity of a field on disk (they will be pinned in
-`cocoon.lock.json`); write them in ascending order. Ready-made column
+`cocoon.lock`); write them in ascending order. Ready-made column
 factories: `FieldColumn.integer`, `real`, `boolean` (stored 0/1), `text`,
 `dateTime` (UTC microseconds), `enumerated` (name as text) and `blob`.
 
@@ -1153,13 +1166,13 @@ the app passed `schemaLock:` to `Cocoon.open`). Product builds never register
 the inspector. See the [DevTools Inspector](https://docs.page/butterfly/libraries/cocoon/inspector)
 guide for the panels and the `ext.cocoon.*` service extensions behind them.
 
-To hand the schema view the lock, pass the parsed `cocoon.lock.json` on open:
+To hand the schema view the lock, pass the parsed `cocoon.lock` on open:
 
 ```dart
 final db = await Cocoon.open(
   file,
   collections: [accounts, txns, splits],
-  schemaLock: SchemaLock.parse(File('cocoon.lock.json').readAsStringSync()),
+  schemaLock: SchemaLock.parse(File('cocoon.lock').readAsStringSync()),
 );
 ```
 
@@ -1206,7 +1219,7 @@ with the same code; `butterfly cocoon build` runs `dart run build_runner
 build -d` the same way. Both check your pubspec for `cocoon_generator` and
 `build_runner` first and print the exact `dart pub add` lines when something
 is missing — the CLI never edits your pubspec. In a project without a
-`cocoon.lock.json` yet, the first migrate just writes the initial lock and
+`cocoon.lock` yet, the first migrate just writes the initial lock and
 exits 0.
 
 ## Development

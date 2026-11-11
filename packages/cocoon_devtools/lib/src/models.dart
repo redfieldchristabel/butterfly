@@ -755,7 +755,7 @@ final class SchemaReport {
   /// The stored schema version, or `null` when the file predates locks.
   final int? schemaVersion;
 
-  /// The parsed `cocoon.lock.json` the app passed to `Cocoon.open`, or
+  /// The parsed `cocoon.lock` the app passed to `Cocoon.open`, or
   /// `null` when it did not.
   final Map<String, Object?>? lock;
 

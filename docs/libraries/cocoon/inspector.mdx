@@ -77,11 +77,11 @@ Top to bottom:
 ## Passing the schema lock
 
 The schema view shows the lock's field numbers and reserved numbers when the
-app hands the parsed `cocoon.lock.json` to `Cocoon.open`. Without it, the
+app hands the parsed `cocoon.lock` to `Cocoon.open`. Without it, the
 schema view shows only what the engine knows and says so:
 
 ```dart
-final lock = SchemaLock.parse(File('cocoon.lock.json').readAsStringSync());
+final lock = SchemaLock.parse(File('cocoon.lock').readAsStringSync());
 
 final db = await Cocoon.open(
   path,

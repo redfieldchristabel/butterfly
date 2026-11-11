@@ -3,7 +3,7 @@ import 'package:meta/meta_meta.dart';
 /// Marks a class as a Cocoon collection model.
 ///
 /// The model class is the schema: field names and types are read by the
-/// generator, and field numbers are pinned in `cocoon.lock.json`, so the
+/// generator, and field numbers are pinned in `cocoon.lock`, so the
 /// order of fields in the class never matters.
 ///
 /// ```dart
@@ -94,7 +94,7 @@ class Ignore {
 /// The embedded class follows the same rules as a collection model: one
 /// generative constructor whose parameters are named exactly like the stored
 /// final fields (named or positional), and the same supported field types.
-/// Its field numbers are pinned in `cocoon.lock.json` under its type name,
+/// Its field numbers are pinned in `cocoon.lock` under its type name,
 /// in a number space of its own.
 ///
 /// ```dart
