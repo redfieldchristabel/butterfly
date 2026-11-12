@@ -25,6 +25,7 @@ import 'query.dart';
 import 'refs.dart';
 import 'schema_sql.dart';
 import 'sqlite_executor.dart';
+import 'transaction_guard.dart';
 import 'watch.dart';
 import 'write_buffer.dart';
 
@@ -504,6 +505,9 @@ final class Cocoon {
         'was opened over a custom executor and has no file to copy',
       );
     }
+    // A backup reads a committed snapshot: inside a transaction body it
+    // would silently miss the transaction's own uncommitted writes.
+    checkNotInTransaction(this, 'Cocoon.backupTo', read: true);
     return BackupOperations.backupTo(
       sourcePath: source,
       targetPath: path,
@@ -635,9 +639,17 @@ final class Cocoon {
   /// the rest, rebuilds the deferred secondary indexes and resolves when
   /// everything is durable. See [BulkWriter] — this is the bulk-load path
   /// for imports far larger than [batch].
+  ///
+  /// Starting one inside a [runTransaction] body throws a
+  /// [TransactionMisuseError]: its chunks would wait forever for the write
+  /// lock the transaction holds. Queue through the transaction instead, or
+  /// start the writer after `runTransaction` returns.
   BulkWriter bulkWriter([
     BulkWriterOptions options = const BulkWriterOptions(),
-  ]) => BulkWriter(this, options);
+  ]) {
+    checkNotInTransaction(this, 'Cocoon.bulkWriter', read: false);
+    return BulkWriter(this, options);
+  }
 
   /// The root collection backed by a top-level [adapter].
   ///
@@ -673,8 +685,29 @@ final class Cocoon {
   /// Runs [body] inside one write transaction: reads see the transaction's
   /// own writes, and an exception rolls everything back — including the
   /// hot-document cache, which is only updated after a successful commit.
-  Future<R> runTransaction<R>(Future<R> Function(CocoonTransaction tx) body) =>
-      writeTx<R>((wtx) => body(CocoonTransaction(wtx)));
+  ///
+  /// Inside the body every database access goes through the
+  /// [CocoonTransaction] object. A call on the database itself —
+  /// `DocRef.set`/`get`/`delete`, `CollectionRef.add`, a query's
+  /// `get`/`count`, `getAll`, `batch().commit()`, a `BulkWriter`, a nested
+  /// [runTransaction] on this database — fails immediately with a
+  /// [TransactionMisuseError] instead of waiting forever for the write lock
+  /// the body already holds (writes) or silently reading committed data
+  /// without the transaction's own writes (reads). Calls on a DIFFERENT
+  /// open [Cocoon] (another database file) are allowed. Watching
+  /// (`DocRef.watch`, a query's `watch`) is allowed; a watch's first value
+  /// inside the body reflects committed data, and the transaction's writes
+  /// arrive with its commit event.
+  Future<R> runTransaction<R>(Future<R> Function(CocoonTransaction tx) body) {
+    if (currentScopeFor(this) != null) {
+      return Future.error(TransactionMisuseError.nested());
+    }
+    final scope = TransactionScope(this);
+    return runInTransactionScope(
+      scope,
+      () => writeTx<R>((wtx) => body(CocoonTransaction(wtx)), txScope: scope),
+    );
+  }
 
   /// Every database of [refs] in as few trips as possible: results come
   /// back in the same order as [refs], `null` at every position whose
@@ -704,6 +737,7 @@ final class Cocoon {
   Future<List<DocSnapshot<T>?>> getAll<T extends Object>(
     List<DocRef<T>> refs,
   ) async {
+    checkNotInTransaction(this, 'Cocoon.getAll', read: true);
     if (refs.isEmpty) {
       return const [];
     }
@@ -780,14 +814,18 @@ final class Cocoon {
   Future<R> writeTx<R>(
     Future<R> Function(WriteTx wtx) body, {
     bool logChanges = true,
+    TransactionScope? txScope,
   }) async {
     final stage = CacheStage();
-    final result = await _executor.writeTransaction((tx) async {
-      final wtx = WriteTx(this, tx, stage, logChanges: logChanges);
-      final out = await body(wtx);
-      await wtx.flush();
-      return out;
-    });
+    final result = await _endGuardAfter(
+      txScope,
+      () => _executor.writeTransaction((tx) async {
+        final wtx = WriteTx(this, tx, stage, logChanges: logChanges);
+        final out = await body(wtx);
+        await wtx.flush();
+        return out;
+      }),
+    );
     stage.applyTo(_cache);
     final touched = stage.takeTouched();
     if (touched.isNotEmpty) {
@@ -797,6 +835,22 @@ final class Cocoon {
       await _enforceChangeRetention();
     }
     return result;
+  }
+
+  /// Runs [action] and deactivates [scope] the moment it settles: the SQL
+  /// transaction inside has then ended (commit OR rollback), before the
+  /// cache apply, watch emit and retention that follow the commit — so
+  /// futures and timers the transaction body created that run later never
+  /// trip the guard.
+  Future<R> _endGuardAfter<R>(
+    TransactionScope? scope,
+    Future<R> Function() action,
+  ) async {
+    try {
+      return await action();
+    } finally {
+      scope?.deactivate();
+    }
   }
 
   /// The live stream behind [DocRef.watch].

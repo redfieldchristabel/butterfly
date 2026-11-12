@@ -5,6 +5,7 @@ import 'adapter.dart';
 import 'aggregate.dart';
 import 'cocoon.dart';
 import 'query.dart';
+import 'transaction_guard.dart';
 import 'write_buffer.dart';
 
 /// A document as read from the database: its [ref], its [id] and its decoded
@@ -68,15 +69,36 @@ final class DocRef<T extends Object> {
 
   /// Reads the document, or `null` when it does not exist. Reads are served
   /// from the bounded hot-document cache when possible.
-  Future<DocSnapshot<T>?> get() => _db.getDoc(this);
+  ///
+  /// Inside a [Cocoon.runTransaction] body use `tx.get` — calling this on
+  /// the database throws a [TransactionMisuseError]: a read here can never
+  /// see the transaction's own uncommitted writes.
+  Future<DocSnapshot<T>?> get() {
+    checkNotInTransaction(_db, 'DocRef.get', read: true);
+    return _db.getDoc(this);
+  }
 
   /// Upserts the document: inserts it, or replaces the stored value when a
   /// document with this id already exists.
-  Future<void> set(T value) => _db.putDoc(this, value);
+  ///
+  /// Inside a [Cocoon.runTransaction] body use `tx.set` — calling this on
+  /// the database throws a [TransactionMisuseError]: the write would wait
+  /// forever for the transaction's own write lock.
+  Future<void> set(T value) {
+    checkNotInTransaction(_db, 'DocRef.set', read: false);
+    return _db.putDoc(this, value);
+  }
 
   /// Deletes the document and its whole subtree (every document in
   /// subcollections below it).
-  Future<void> delete() => _db.deleteDoc(this);
+  ///
+  /// Inside a [Cocoon.runTransaction] body use `tx.delete` — calling this
+  /// on the database throws a [TransactionMisuseError]: the write would
+  /// wait forever for the transaction's own write lock.
+  Future<void> delete() {
+    checkNotInTransaction(_db, 'DocRef.delete', read: false);
+    return _db.deleteDoc(this);
+  }
 
   /// Watches the document.
   ///
@@ -126,22 +148,50 @@ final class CollectionRef<T extends Object> {
   CocoonQuery<T> query() => CocoonQuery<T>(_db, _adapter, path);
 
   /// Reads every document of the collection, in default (id) order.
-  Future<QueryPage<T>> get() => query().get();
+  ///
+  /// Inside a [Cocoon.runTransaction] body use `tx.getAll` — calling this
+  /// throws a [TransactionMisuseError]: the read can never see the
+  /// transaction's own uncommitted writes.
+  Future<QueryPage<T>> get() {
+    checkNotInTransaction(_db, 'CollectionRef.get', read: true);
+    return query().get();
+  }
 
   /// Counts every document of the collection, under the index rule.
-  Future<int> count() => query().count();
+  ///
+  /// Inside a [Cocoon.runTransaction] body use `tx.getAll` (or run the
+  /// count before the transaction) — calling this throws a
+  /// [TransactionMisuseError]: the count can never see the transaction's
+  /// own uncommitted writes.
+  Future<int> count() {
+    checkNotInTransaction(_db, 'CollectionRef.count', read: true);
+    return query().count();
+  }
 
   /// Adds [value] with a fresh time-ordered id and returns the new
   /// document's reference.
-  Future<DocRef<T>> add(T value) => _db.addDoc(this, value);
+  ///
+  /// Inside a [Cocoon.runTransaction] body use `tx.add` — calling this
+  /// throws a [TransactionMisuseError]: the write would wait forever for
+  /// the transaction's own write lock.
+  Future<DocRef<T>> add(T value) {
+    checkNotInTransaction(_db, 'CollectionRef.add', read: false);
+    return _db.addDoc(this, value);
+  }
 
   /// Reads many documents of this collection by id in one trip — sugar for
   /// `db.getAll([for (final id in ids) doc(id)])` with this collection's
   /// rules: results come back in [ids] order, `null` where a document does
   /// not exist, duplicates allowed, cache-first with one statement per chunk
   /// of scope keys. See [Cocoon.getAll].
-  Future<List<DocSnapshot<T>?>> getAll(Iterable<String> ids) =>
-      _db.getAll<T>([for (final id in ids) doc(id)]);
+  ///
+  /// Inside a [Cocoon.runTransaction] body use `tx.getAll` — calling this
+  /// throws a [TransactionMisuseError]: the read can never see the
+  /// transaction's own uncommitted writes.
+  Future<List<DocSnapshot<T>?>> getAll(Iterable<String> ids) {
+    checkNotInTransaction(_db, 'CollectionRef.getAll', read: true);
+    return _db.getAll<T>([for (final id in ids) doc(id)]);
+  }
 
   /// Starts a query filtered by [filter].
   CocoonQuery<T> where(QueryFilter filter) => query().where(filter);

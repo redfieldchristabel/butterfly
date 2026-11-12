@@ -12,6 +12,7 @@ import 'cocoon.dart';
 import 'naming.dart';
 import 'refs.dart';
 import 'schema_sql.dart';
+import 'transaction_guard.dart';
 
 /// Thrown when no declared (or implicit) index can serve a query's filters
 /// and sort order.
@@ -1335,7 +1336,16 @@ final class CocoonQuery<T extends Object> {
   CocoonQuery<T> allowFullScan() => _copy(fullScan: true);
 
   /// Runs the query and returns one page.
-  Future<QueryPage<T>> get() => _db.runQuery(this);
+  ///
+  /// Inside a [Cocoon.runTransaction] body this throws a
+  /// [TransactionMisuseError]: the page reads committed data only and can
+  /// never see the transaction's own uncommitted writes. Run the query
+  /// before the transaction (and pass the ids in), or watch the query and
+  /// update when the commit lands.
+  Future<QueryPage<T>> get() {
+    checkNotInTransaction(_db, 'CocoonQuery.get', read: true);
+    return _db.runQuery(this);
+  }
 
   /// Watches the query.
   ///
@@ -1365,7 +1375,14 @@ final class CocoonQuery<T extends Object> {
 
   /// Counts the matching documents, under the same index rule as [get].
   /// Sugar for `aggregate([count()])` — one `SELECT count(*)` statement.
-  Future<int> count() => _db.runCount(this);
+  ///
+  /// Inside a [Cocoon.runTransaction] body this throws a
+  /// [TransactionMisuseError]: the count reads committed data only and can
+  /// never see the transaction's own uncommitted writes.
+  Future<int> count() {
+    checkNotInTransaction(_db, 'CocoonQuery.count', read: true);
+    return _db.runCount(this);
+  }
 
   /// Computes aggregates over this query's results in one SQLite statement:
   /// Firestore's [count]/[sum]/[average], plus Cocoon's [min]/[max].
@@ -1509,7 +1526,14 @@ final class AggregateQuery<T extends Object> {
   final List<AggregateFunction<T>> specs;
 
   /// Runs the aggregation: one statement, no documents decoded.
-  Future<AggregateQuerySnapshot<T>> get() => _db.runAggregate(this);
+  ///
+  /// Inside a [Cocoon.runTransaction] body this throws a
+  /// [TransactionMisuseError]: the aggregation reads committed data only
+  /// and can never see the transaction's own uncommitted writes.
+  Future<AggregateQuerySnapshot<T>> get() {
+    checkNotInTransaction(_db, 'AggregateQuery.get', read: true);
+    return _db.runAggregate(this);
+  }
 
   /// Watches the aggregates.
   ///
@@ -1606,7 +1630,14 @@ final class AggregateGroupQuery<T extends Object> {
   /// Runs the group-by: one statement, no documents decoded. Groups come
   /// ordered by the keys ascending; groups whose key values are null sort
   /// first.
-  Future<List<AggregateGroup<T>>> get() => _db.runGroupAggregate(this);
+  ///
+  /// Inside a [Cocoon.runTransaction] body this throws a
+  /// [TransactionMisuseError]: the groups read committed data only and can
+  /// never see the transaction's own uncommitted writes.
+  Future<List<AggregateGroup<T>>> get() {
+    checkNotInTransaction(_db, 'AggregateGroupQuery.get', read: true);
+    return _db.runGroupAggregate(this);
+  }
 
   /// Watches the groups.
   ///

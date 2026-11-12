@@ -399,6 +399,38 @@ void main() {
     await db.close();
   });
 
+  test('transactions: inside the body every access goes through tx', () async {
+    final db = await Cocoon.open(
+      await tempDbPath(),
+      collections: [saccounts, stxns],
+    );
+    final a1 = db.collection(saccounts).doc('a1');
+    await a1.set(const SAccount(name: 'Acme'));
+
+    // WRONG (what the docs page warns about): a call on the database inside
+    // the body. It fails immediately with TransactionMisuseError — naming
+    // the operation and ending with a `Fix:` line — and rolls the body back.
+    await expectLater(
+      db.runTransaction((tx) async {
+        await a1.set(const SAccount(name: 'Wrong'));
+      }),
+      throwsA(
+        isA<TransactionMisuseError>()
+            .having((error) => error.operation, 'operation', 'DocRef.set')
+            .having((error) => error.message, 'message', contains('Fix: ')),
+      ),
+    );
+    expect((await a1.get())!.data.name, 'Acme');
+
+    // RIGHT: reads and writes through the transaction object.
+    await db.runTransaction((tx) async {
+      final snap = await tx.get(a1);
+      await tx.set(a1, SAccount(name: '${snap!.data.name} updated'));
+    });
+    expect((await a1.get())!.data.name, 'Acme updated');
+    await db.close();
+  });
+
   test('batch: set/update/delete/commit', () async {
     final db = await Cocoon.open(
       await tempDbPath(),

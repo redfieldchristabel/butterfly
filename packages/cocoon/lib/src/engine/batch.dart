@@ -2,6 +2,7 @@ import 'package:meta/meta.dart';
 
 import 'cocoon.dart';
 import 'refs.dart';
+import 'transaction_guard.dart';
 import 'write_buffer.dart';
 
 /// One queued [WriteBatch] operation.
@@ -102,9 +103,14 @@ final class WriteBatch {
   /// transaction. Committing an empty batch is a no-op: no transaction, no
   /// change rows, no watch event.
   ///
-  /// Throws a [StateError] when the batch was already committed.
+  /// Throws a [StateError] when the batch was already committed, and a
+  /// [TransactionMisuseError] when called inside a [Cocoon.runTransaction]
+  /// body of the same database — the commit would wait forever for the
+  /// transaction's own write lock. Queue through the transaction instead,
+  /// or commit the batch after `runTransaction` returns.
   Future<void> commit() async {
     _checkUsable();
+    checkNotInTransaction(_db, 'WriteBatch.commit', read: false);
     _committed = true;
     if (_ops.isEmpty) {
       return;

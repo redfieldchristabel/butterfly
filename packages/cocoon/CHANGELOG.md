@@ -1,5 +1,19 @@
 ## Unreleased
 
+- **Database calls inside a transaction fail fast with a readable error.**
+  Inside `runTransaction` every read and write must go through the `tx`
+  object. A call on the database itself — `doc.set`/`get`/`delete`,
+  `collection.add`/`get`/`count`/`getAll`, a query's `get`/`count`,
+  `db.getAll`, `batch().commit()`, creating or using a `BulkWriter`, a
+  nested `runTransaction`, or `backupTo` — now throws
+  `TransactionMisuseError` immediately, naming the operation and ending
+  with a one-line `Fix:` hint, instead of waiting forever for the
+  transaction's own write lock (writes) or silently reading committed data
+  without the transaction's writes (reads). The transaction rolls back like
+  any other error. Reads and writes on a different open `Cocoon` (another
+  database file) still work inside a body, and starting a `watch()` there
+  is allowed (its first value reflects committed data; the transaction's
+  writes arrive with its commit event).
 - **Single-field indexes go on the field: `@Indexed()`.** The annotation
   declares exactly `Index(['field'])` (or `Index(['-field'])` with
   `descending: true`, `unique: true` for a `UNIQUE` index) as if it were

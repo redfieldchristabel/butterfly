@@ -712,6 +712,15 @@ read-your-writes rules, with the same one-trip chunking as `db.getAll` —
 and caches nothing until the commit succeeds. `set`/`add`/`delete` outside
 a transaction each run in their own transaction.
 
+Inside the body every database access goes through `tx`. A call on the
+database itself — `doc.set`/`get`/`delete`, `collection.add`, a query's
+`get`/`count`, `db.getAll`, `batch().commit()`, a `BulkWriter`, a nested
+`runTransaction` — throws `TransactionMisuseError` immediately instead of
+waiting forever for the transaction's own write lock or silently reading
+committed data without its writes. A different open `Cocoon` (another file)
+is fine, and starting a `watch()` is allowed: its first value reflects
+committed data, and the transaction's writes arrive with its commit event.
+
 ## Bulk writes: WriteBatch
 
 For import-shaped work — hundreds to thousands of documents in one go —

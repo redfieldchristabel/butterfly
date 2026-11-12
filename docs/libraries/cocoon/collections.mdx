@@ -103,9 +103,43 @@ await db.runTransaction((tx) async {
 });
 ```
 
-`tx` supports `get`, `set`, `add` and `delete` (with the same cascade
-semantics). `set`/`add`/`delete` called outside a transaction each run in
-their own transaction.
+`tx` supports `get`, `getAll`, `set`, `add` and `delete` (with the same
+cascade semantics). `set`/`add`/`delete` called outside a transaction each
+run in their own transaction.
+
+### Inside a transaction, every access goes through `tx`
+
+A call on the database itself inside the body is a misuse, and Cocoon fails
+it immediately with a `TransactionMisuseError` (the message names the
+operation and ends with a `Fix:` line) instead of letting the app hang or
+read stale data silently:
+
+```dart
+// WRONG: waits forever for this transaction's own write lock (or, for a
+// read, silently returns committed data without the transaction's writes).
+await db.runTransaction((tx) async {
+  final snap = await txRef.get(); // DocRef.get throws
+  await txRef.set(snap!.data.copyWith(status: TxnStatus.posted));
+});
+
+// RIGHT: reads and writes through the transaction object.
+await db.runTransaction((tx) async {
+  final snap = await tx.get(txRef);
+  await tx.set(txRef, snap!.data.copyWith(status: TxnStatus.posted));
+});
+```
+
+The guard covers `DocRef.get`/`set`/`delete`, `CollectionRef.add`/`get`/
+`count`/`getAll`, a query's `get`/`count`, aggregates and group-bys,
+`db.getAll`, `batch().commit()`, creating or using a `BulkWriter`, a nested
+`db.runTransaction` on the same database, and `backupTo`. It is always on,
+debug and release. The error propagates out of the body like any other
+exception, so the transaction rolls back.
+
+Two things stay allowed inside a body: reads and writes on a DIFFERENT open
+`Cocoon` (another database file), and starting a `watch()` — a watch's
+first value inside the body reflects committed data, and the transaction's
+own writes arrive with its commit event.
 
 ## The hot-document cache
 

@@ -34,6 +34,7 @@ export 'src/engine/query.dart'
         maxAggregatesPerCall,
         maxGroupKeys;
 export 'src/engine/refs.dart';
+export 'src/engine/transaction_guard.dart' show TransactionMisuseError;
 export 'src/id.dart';
 export 'src/migration.dart';
 export 'src/path.dart';

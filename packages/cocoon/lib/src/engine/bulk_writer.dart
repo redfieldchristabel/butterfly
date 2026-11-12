@@ -7,6 +7,7 @@ import 'cocoon.dart';
 import 'naming.dart';
 import 'refs.dart';
 import 'schema_sql.dart';
+import 'transaction_guard.dart';
 
 /// Options for the bulk writer behind `db.bulkWriter()`.
 ///
@@ -181,8 +182,13 @@ final class BulkWriter {
   ///
   /// Throws an [ArgumentError] when [ref]'s adapter was not registered when
   /// the database was opened (the same validation a standalone `set` runs,
-  /// but at queue time), and a [StateError] after [close].
+  /// but at queue time), a [StateError] after [close], and a
+  /// [TransactionMisuseError] when called inside a [Cocoon.runTransaction]
+  /// body of the same database — a chunk commit would wait forever for the
+  /// transaction's own write lock.
   void set<T extends Object>(DocRef<T> ref, T value) {
+    _checkUsable();
+    checkNotInTransaction(_db, 'BulkWriter.set', read: false);
     _queue(ref, value, BatchOpKind.set);
   }
 
@@ -190,17 +196,22 @@ final class BulkWriter {
   ///
   /// The chunk fails when the document does not exist at commit time.
   /// Throws an [ArgumentError] at queue time for an unregistered adapter,
-  /// and a [StateError] after [close].
+  /// a [StateError] after [close], and a [TransactionMisuseError] when
+  /// called inside a [Cocoon.runTransaction] body of the same database.
   void update<T extends Object>(DocRef<T> ref, T value) {
+    _checkUsable();
+    checkNotInTransaction(_db, 'BulkWriter.update', read: false);
     _queue(ref, value, BatchOpKind.update);
   }
 
   /// Queues a delete of [ref] and its whole subtree.
   ///
   /// Throws an [ArgumentError] at queue time for an unregistered adapter,
-  /// and a [StateError] after [close].
+  /// a [StateError] after [close], and a [TransactionMisuseError] when
+  /// called inside a [Cocoon.runTransaction] body of the same database.
   void delete(DocRef<Object> ref) {
     _checkUsable();
+    checkNotInTransaction(_db, 'BulkWriter.delete', read: false);
     final entry = _db.registry.entryFor(ref.adapter);
     _enqueue(_QueuedOp(BatchOpKind.delete, entry, ref, null));
   }
@@ -210,9 +221,13 @@ final class BulkWriter {
   /// immediately when nothing is queued.
   ///
   /// Throws the chunk failure when a chunk already failed (its writes rolled
-  /// back; the writer is then unusable).
+  /// back; the writer is then unusable), and a [TransactionMisuseError]
+  /// when called inside a [Cocoon.runTransaction] body of the same
+  /// database — the chunk commit would wait forever for the transaction's
+  /// own write lock.
   Future<void> flush() {
     _checkUsable();
+    checkNotInTransaction(_db, 'BulkWriter.flush', read: false);
     if (_failure != null) {
       return Future.error(_failure!, _failureTrace);
     }
@@ -234,8 +249,12 @@ final class BulkWriter {
   ///
   /// If a chunk failed, [close] still rebuilds the deferred indexes (the
   /// database must not keep them dropped) and then rethrows that failure.
+  /// Closing inside a [Cocoon.runTransaction] body of the same database
+  /// throws a [TransactionMisuseError]: the flush and the index rebuild
+  /// would wait forever for the transaction's own write lock.
   Future<void> close() async {
     _checkUsable();
+    checkNotInTransaction(_db, 'BulkWriter.close', read: false);
     _closed = true;
     _drainEverything = true;
     _goal = _committed + _ops.length;

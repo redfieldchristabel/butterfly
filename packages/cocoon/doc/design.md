@@ -86,6 +86,42 @@ on the docs site under **Cocoon**:
   the same transaction, and every 2,000 queued rows), so a large
   transaction costs two isolate round trips per ~1,000 documents instead of
   two per document.
+- **Inside a transaction, every database access goes through the
+  transaction object — enforced, not advised.** A call on the database
+  itself inside a `runTransaction` body is wrong two ways: a write
+  (`DocRef.set`/`delete`, `CollectionRef.add`, `batch().commit()`, a
+  `BulkWriter`, a nested `runTransaction`) waits forever for the write lock
+  the body already holds — no error, the app just stops — and a read
+  (`DocRef.get`, a query's `get`/`count`, aggregates, `groupBy`,
+  `collectionGroup`, `db.getAll`, `backupTo`) runs on a read connection and
+  silently sees committed data only, never the transaction's own writes
+  (Firestore's rule is the same: inside a transaction, every read and
+  write goes through the transaction). The engine runs the body in a Zone
+  carrying a private `{db, active}` scope; the public entry points cost one
+  zone lookup and throw a `TransactionMisuseError extends StateError`
+  immediately — it names the operation (e.g. `DocRef.set`) and ends with a
+  one-line `Fix:` hint, like the missing-index message. The scope
+  deactivates the moment the SQL transaction ends (commit OR rollback),
+  before the cache apply, watch emit and retention, so futures and timers
+  the body created that run later never trip the guard. The check is
+  always on, debug and release: it prevents a hang, not a development-only
+  bug. Only the SAME `Cocoon` instance is guarded — reads and writes on a
+  different open `Cocoon` (another file) inside the body are allowed and
+  work — and starting a `watch()` is allowed (its first value inside the
+  body reflects committed data; the transaction's writes arrive with its
+  commit event). Internal engine paths (WriteTx, batch and bulk-writer
+  internals, watches, migrations, format migration, retention, the
+  inspector) deliberately bypass the guard: they either run inside the
+  transaction already or must keep reading committed data (watch pumps,
+  the inspector's DevTools views). Known upstream trap on the pinned
+  sqlite_async (0.14.8): a continuation registered inside the body still
+  carries the library's own internal lock-guard Zone, so a write it makes
+  through the SAME database after the transaction ended fails with a
+  `LockError` even though Cocoon's guard is inactive — reproduced with a
+  raw sqlite_async probe (no Cocoon involved); register such follow-up
+  work outside the body, or hop zones (`Zone.root.run`) around it.
+  Related later idea: a `tx.query(...)` that reads through the write
+  connection and sees the transaction's own writes (Status: planned).
 - **Bulk writes** go through `db.batch()` (`WriteBatch`): queue
   `set`/`update`/`delete` synchronously, commit as one write transaction
   with the same batched flush, one cache stage and one commit event.
@@ -374,6 +410,8 @@ executor, so it is deferred.
 | YAML `cocoon.lock` (replaces `cocoon.lock.json`): written deterministically by `migrate` like `pubspec.lock`, byte-stable, same in-memory shape and lock fingerprint; the builder and `migrate` fall back to the legacy JSON, both present is an error, `--check` flags a pending conversion; `SchemaLock.parse` reads both shapes | done |
 | `migrate` documented as a development tool, not a CI step (CI only builds; `--check` is the only migrate form the Butterfly CLI's MCP server exposes, and why) | done |
 | pub.dev packaging (both packages at 0.1.0: repository/issue_tracker/topics metadata, install + quick-start README with a runnable generator-free `example/`, CHANGELOG released, `dart pub publish --dry-run` verified) | done |
+| Transactions guard: database calls inside a `runTransaction` body (`DocRef`/`CollectionRef`/query/aggregate/getAll/batch commit/BulkWriter/nested `runTransaction`/`backupTo`) throw `TransactionMisuseError` immediately with the operation and a `Fix:` hint — write lock, stale reads, always on; a second `Cocoon` and `watch()` stay allowed inside a body | done |
+| `tx.query(...)` (read through the write connection, seeing the transaction's own writes — the fix for the stale-read rule's workaround) | planned |
 | Publishing to pub.dev (maintainer: push, then `dart pub publish` in cocoon, then cocoon_generator) | planned |
 | Export/import streams (documents through the public API, NDJSON-shaped) | planned |
 | Incremental backups (change-log-tailed deltas on top of `backupTo`) | planned |
