@@ -280,7 +280,7 @@ void main() {
               .having(
                 (e) => e.message,
                 'message',
-                contains("Add Index(['accountId', 'currency'])"),
+                contains("Add @Index(['accountId', 'currency'])"),
               )
               .having(
                 (e) => e.suggestedIndex,
@@ -305,10 +305,7 @@ void main() {
       final lines = error.message.split('\n');
       expect(lines.where((line) => line.startsWith('Fix: ')), hasLength(1));
       expect(lines.last, startsWith('Fix: dart run cocoon_generator:index'));
-      expect(
-        lines.last,
-        contains("writes Index(['accountId', 'currency'])"),
-      );
+      expect(lines.last, contains("writes @Index(['accountId', 'currency'])"));
     });
 
     test('a one-field descending suggestion fixes with @Indexed', () {

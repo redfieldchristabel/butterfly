@@ -126,7 +126,7 @@ A `MissingIndexException` names the index a query needs and ends with a
 ready fix:
 
 ```text
-Fix: dart run cocoon_generator:index add Txn accountId,-bookedOn (writes Index(['accountId', '-bookedOn']) in @Collection(indexes: [...]))
+Fix: dart run cocoon_generator:index add Txn accountId,-bookedOn (writes @Index(['accountId', '-bookedOn']) above the Txn class)
 ```
 
 Run exactly that:
@@ -142,10 +142,15 @@ validates every name (an unknown name exits 1 with a "did you mean"), and
 edits the model's source:
 
 - one field that is not a path param gets `@Indexed()` (or
-  `@Indexed(descending: true)`) on the field;
-- everything else — composites and path params — appends
-  `Index([...])` to the `@Collection(indexes: [...])` list, creating the
-  named argument when it is missing.
+  `@Indexed(descending: true)`, `@Indexed(unique: true)` with `--unique`) on
+  the field;
+- everything else — composites and path params — inserts ONE
+  `@Index([...])` line directly above the class declaration, after the
+  existing `@Collection(...)` and `@Index` lines. `indexes:` is never
+  touched, so a model whose list is built from a shared `const` variable
+  works like any other.
+
+`--unique` makes the added index UNIQUE within the collection.
 
 It then `dart format`s the edited file and prints the two next steps:
 
@@ -155,10 +160,31 @@ dart run build_runner build -d
 ```
 
 Re-running an index that is already declared in exactly that order changes
-nothing and says where it is declared. The edits are narrow: an `indexes:`
-list the command does not fully understand — built from a const variable, a
-spread or a non-literal part — or a field that already carries `@Indexed()`
-is refused with exit 1 and the exact `Index([...])` text to paste by hand.
+nothing and says where it is declared — through `indexes:`, as a stacked
+`@Index`, or as `@Indexed()` on the field; all three forms declare the same
+index. The edits are narrow: a field that is not a single-variable
+declaration, or that already carries a different `@Indexed()`, is refused
+with exit 1 and the exact `@Index([...])` text to paste by hand.
+
+### From the log: `--missing`
+
+On a phone the model files are on the device, but the log is text the
+developer already has. The batch form scans a saved debug log for every
+`Fix: dart run cocoon_generator:index add ...` line (any prefix: logcat
+tags, timestamps, `I/flutter (1234):`), dedupes them, and applies each
+through the same code path as the single command:
+
+```sh
+dart run cocoon_generator:index add --missing run.log   # a saved flutter run / adb logcat output
+cat run.log | dart run cocoon_generator:index add --missing -
+```
+
+Each index prints one line — `Added ...` (where), `Nothing to do: ...`
+(already declared, where), `refused: ...` (why) — then a summary and, once,
+the two next steps. Exit 0 when every index ended up declared, 1 when any
+was refused, 2 for usage errors; a log with no `Fix:` lines says so and
+exits 0. `--dry-run` (both forms) prints what would change and writes
+nothing.
 
 Like `migrate`, this is a development tool for your machine (or an AI agent
 working in a checkout), never a CI step. Exit codes: 0 added or already
@@ -166,6 +192,7 @@ declared, 1 refused (unknown name, unsupported shape, model not found), 2
 usage error. The flow is also importable as `runIndexAdd` (from
 `package:cocoon_generator/index.dart`) with an injectable terminal for
 tests; the Butterfly CLI forwards it as
-`butterfly cocoon index add <Model> <fields>`, and its MCP server exposes
+`butterfly cocoon index add <Model> <fields>` (`--missing` and `--dry-run`
+included, verbatim), and its MCP server exposes
 `index add` because — unlike `migrate`'s questions — it is exactly the
 source edit the asking agent wants.

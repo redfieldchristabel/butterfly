@@ -22,7 +22,7 @@ class CocoonIndexAddTool extends BaseTool {
             'editing its source (runs the project\'s own '
             '`dart run cocoon_generator:index add <Model> <fields>`). One '
             'field becomes @Indexed() on it; composites and path params '
-            'append Index([...]) to @Collection(indexes: [...]). Does not '
+            'insert a stacked @Index([...]) line above the class. Does not '
             'write the lock or generate code — afterwards run the project\'s '
             '`dart run cocoon_generator:migrate` and '
             '`dart run build_runner build -d`. Never run in CI.',

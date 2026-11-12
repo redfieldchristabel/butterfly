@@ -7,11 +7,14 @@ import 'package:meta/meta_meta.dart';
 /// order of fields in the class never matters.
 ///
 /// ```dart
-/// @Collection('accounts/{accountId}/txns', indexes: [
-///   Index(['accountId', '-bookedOn']),
-/// ])
+/// @Collection('accounts/{accountId}/txns')
+/// @Index(['accountId', '-bookedOn'])
 /// class Txn { ... }
 /// ```
+///
+/// Composite indexes are usually stacked `@Index` lines above the class;
+/// [indexes] is the same thing written as a list — handy for a shared
+/// `const` list or for keeping every declaration inside the one annotation.
 @Target({TargetKind.classType})
 class Collection {
   /// Marks the annotated class as a Cocoon collection at [path] with
@@ -23,17 +26,44 @@ class Collection {
   final String path;
 
   /// Indexes Cocoon creates and keeps in sync with this declaration.
+  ///
+  /// The alternative is stacking [Index] annotations above the class — both
+  /// declare the same indexes, and an index declared in both places (or
+  /// twice in either) is still one index.
   final List<Index> indexes;
 }
 
-/// A composite index over model fields and path params.
+/// One index over model fields and path params, stacked above the model's
+/// class declaration.
 ///
-/// Prefix a field with `-` to sort it descending. The document id is always
-/// appended as the final tiebreaker so keyset pagination stays stable.
+/// ```dart
+/// @Collection('accounts/{accountId}/txns')
+/// @Index(['accountId', '-bookedOn'])
+/// @Index(['currency', 'amountMinor'], unique: true)
+/// class Txn {
+///   @Indexed()
+///   final String currency;
+///   ...
+/// }
+/// ```
+///
+/// Field (or path param) names in sort order; a `-` prefix sorts that part
+/// descending. The document id is always appended as the final tiebreaker so
+/// keyset pagination stays stable. [unique] creates a `UNIQUE` index.
+///
+/// Dart allows the same annotation repeated: every `@Index` line on the
+/// class is read, in source order. An index declared several ways — stacked
+/// here, inside `@Collection(indexes: [...])`, or (for one field) as
+/// [Indexed] on the field — is ONE index: the canonical form is the
+/// identity, so moving a declaration between the forms changes nothing (no
+/// schema version bump, no rebuild, no lock change).
 ///
 /// For an index over ONE model field, prefer [Indexed] on the field itself;
-/// this class is for composites (two or more parts) and for indexes over path
-/// params.
+/// this annotation is for composites (two or more parts) and for indexes
+/// over path params — a single-field `@Index` is equivalent, just less
+/// local. Only valid on a [Collection] class; anywhere else is a generator
+/// error naming the class.
+@Target({TargetKind.classType})
 class Index {
   /// Indexes [fields] in order; set [unique] to make the combination unique
   /// within the collection.
@@ -48,22 +78,24 @@ class Index {
 
 /// Indexes a single field: the annotation declares the one-field index
 /// `Index(['field'])` (or `Index(['-field'])` when [descending]) exactly as
-/// if it were written in `@Collection(indexes: [...])`.
+/// if it were written in `@Collection(indexes: [...])` or as a stacked
+/// `@Index` above the class.
 ///
-/// For one field prefer this over the class-level [Index] list: the
-/// declaration sits on the field it indexes, and the generator produces the
-/// same index either way — same canonical form, same physical index name, no
-/// schema version bump when a one-field index moves between the two. Composite
-/// indexes (two or more parts, or any path param) stay on the class: path
-/// params are not fields and cannot carry this annotation.
+/// For one field prefer this over the class-level [Index]: the declaration
+/// sits on the field it indexes, and the generator produces the same index
+/// any way it is declared — same canonical form, same physical index name,
+/// no schema version bump when a one-field index moves between the field,
+/// a stacked `@Index` and `@Collection(indexes: [...])`. Composite indexes
+/// (two or more parts, or any path param) go above the class as stacked
+/// [Index] lines (or into `indexes:`): path params are not fields and cannot
+/// carry this annotation.
 ///
 /// ```dart
-/// @Collection('accounts/{accountId}/txns', indexes: [
-///   Index(['accountId', '-bookedOn']),
-/// ])
+/// @Collection('accounts/{accountId}/txns')
+/// @Index(['accountId', '-bookedOn'])
 /// class Txn {
 ///   @Indexed()
-///   final String currency; // same index as Index(['currency']) on the class
+///   final String currency; // same index as Index(['currency']) anywhere
 ///   ...
 /// }
 /// ```

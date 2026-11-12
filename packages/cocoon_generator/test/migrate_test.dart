@@ -35,17 +35,24 @@ final class FakeTerminal implements MigrateIo {
   final StringBuffer err = StringBuffer();
   Queue<String> _lines = Queue<String>();
 
-  /// Prepares the terminal for one [migrate] call.
+  /// The text `index add --missing -` reads (the piped stdin).
+  String pipedInput = '';
+
+  /// Prepares the terminal for one [migrate] or [runIndexAdd] call.
   void reset(List<String> lines, {required bool tty}) {
     _lines = Queue<String>.of(lines);
     out.clear();
     err.clear();
+    pipedInput = '';
     stdinIsTerminal = tty;
     stdoutIsTerminal = tty;
   }
 
   @override
   String readLine() => _lines.isEmpty ? '' : _lines.removeFirst();
+
+  @override
+  Future<String> readAll() async => pipedInput;
 
   @override
   void write(String text) => out.write(text);

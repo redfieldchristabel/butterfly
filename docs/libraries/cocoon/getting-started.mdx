@@ -72,10 +72,8 @@ class Account {
   final bool active;
 }
 
-@Collection(
-  'accounts/{accountId}/txns',
-  indexes: [Index(['accountId', '-bookedOn'])],
-)
+@Collection('accounts/{accountId}/txns')
+@Index(['accountId', '-bookedOn'])
 class Txn {
   const Txn({required this.bookedOn, required this.amountMinor, this.memo});
   final int bookedOn; // yyyymmdd
@@ -86,9 +84,9 @@ class Txn {
 
 `@Collection` marks the model and its path (`{param}` segments are path
 params). An index over one field sits on the field itself: `@Indexed()` on
-`name` declares exactly `Index(['name'])`. `Index` on the class declares the
-composite indexes (two or more parts, or path params) queries are served
-from. The full annotation set and the generator's rules live in
+`name` declares exactly `Index(['name'])`. Composite indexes (two or more
+parts, or path params) stack as `@Index` lines above the class — queries are
+served from them. The full annotation set and the generator's rules live in
 [Models & Code Generation](/libraries/cocoon/models).
 
 ## Generate the code
@@ -161,8 +159,8 @@ final recent = await a1.collection(txns)
 
 Every query needs an index that serves it — the one declared above
 (`accountId`, newest `bookedOn` first) serves this — otherwise `get()`
-throws a `MissingIndexException` spelling the `Index([...])` to declare.
-Filters, keyset pagination and the index rule are covered in
+throws a `MissingIndexException` spelling the `@Index([...])` to stack above
+the class. Filters, keyset pagination and the index rule are covered in
 [Queries & Indexes](/libraries/cocoon/queries).
 
 ## Watch

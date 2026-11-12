@@ -42,7 +42,8 @@ import 'package:cocoon/cocoon.dart';
 
 part 'models.cocoon.dart';
 
-@Collection('accounts/{accountId}/txns', indexes: [Index(['accountId', '-bookedOn'])])
+@Collection('accounts/{accountId}/txns')
+@Index(['accountId', '-bookedOn'])
 class Txn {
   const Txn({required this.bookedOn, required this.amountMinor});
   final int bookedOn; // yyyymmdd
@@ -106,15 +107,14 @@ class Address {
 @Collection('accounts')
 class Account {
   const Account({required this.name, this.tags = const [], this.address});
-  @Indexed() // same as Index(['name']) on the class
+  @Indexed() // same as Index(['name']) anywhere on Account
   final String name;
   final List<String> tags;
   final Address? address;
 }
 
-@Collection('accounts/{accountId}/txns', indexes: [
-  Index(['accountId', '-bookedOn']),
-])
+@Collection('accounts/{accountId}/txns')
+@Index(['accountId', '-bookedOn'])
 class Txn {
   const Txn({required this.bookedOn, required this.amountMinor, this.memo});
   final int bookedOn; // yyyymmdd
@@ -160,15 +160,16 @@ Rules the generator enforces (build errors say exactly what to fix):
 - `@Indexed()` on a field declares the one-field index `Index(['field'])`
   (or `Index(['-field'])` with `descending: true`, `unique: true` for a
   `UNIQUE` index) exactly as if it were written on the class. The generator
-  merges field-level and class-level indexes into one list — an index
-  declared both ways is one index — and the physical index name comes from
-  the canonical form, so moving a one-field index from the class to the
-  field changes nothing: no schema version bump, no rebuild, no lock
-  change. Allowed on the types an index field allows (`int`, `double`,
+  merges field-level and class-level declarations into one list — an index
+  declared in any mix of the three forms (`indexes:`, a stacked `@Index`
+  line, `@Indexed()` on the field) is one index — and the physical index
+  name comes from the canonical form, so moving an index between the forms
+  changes nothing: no schema version bump, no rebuild, no lock change.
+  Allowed on the types an index field allows (`int`, `double`,
   `bool`, `String`, `DateTime`, `Uint8List`, enums); a list, map, embedded
   class or an `@Embedded`-class field is a build error naming the field and
-  the supported types. Path params cannot carry it; they stay in
-  class-level composites.
+  the supported types. Path params cannot carry it; they stay on the class
+  (a stacked `@Index` line or `indexes:`).
 - `@Mirrored()` on a field copies it into its own `f_` column — aggregates
   and `groupBy` read it — without creating an index. Allowed on the types an
   index field allows (`int`, `double`, `bool`, `String`, `DateTime`,
@@ -508,6 +509,14 @@ enabled — a release build throws like the default, so a forgotten
 `.allowFullScan()` can never silently degrade a shipped query. The fallback
 never creates an index at runtime.
 
+The loop from the log to the index: run the app in debug with the fallback
+on, save the output (`flutter run`, `flutter logs`, `adb logcat`, a test or
+Patrol run), then feed the whole file to the batch form
+`dart run cocoon_generator:index add --missing run.log` (or `-` for stdin).
+It applies every `Fix:` line the log names — any prefix, deduped — one
+result line per index, then a summary; `--dry-run` (both forms) prints
+without writing. A development tool like `migrate`, never a CI step.
+
 ```dart
 final q = a1.collection(txns)
     .where(txnBookedOn.isGreaterThanOrEqualTo(20260101))
@@ -590,9 +599,8 @@ and it gets the same `f_` column (same type mapping, nullability and CHECK
 as an index field) with no index over it:
 
 ```dart
-@Collection('accounts/{accountId}/txns', indexes: [
-  Index(['accountId', '-bookedOn']),
-])
+@Collection('accounts/{accountId}/txns')
+@Index(['accountId', '-bookedOn'])
 class Txn {
   @Mirrored()
   final int amountMinor; // sum(...) works; where(amountMinor > x) needs an Index
@@ -603,9 +611,9 @@ class Txn {
 
 Aggregates and `groupBy` read a mirrored column exactly like an indexed one.
 A `where`/`orderBy` on it still follows the index rule —
-`MissingIndexException` suggests the `Index([...])`, `.allowFullScan()`
+`MissingIndexException` suggests the `@Index([...])`, `.allowFullScan()`
 opts out — and the "field has no column" error names both fixes:
-`@Mirrored()` for totals and groups, an `Index([...])` when a query also
+`@Mirrored()` for totals and groups, an `@Index([...])` when a query also
 filters or sorts on the field. A field that is both mirrored and indexed is
 just indexed: one column, one index, no duplicate. `bulkWriter()` fills
 mirrored columns like any other; there is no index to defer, so
@@ -1249,9 +1257,10 @@ butterfly cocoon migrate
 project's `dart run cocoon_generator:migrate` with inherited stdio (the
 interactive rename/drop menus work exactly as when run directly) and exits
 with the same code; `butterfly cocoon build` runs `dart run build_runner
-build -d` the same way. `butterfly cocoon index add <Model> <fields>` forwards
-to `dart run cocoon_generator:index add` — the one-line fix a
-`MissingIndexException` names: run it, then the migrate and build commands it
+build -d` the same way. `butterfly cocoon index add <Model> <fields>`
+forwards to `dart run cocoon_generator:index add` — the one-line fix a
+`MissingIndexException` names — including its `--missing`, `--dry-run` and
+`--unique` flags, verbatim: run it, then the migrate and build commands it
 prints. All three check your pubspec for `cocoon_generator` and
 `build_runner` first and print the exact `dart pub add` lines when something
 is missing — the CLI never edits your pubspec. In a project without a

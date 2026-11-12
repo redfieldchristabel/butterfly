@@ -131,6 +131,37 @@ void main() {
       expect(call.inheritedStdio, isTrue);
     });
 
+    test('forwards --missing and --dry-run verbatim', () async {
+      final process = MockProcessRunner();
+      final runner = _runner(process, <int>[]);
+      await runner.run(['cocoon', 'index', 'add', '--missing', 'log.txt']);
+
+      final call = process.calls.first;
+      expect(
+          call.arguments,
+          equals([
+            'run',
+            'cocoon_generator:index',
+            'add',
+            '--missing',
+            'log.txt',
+          ]));
+      expect(call.inheritedStdio, isTrue);
+
+      await runner
+          .run(['cocoon', 'index', 'add', 'Txn', 'amountMinor', '--dry-run']);
+      expect(
+          process.calls.last.arguments,
+          equals([
+            'run',
+            'cocoon_generator:index',
+            'add',
+            'Txn',
+            'amountMinor',
+            '--dry-run',
+          ]));
+    });
+
     test('propagates a failing exit code', () async {
       final exits = <int>[];
       final runner = _runner(MockProcessRunner()..nextExitCode = 1, exits);

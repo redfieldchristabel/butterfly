@@ -49,17 +49,17 @@ the declaration it would write:
 
 ```text
 MissingIndexException: No index serves this query on Txn
-(accounts/{accountId}/txns). Add Index(['accountId', '-memo']) to its
-@Collection(indexes: [...]), or call .allowFullScan() to read it anyway.
-Fix: dart run cocoon_generator:index add Txn accountId,-memo (writes Index(['accountId', '-memo']) in @Collection(indexes: [...]))
+(accounts/{accountId}/txns). Add @Index(['accountId', '-memo']) above its
+@Collection class, or call .allowFullScan() to read it anyway.
+Fix: dart run cocoon_generator:index add Txn accountId,-memo (writes @Index(['accountId', '-memo']) above the Txn class)
 ```
 
 Run that command and it declares the index — `@Indexed()` on the field when
-it is a single model field, an appended `Index([...])` for composites and
-path params — then prints the two follow-up commands (`migrate`, then
-`build_runner build -d`). Adding an index to an existing collection changes
-the lock version, so `migrate` comes first. It is a development tool like
-`migrate`, never a CI step.
+it is a single model field, a stacked `@Index([...])` line above the class
+for composites and path params — then prints the two follow-up commands
+(`migrate`, then `build_runner build -d`). Adding an index to an existing
+collection changes the lock version, so `migrate` comes first. It is a
+development tool like `migrate`, never a CI step.
 
 An index serves a query when it has, in order:
 
@@ -114,6 +114,36 @@ default: the query throws, so a forgotten `.allowFullScan()` can never
 silently degrade a shipped query. Multi-range and no-anchor queries throw
 under every mode — there is no index to suggest, so there is nothing to
 debug-scan.
+
+### From the log to the index: `--missing`
+
+On a phone the model files are not on the device, but the log is text you
+already have. The loop: run the app in debug with the fallback on, save the
+output (`flutter run`, `flutter logs`, `adb logcat`, a test or Patrol run),
+then feed the whole file to the batch form:
+
+```sh
+dart run cocoon_generator:index add --missing run.log   # or - for stdin
+```
+
+It scans for every `Fix: dart run cocoon_generator:index add ...` line — any
+prefix is fine (logcat tags, timestamps, `I/flutter (1234):`) — dedupes
+them, and applies each through the same code path as the single command,
+one result line per index (`Added ...` / `Nothing to do: ...` / `refused:
+...`), then a summary. Exit 0 when every index ended up declared, 1 when any
+was refused. `--dry-run` (both forms) prints what would change and writes
+nothing. Like `migrate`, a development tool — never a CI step.
+
+```text
+Added @Index(['accountId', '-memo']) above the Txn class in lib/models.dart (dart format applied).
+Added @Indexed() on amountMinor to Txn in lib/models.dart (dart format applied).
+Nothing to do: Index(['currency']) is already declared on Txn as a stacked @Index above the class.
+refused: Txn has no field or path param named "currenci". Did you mean "currency"?
+2 added, 1 already declared, 1 refused, of 4 in run.log.
+```
+
+Then `migrate`, then `build_runner build -d` — the command prints them for
+you.
 
 ## Collection-group queries
 

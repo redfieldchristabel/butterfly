@@ -12,6 +12,7 @@
 /// process exit code.
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:analyzer/dart/analysis/analysis_context_collection.dart';
@@ -60,6 +61,10 @@ abstract interface class MigrateIo {
   /// input yields `''`, which always means "the default answer".
   String readLine();
 
+  /// Reads every remaining input to the end — the log text
+  /// `index add --missing -` scans. Only that flow calls it.
+  Future<String> readAll();
+
   /// Writes output (prompts, menus, results). Callers include newlines.
   void write(String text);
 
@@ -77,6 +82,9 @@ final class _StdMigrateIo implements MigrateIo {
 
   @override
   String readLine() => stdin.readLineSync() ?? '';
+
+  @override
+  Future<String> readAll() async => stdin.map(utf8.decode).join();
 
   @override
   void write(String text) => stdout.write(text);

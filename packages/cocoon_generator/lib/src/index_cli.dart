@@ -5,22 +5,34 @@
 /// exactly like `migrate`), validates every field and path-param name, and
 /// edits the model's source: a one-field index over a model field becomes
 /// `@Indexed()` (or `@Indexed(descending: true)`) on that field; everything
-/// else — composites and path params — appends `Index([...])` to the
-/// `@Collection(indexes: [...])` list, creating the named argument when it is
-/// missing. The edited file is `dart format`ed, and the command prints the
-/// two follow-up commands (`migrate`, then `build_runner`). It is a
+/// else — composites and path params — becomes one `@Index([...])` line
+/// stacked directly above the class declaration, after the existing
+/// annotations. `@Collection(indexes: [...])` is never touched: a model may
+/// declare its indexes there (a shared `const` list, say), and the command
+/// still works. The edited file is `dart format`ed, and the command prints
+/// the two follow-up commands (`migrate`, then `build_runner`). It is a
 /// development tool like `migrate`, never a CI step.
 ///
-/// Narrow edits only: an `indexes:` list the command does not fully
-/// understand (a spread, a const variable, a non-literal part) or a field
-/// carrying another `@Indexed()` is refused with exit code 1 and the exact
-/// `Index([...])` text to paste by hand.
+/// The command is idempotent across all three declaration forms: an index
+/// already declared through `indexes:`, a stacked `@Index` or `@Indexed()` is
+/// a no-op that names where it is declared. Narrow edits only: a field that
+/// is not a single-variable declaration, or that already carries a different
+/// `@Indexed()`, is refused with exit code 1 and the exact `@Index([...])`
+/// text to paste by hand.
+///
+/// `--missing <file|->` is the batch form: it scans TEXT (a saved
+/// `flutter run` / `flutter logs` / `adb logcat` / test output — any line
+/// prefix) for every `Fix: dart run cocoon_generator:index add ...` line,
+/// dedupes them, and applies each through the same code path as the single
+/// form, one result line per index. `-` reads the log from stdin.
+/// `--dry-run` (both forms) prints what would change and writes nothing.
 ///
 /// The whole flow is injectable for tests: [runIndexAdd] takes the package
 /// root and an injectable [MigrateIo] terminal, the same way `runMigrate`
 /// does.
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:analyzer/dart/analysis/analysis_context_collection.dart';
@@ -46,8 +58,12 @@ const _exitUsage = 2;
 /// The usage line the command prints for wrong arguments.
 const _usage =
     'Usage: dart run cocoon_generator:index add <Model> <fields>\n'
+    '       dart run cocoon_generator:index add --missing <file|->\n'
     '  fields: comma list in index order, `-` prefixing a descending part,\n'
-    '  e.g. `Txn accountId,-bookedOn` or `Account name`';
+    '  e.g. `Txn accountId,-bookedOn` or `Account name`\n'
+    '  --unique: make the added index UNIQUE within the collection\n'
+    '  --dry-run: print what would change, write nothing\n'
+    '  --missing: add every index the `Fix:` lines of a saved log name';
 
 /// A failure the index command reports to the user.
 final class IndexAddException implements Exception {
@@ -75,6 +91,9 @@ final class _StdIndexIo implements MigrateIo {
   String readLine() => stdin.readLineSync() ?? '';
 
   @override
+  Future<String> readAll() async => stdin.map(utf8.decode).join();
+
+  @override
   void write(String text) => stdout.write(text);
 
   @override
@@ -92,19 +111,28 @@ typedef _Target = ({
 String _baseName(String part) =>
     part.startsWith('-') ? part.substring(1) : part;
 
-/// The `Index([...])` source for [parts] (`-` prefixing a descending part):
-/// both the declaration the class-level edit writes and the paste text the
-/// refusals print.
-String indexDeclarationSource(List<String> parts) =>
-    "Index([${parts.map((part) => "'$part'").join(', ')}])";
+/// The `Index([...])` source for [parts] (`-` prefixing a descending part),
+/// with `, unique: true` when [unique]: both the declaration the stacked-line
+/// edit writes and the paste text the refusals print.
+String indexDeclarationSource(List<String> parts, {bool unique = false}) =>
+    "Index([${parts.map((part) => "'$part'").join(', ')}]"
+    '${unique ? ', unique: true' : ''})';
+
+/// The stacked annotation line source for [parts]:
+/// `@Index(['accountId', '-bookedOn'])`.
+String stackedIndexAnnotationSource(
+  List<String> parts, {
+  bool unique = false,
+}) => '@${indexDeclarationSource(parts, unique: unique)}';
 
 /// Runs the `index add` command over the package containing [packageRoot]
 /// (default: the working directory, walking up to the nearest
 /// `pubspec.yaml`). Returns the process exit code.
 ///
-/// Exit codes: 0 when the index was added or already existed; 1 when the
-/// model or a name was not found or the annotation is not a shape the
-/// command edits; 2 for usage errors.
+/// Exit codes: 0 when the index was added or already existed (`--missing`:
+/// every index ended up declared); 1 when the model or a name was not found,
+/// the annotation is not a shape the command edits, or any `--missing` index
+/// was refused; 2 for usage errors.
 Future<int> runIndexAdd({
   String? packageRoot,
   List<String> args = const [],
@@ -126,12 +154,29 @@ Future<int> runIndexAdd({
 }
 
 Future<int> _run(String? packageRoot, List<String> args, MigrateIo io) async {
-  if (args.length != 3 || args.first != 'add') {
+  var dryRun = false;
+  var missing = false;
+  var unique = false;
+  final positional = <String>[];
+  for (final arg in args) {
+    if (arg == '--dry-run') {
+      dryRun = true;
+    } else if (arg == '--missing') {
+      missing = true;
+    } else if (arg == '--unique') {
+      unique = true;
+    } else if (arg.startsWith('--')) {
+      throw IndexAddException(
+        'Unknown option "$arg".\n$_usage',
+        exitCode: _exitUsage,
+      );
+    } else {
+      positional.add(arg);
+    }
+  }
+  if (positional.isEmpty || positional.first != 'add') {
     throw IndexAddException(_usage, exitCode: _exitUsage);
   }
-  final modelName = args[1];
-  final parts = _parseParts(args[2]);
-
   final root = findPackageRoot(packageRoot);
   final libPath = '$root/lib';
   if (!Directory(libPath).existsSync()) {
@@ -140,7 +185,73 @@ Future<int> _run(String? packageRoot, List<String> args, MigrateIo io) async {
       exitCode: _exitUsage,
     );
   }
+  if (missing) {
+    final files = positional.sublist(1);
+    if (files.length != 1) {
+      throw IndexAddException(_usage, exitCode: _exitUsage);
+    }
+    return _runMissing(root, libPath, files.single, dryRun, unique, io);
+  }
+  if (positional.length != 3) {
+    throw IndexAddException(_usage, exitCode: _exitUsage);
+  }
+  final modelName = positional[1];
+  final parts = _parseParts(positional[2]);
+  final addition = await _applyIndex(
+    root,
+    libPath,
+    modelName,
+    parts,
+    dryRun: dryRun,
+    unique: unique,
+    io: io,
+  );
+  io.write('${addition.line}\n');
+  if (addition.kind == _AdditionKind.added && !dryRun) {
+    io.write(_nextSteps);
+  }
+  return _exitOk;
+}
 
+/// The two follow-up commands, in the order the user runs them.
+const _nextSteps =
+    '\n'
+    'Next:\n'
+    '  dart run cocoon_generator:migrate\n'
+    '      (an index on an existing collection changes the lock version)\n'
+    '  dart run build_runner build -d\n';
+
+/// One applied index declaration: [line] is the one-line result the command
+/// prints for it.
+final class _Addition {
+  const _Addition._(this.kind, this.line);
+
+  /// The index was (or, with `--dry-run`, would be) written.
+  const _Addition.added(String line) : this._(_AdditionKind.added, line);
+
+  /// An identical index is already declared.
+  const _Addition.declared(String line)
+    : this._(_AdditionKind.alreadyDeclared, line);
+
+  final _AdditionKind kind;
+  final String line;
+}
+
+enum _AdditionKind { added, alreadyDeclared }
+
+/// Applies one index declaration — the shared code path of the single form
+/// and of every `--missing` Fix line. Throws [IndexAddException] (exit 1)
+/// when the model or a name is unknown or the shape is not editable;
+/// returns the outcome otherwise.
+Future<_Addition> _applyIndex(
+  String root,
+  String libPath,
+  String modelName,
+  List<String> parts, {
+  required bool dryRun,
+  required bool unique,
+  required MigrateIo io,
+}) async {
   final target = await _findModel(libPath, modelName);
   if (target == null) {
     final declared = await _declaredModelNames(libPath);
@@ -172,57 +283,195 @@ Future<int> _run(String? packageRoot, List<String> args, MigrateIo io) async {
     }
   }
 
-  // Idempotent: an index declared in exactly this order already serves it.
+  // Idempotent across all three forms: the extracted list is the merged
+  // declaration (indexes:, stacked @Index, @Indexed fields), so an index
+  // declared in exactly this order already serves it.
   for (final index in extracted.indexes) {
     if (!_fieldsEqual(index.fields, parts)) {
       continue;
     }
-    final fieldDeclarer = extracted.clazz.fields
-        .where((field) => field.indexed != null)
-        .where((field) => _fieldsEqual(field.indexed!.fields, parts))
-        .map((field) => '@Indexed() on ${field.name}')
-        .firstOrNull;
-    io.write(
+    return _Addition.declared(
       'Nothing to do: ${indexDeclarationSource(parts)} is already declared '
-      'on $modelName '
-      '${fieldDeclarer == null ? 'in @Collection(indexes: [...])' : 'by $fieldDeclarer'}.\n',
+      'on $modelName ${index.declaredBy}.',
     );
-    return _exitOk;
   }
 
   // One field that is not a path param -> the field annotation. Everything
-  // else (composites, path params) -> the class-level composite.
-  final newSource =
-      parts.length == 1 && !extracted.params.contains(_baseName(parts.single))
-      ? _addFieldAnnotation(
-          target.unit,
-          modelName: modelName,
-          fieldName: _baseName(parts.single),
-          descending: parts.single.startsWith('-'),
-          pasteDeclaration: indexDeclarationSource(parts),
-        )
-      : _appendToIndexesList(target.unit, modelName: modelName, parts: parts);
+  // else (composites, path params) -> a stacked @Index above the class.
+  final String? newSource;
+  final String written;
+  if (parts.length == 1 &&
+      !extracted.params.contains(_baseName(parts.single))) {
+    final descending = parts.single.startsWith('-');
+    final fieldName = _baseName(parts.single);
+    newSource = _addFieldAnnotation(
+      target.unit,
+      modelName: modelName,
+      fieldName: fieldName,
+      descending: descending,
+      unique: unique,
+      pasteDeclaration: indexDeclarationSource(parts, unique: unique),
+    );
+    written =
+        '@Indexed(${_indexedArguments(descending, unique)}) '
+        'on $fieldName';
+  } else {
+    newSource = _insertStackedIndex(
+      target.unit,
+      modelName: modelName,
+      parts: parts,
+      unique: unique,
+    );
+    written = stackedIndexAnnotationSource(parts, unique: unique);
+  }
   if (newSource == null) {
     throw IndexAddException(
       _unsupportedShapeMessage(modelName, relative, parts),
     );
   }
-  File(target.filePath).writeAsStringSync(newSource);
-  final formatted = await _dartFormat(target.filePath);
-  if (formatted.isNotEmpty) {
-    io.writeError(formatted);
+  if (!dryRun) {
+    File(target.filePath).writeAsStringSync(newSource);
+    final formatted = await _dartFormat(target.filePath);
+    if (formatted.isNotEmpty) {
+      io.writeError(formatted);
+    }
+  }
+  return _Addition.added(
+    '${dryRun ? 'Would add' : 'Added'} $written '
+    '${_additionTarget(written, modelName)} $relative '
+    '${dryRun ? '(dry run: nothing written).' : '(dart format applied).'}',
+  );
+}
+
+/// The `@Indexed(...)` argument list for [descending]/[unique]: `()` when
+/// neither, otherwise the set flags.
+String _indexedArguments(bool descending, bool unique) =>
+    [if (descending) 'descending: true', if (unique) 'unique: true'].join(', ');
+
+/// Where the edit went: the field annotation sits on the field, the stacked
+/// line above the model's class.
+String _additionTarget(String written, String modelName) =>
+    written.startsWith('@Indexed')
+    ? 'to $modelName in'
+    : 'above the $modelName class in';
+
+/// Runs the `--missing` form: scans the log text of [source] (a file path,
+/// or `-` for stdin) for `Fix:` lines and applies each index through
+/// [_applyIndex].
+Future<int> _runMissing(
+  String root,
+  String libPath,
+  String source,
+  bool dryRun,
+  bool unique,
+  MigrateIo io,
+) async {
+  final text = await _readMissingInput(source, io);
+  final where = source == '-' ? 'stdin' : source;
+  final fixes = _collectFixCommands(text);
+  if (fixes.isEmpty) {
+    io.write(
+      'No "Fix: dart run cocoon_generator:index add ..." lines found in '
+      '$where.\n',
+    );
+    return _exitOk;
+  }
+  var added = 0;
+  var declared = 0;
+  var refused = 0;
+  for (final fix in fixes) {
+    String line;
+    try {
+      final parts = _parseParts(fix.fields);
+      final addition = await _applyIndex(
+        root,
+        libPath,
+        fix.model,
+        parts,
+        dryRun: dryRun,
+        unique: unique,
+        io: io,
+      );
+      switch (addition.kind) {
+        case _AdditionKind.added:
+          added++;
+        case _AdditionKind.alreadyDeclared:
+          declared++;
+      }
+      line = addition.line;
+    } on IndexAddException catch (error) {
+      refused++;
+      line = 'refused: ${_oneLine(error.message)}';
+    } on CocoonBuildError catch (error) {
+      refused++;
+      line = 'refused: ${_oneLine(error.message)}';
+    }
+    io.write('$line\n');
   }
   io.write(
-    'Added ${indexDeclarationSource(parts)} to $modelName in $relative '
-    '(dart format applied).\n'
-    '\n'
-    'Next:\n'
-    '  dart run cocoon_generator:migrate\n'
-    '      (an index on an existing collection changes the lock version)\n'
-    '  dart run build_runner build -d\n',
+    '\n$added added${dryRun ? ' (dry run)' : ''}, $declared already '
+    'declared, $refused refused, of ${fixes.length} in $where.\n',
   );
-  return _exitOk;
+  if (added > 0 && !dryRun) {
+    io.write(_nextSteps);
+  }
+  return refused > 0 ? _exitAborted : _exitOk;
 }
+
+/// Reads the `--missing` input: a file path, or all of stdin for `-`.
+Future<String> _readMissingInput(String source, MigrateIo io) async {
+  if (source == '-') {
+    return io.readAll();
+  }
+  final file = File(source);
+  if (!file.existsSync()) {
+    throw IndexAddException(
+      'No such file: $source.\n$_usage',
+      exitCode: _exitUsage,
+    );
+  }
+  return file.readAsStringSync();
+}
+
+/// A `Fix: dart run cocoon_generator:index add <Model> <fields>` line found
+/// in a log.
+final class _FixCommand {
+  const _FixCommand(this.model, this.fields);
+
+  final String model;
+  final String fields;
+}
+
+/// The command shape a `Fix:` line names. Unanchored, so any line prefix is
+/// fine (logcat tags, timestamps, `I/flutter (1234):`); the fields run to
+/// the next whitespace or `(` (the `(writes ...)` suffix).
+final _fixCommandPattern = RegExp(
+  r'Fix:\s*dart\s+run\s+cocoon_generator:index\s+add\s+'
+  r'([A-Za-z_][A-Za-z0-9_]*)\s+([^\s(]+)',
+);
+
+/// Every distinct `Fix:` command in [text], in order of first appearance.
+List<_FixCommand> _collectFixCommands(String text) {
+  final fixes = <_FixCommand>[];
+  final seen = <String>{};
+  for (final match in _fixCommandPattern.allMatches(text)) {
+    final model = match.group(1)!;
+    final fields = match.group(2)!;
+    if (!seen.add('$model $fields')) {
+      continue;
+    }
+    fixes.add(_FixCommand(model, fields));
+  }
+  return fixes;
+}
+
+/// The multi-line failure messages collapse to one line for the per-index
+/// result lines.
+String _oneLine(String message) => message
+    .split('\n')
+    .map((line) => line.trim())
+    .where((line) => line.isNotEmpty)
+    .join(' ');
 
 List<String> _parseParts(String argument) {
   final rawParts = argument.split(',');
@@ -338,6 +587,7 @@ String? _addFieldAnnotation(
   required String modelName,
   required String fieldName,
   required bool descending,
+  required bool unique,
   required String pasteDeclaration,
 }) {
   final clazz = _classDeclaration(unit, modelName);
@@ -365,14 +615,14 @@ String? _addFieldAnnotation(
     )) {
       throw IndexAddException(
         'The field "$fieldName" of $modelName already carries @Indexed; '
-        'edit it by hand, or paste $pasteDeclaration into '
-        '@Collection(indexes: [...]) instead.',
+        'edit it by hand, or paste $pasteDeclaration as a stacked @Index '
+        "above $modelName's class instead.",
       );
     }
     final source = unit.content;
     final insertAt = member.firstTokenAfterCommentAndMetadata.offset;
     final indent = _lineIndent(source, insertAt);
-    final annotation = descending ? '@Indexed(descending: true)' : '@Indexed()';
+    final annotation = '@Indexed(${_indexedArguments(descending, unique)})';
     return source.replaceRange(insertAt, insertAt, '$annotation\n$indent');
   }
   throw IndexAddException(
@@ -381,62 +631,36 @@ String? _addFieldAnnotation(
   );
 }
 
-/// Appends `Index([...])` to the `@Collection(indexes: [...])` list of
-/// [modelName], creating the named argument when it is missing. Returns the
-/// new source, or `null` when the annotation is not a shape the command
-/// edits (a const-variable annotation, a spread, a non-literal part).
-String? _appendToIndexesList(
+/// Inserts `@Index([...])` directly above [modelName]'s class declaration,
+/// after the existing `@Collection(...)` and `@Index` lines (`unique: true`
+/// included when [unique]). Returns the new source, or `null` when the class
+/// declaration is not a shape the command edits.
+String? _insertStackedIndex(
   ResolvedUnitResult unit, {
   required String modelName,
   required List<String> parts,
+  required bool unique,
 }) {
   final clazz = _classDeclaration(unit, modelName);
   if (clazz == null) {
     return null;
   }
-  final annotation = clazz.metadata
-      .where((annotation) => _isCocoonAnnotation(annotation, 'Collection'))
-      .firstOrNull;
-  if (annotation == null || annotation.arguments == null) {
-    return null;
-  }
-  final insertion = indexDeclarationSource(parts);
-  final arguments = annotation.arguments!;
-  final indexesArgument = arguments.arguments
-      .whereType<NamedExpression>()
-      .where((argument) => argument.name.label.name == 'indexes')
-      .firstOrNull;
+  final annotation = stackedIndexAnnotationSource(parts, unique: unique);
   final source = unit.content;
-  if (indexesArgument == null) {
-    // @Collection('path') -> @Collection('path', indexes: [Index([...])]).
-    final insertAt = arguments.rightParenthesis.offset;
-    return source.replaceRange(insertAt, insertAt, ', indexes: [$insertion]');
+  final metadata = clazz.metadata;
+  if (metadata.isEmpty) {
+    // Unreachable in practice — the model was found through its @Collection
+    // annotation — but keep the edit defined: insert above the class.
+    final insertAt = clazz.firstTokenAfterCommentAndMetadata.offset;
+    final indent = _lineIndent(source, insertAt);
+    return source.replaceRange(insertAt, insertAt, '$annotation\n$indent');
   }
-  final list = indexesArgument.expression;
-  if (list is! ListLiteral) {
-    return null;
-  }
-  if (list.elements.isEmpty) {
-    // indexes: [] -> indexes: [Index([...])].
-    final insertAt = list.leftBracket.end;
-    return source.replaceRange(insertAt, insertAt, insertion);
-  }
-  for (final element in list.elements) {
-    if (element is! InstanceCreationExpression || !_isIndexLiteral(element)) {
-      return null;
-    }
-  }
-  // Append after the last element; dart format settles the layout.
-  final insertAt = list.elements.last.end;
-  return source.replaceRange(insertAt, insertAt, ', $insertion');
-}
-
-/// Whether [creation] is a resolved `Index(...)` invocation from cocoon.
-bool _isIndexLiteral(InstanceCreationExpression creation) {
-  final type = creation.constructorName.type.element;
-  return type is ClassElement &&
-      type.name == 'Index' &&
-      type.library.uri.toString().startsWith('package:cocoon/');
+  final insertAt = metadata.last.end;
+  final indent = _lineIndent(
+    source,
+    clazz.firstTokenAfterCommentAndMetadata.offset,
+  );
+  return source.replaceRange(insertAt, insertAt, '\n$indent$annotation');
 }
 
 /// Whether [annotation] resolves to cocoon's class [className] (its
@@ -468,15 +692,13 @@ String _unsupportedShapeMessage(
   String relativePath,
   List<String> parts,
 ) =>
-    'The @Collection annotation of $modelName ($relativePath) is not a shape '
-    'this command edits: the indexes must be written inline as literal '
-    'Index([...]) entries (not a const variable, a spread or a non-literal), '
-    'and the edited field must not already carry @Indexed.\n'
+    'The class declaration of $modelName ($relativePath) is not a shape '
+    'this command edits.\n'
     '${_pasteAdvice(indexDeclarationSource(parts), modelName)}';
 
 String _pasteAdvice(String declaration, String modelName) =>
-    "Paste by hand into $modelName's @Collection(indexes: [...]): "
-    '$declaration';
+    'Paste by hand as a stacked @Index above $modelName\'s class '
+    'declaration: @$declaration';
 
 String _didYouMean(String name, List<String> names) {
   final ranked = [

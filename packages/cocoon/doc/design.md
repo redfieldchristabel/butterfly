@@ -305,15 +305,34 @@ on the docs site under **Cocoon**:
   change. Composites (two or more parts) and path params stay class-level:
   path params are not fields. The same types and embedded-class rules as
   `@Mirrored()` apply (generator errors in the same style).
+- **Stacked `@Index([...])`: composites sit right above the class they
+  index.** Composites used to live only inside
+  `@Collection(indexes: [...])`, far from the class they describe and
+  verbose to grow. `Index` gained `@Target({TargetKind.classType})` and the
+  generator reads every `@Index` on the class in source order, merging them
+  with `indexes:` entries and field-level `@Indexed()` declarations into one
+  list — the same canonical index declared in any mix of the three forms is
+  ONE index (keep-first), and the physical index name comes from the
+  canonical form, so moving an index between the forms changes nothing in
+  `cocoon.lock` (byte-identical), causes no schema bump and no rebuild.
+  `indexes:` stays the alternative for a shared `const` list. `@Index` on
+  anything that is not a `@Collection` class — including on a field, where
+  the analyzer's target check is only a warning — is a build error naming
+  the class.
 - **The missing-index error carries its fix, and a debug-only fallback.**
   The `MissingIndexException` message ends with exactly one `Fix:` line:
   `dart run cocoon_generator:index add <Model> <fields>` (the ready command)
   plus the declaration it would write — `@Indexed()` on the field for a
-  single model field, the appended `Index([...])` otherwise. Decided with
+  single model field, a stacked `@Index([...])` line above the class
+  otherwise. Decided with
   the maintainer: indexes live in the model, never in YAML and never in
   `cocoon.lock`, so the fix is a source edit the command performs (analyzer
   model discovery, did-you-mean validation, narrow literal edits only, dart
-  format, idempotent re-runs). For schema exploration,
+  format, idempotent re-runs), and `--missing <file|->` applies a whole
+  saved debug log's `Fix:` lines in one pass (any line prefix, deduped,
+  one result line per index; `--dry-run` previews without writing) — on a
+  phone the model files are on the device, but the log is text the developer
+  already has. For schema exploration,
   `CocoonOptions.onMissingIndex = MissingIndexMode.scanAndWarn` runs a
   suggestable missing-index query as a full scan, prints the message once
   per distinct missing index per process (`dart:developer` log + stderr)
@@ -373,7 +392,9 @@ executor, so it is deferred.
 |---|---|
 | Annotations (`Collection`, `Index`, `Indexed`, `Mirrored`, `Embedded`, `Ignore`) | done |
 | Field-level `@Indexed()` (one-field index on the field; merged with class-level composites, same canonical form either way — moving one bumps nothing) | done |
-| Missing-index ready fix: `MissingIndexException.fixCommand` + the message's `Fix:` line; `dart run cocoon_generator:index add <Model> <fields>` (analyzer discovery, did-you-mean, narrow literal edits, dart format, idempotent); `butterfly cocoon index add` passthrough + MCP tool | done |
+| Stacked `@Index([...])` above the class (composites lead with it; `indexes:` stays for shared const lists; the same canonical index in any mix of the three forms is one index — moving one bumps nothing); `@Index` anywhere but a `@Collection` class is a build error naming the class | done |
+| Missing-index ready fix: `MissingIndexException.fixCommand` + the message's `Fix:` line; `dart run cocoon_generator:index add <Model> <fields>` (analyzer discovery, did-you-mean, dart format, idempotent across all three forms; one-field → `@Indexed()` on the field, composites and path params → one stacked `@Index` line above the class, `indexes:` never touched; `--unique`; `--dry-run`); `butterfly cocoon index add` passthrough + MCP tool | done |
+| `index add --missing <file|->`: scans a saved debug log (any line prefix) for every `Fix:` line, dedupes, applies each through the single-index code path with one result line per index and a summary; `-` reads stdin; `--dry-run` on both forms | done |
 | Debug-only missing-index fallback: `CocoonOptions.onMissingIndex = MissingIndexMode.scanAndWarn` (asserts-enabled builds only), warn-once per process, `db.missingIndexes` reports, never creates an index | done |
 | Paths (`CollectionPattern`, `CollectionPath`, `DocPath`) | done |
 | Canonical wire codec (`WireWriter`, `WireReader`) | done |

@@ -1,5 +1,36 @@
 ## Unreleased
 
+- **Composite indexes stack as `@Index` lines above the class.** Instead of
+  growing the `@Collection(indexes: [...])` list, put one `@Index([...])`
+  line per index directly above the model class, in index order
+  (`unique: true` included); the generator reads every `@Index` line, in
+  source order. `indexes:` keeps working — use it for a shared `const` list
+  — and the same index declared in any mix of `indexes:`, a stacked
+  `@Index` and `@Indexed()` on the field is one index: the canonical form is
+  the identity, so moving an index between the forms changes nothing in
+  `cocoon.lock` (byte-identical), with no schema version bump and no
+  rebuild. `@Index` on anything that is not a `@Collection` class is a
+  build error naming the class.
+- **`index add` writes the stacked form.** For a composite (or any
+  path-param index), `dart run cocoon_generator:index add <Model> <fields>`
+  inserts one `@Index([...])` line above the class declaration, after the
+  existing `@Collection(...)` and `@Index` lines, instead of editing the
+  `indexes:` list — so a model whose list is built from a shared `const`
+  variable now works like any other. One-field model-field indexes still
+  become `@Indexed()` on the field. The new `--unique` flag makes the added
+  index UNIQUE. Re-running an already-declared index is a no-op that names
+  where it is declared, through any of the three forms.
+- **Turn a saved log into indexes: `index add --missing`.** Run the app in
+  debug with `scanAndWarn`, save the output (`flutter run`, `flutter logs`,
+  `adb logcat`, a test or Patrol run), then
+  `dart run cocoon_generator:index add --missing run.log` (or `-` for
+  stdin): it applies every `Fix: dart run cocoon_generator:index add ...`
+  line the log names — any line prefix, deduped — one result line per index
+  (`Added ...` / `Nothing to do: ...` / `refused: ...`) plus a summary, and
+  exits 0 when every index ended up declared, 1 when any was refused.
+  `--dry-run` (both forms) prints what would change and writes nothing.
+  A development tool like `migrate`, never a CI step; `butterfly cocoon
+  index add` forwards both flags verbatim.
 - **Database calls inside a transaction fail fast with a readable error.**
   Inside `runTransaction` every read and write must go through the `tx`
   object. A call on the database itself — `doc.set`/`get`/`delete`,

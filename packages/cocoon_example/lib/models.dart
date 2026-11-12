@@ -33,6 +33,9 @@ class Address {
 enum TxnStatus { pending, posted, failed }
 
 /// A bank account, rooted at `accounts`.
+///
+/// The one-field index stays in `indexes:` — the shared-list form; see [Txn]
+/// for the stacked `@Index` form composites lead with.
 @Collection(
   'accounts',
   indexes: [
@@ -60,13 +63,11 @@ class Account {
 }
 
 /// A transaction of one account, at `accounts/{accountId}/txns`.
-@Collection(
-  'accounts/{accountId}/txns',
-  indexes: [
-    Index(['accountId', '-bookedOn']),
-    Index(['status', 'bookedOn']),
-  ],
-)
+///
+/// Composites stack as `@Index` lines above the class, in index order.
+@Collection('accounts/{accountId}/txns')
+@Index(['accountId', '-bookedOn'])
+@Index(['status', 'bookedOn'])
 class Txn {
   const Txn({
     required this.bookedOn, // yyyymmdd
@@ -99,12 +100,8 @@ class Txn {
 /// The index includes both path params: a scoped query always filters them,
 /// so Cocoon's index rule only serves the query when they are part of the
 /// declared index.
-@Collection(
-  'accounts/{accountId}/txns/{txnId}/splits',
-  indexes: [
-    Index(['accountId', 'txnId', '-shareMinor']),
-  ],
-)
+@Collection('accounts/{accountId}/txns/{txnId}/splits')
+@Index(['accountId', 'txnId', '-shareMinor'])
 class Split {
   const Split({required this.label, required this.shareMinor, this.note});
 

@@ -17,9 +17,9 @@ import 'transaction_guard.dart';
 /// Thrown when no declared (or implicit) index can serve a query's filters
 /// and sort order.
 ///
-/// The message spells the `Index([...])` to add to the `@Collection`
-/// declaration, or points at `.allowFullScan()` when there is nothing to
-/// index. When there is something to declare, the message ends with a
+/// The message spells the `@Index([...])` to stack above the model's
+/// `@Collection` class, or points at `.allowFullScan()` when there is nothing
+/// to index. When there is something to declare, the message ends with a
 /// `Fix:` line carrying the ready one-line command
 /// (`dart run cocoon_generator:index add ...`) that edits the model for you,
 /// and the declaration that command writes.
@@ -295,10 +295,14 @@ String indexFixCommand(String model, List<String> parts) =>
     'dart run cocoon_generator:index add $model ${parts.join(',')}';
 
 /// What the fix command writes for [parts]: `@Indexed()` on the field for a
-/// one-field index over a model field, the `Index([...])` composite
-/// otherwise (path params are not fields, so they always stay in the
-/// class-level composite).
-String indexFixDeclaration(List<String> parts, Set<String> paramNames) {
+/// one-field index over a model field, a stacked `@Index([...])` above the
+/// model's class otherwise (path params are not fields, so they always go on
+/// the class).
+String indexFixDeclaration(
+  String model,
+  List<String> parts,
+  Set<String> paramNames,
+) {
   if (parts.length == 1) {
     final part = parts.single;
     final name = part.startsWith('-') ? part.substring(1) : part;
@@ -308,7 +312,7 @@ String indexFixDeclaration(List<String> parts, Set<String> paramNames) {
           : '@Indexed() on $name';
     }
   }
-  return '${indexDeclaration(parts)} in @Collection(indexes: [...])';
+  return '@${indexDeclaration(parts)} above the $model class';
 }
 
 /// The executable form of a planned query: SQL, bound arguments, the cursor
@@ -1004,10 +1008,10 @@ IndexPlan? _servingIndexOrNull(
   final suggestion = indexDeclaration(parts);
   final fixCommand = indexFixCommand(entry.adapter.model, parts);
   final error = MissingIndexException(
-    'No index serves this query on $target. Add ${indexDeclaration(parts)} '
-    "to its @Collection(indexes: [...]), or call .allowFullScan() to read "
-    'it anyway.\n'
-    'Fix: $fixCommand (writes ${indexFixDeclaration(parts, entry.paramNames.toSet())})',
+    'No index serves this query on $target. Add @${indexDeclaration(parts)} '
+    'above its @Collection class, or call .allowFullScan() to read it '
+    'anyway.\n'
+    'Fix: $fixCommand (writes ${indexFixDeclaration(entry.adapter.model, parts, entry.paramNames.toSet())})',
     suggestedIndex: suggestion,
     fixCommand: fixCommand,
   );

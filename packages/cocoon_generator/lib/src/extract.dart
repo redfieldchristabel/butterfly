@@ -25,6 +25,7 @@ final _embeddedChecker = TypeChecker.typeNamed(Embedded, inPackage: 'cocoon');
 final _ignoreChecker = TypeChecker.typeNamed(Ignore, inPackage: 'cocoon');
 final _mirroredChecker = TypeChecker.typeNamed(Mirrored, inPackage: 'cocoon');
 final _indexedChecker = TypeChecker.typeNamed(Indexed, inPackage: 'cocoon');
+final _indexChecker = TypeChecker.typeNamed(Index, inPackage: 'cocoon');
 
 /// A user source problem: the generator reports [message] as a build error.
 class CocoonBuildError implements Exception {
@@ -111,7 +112,12 @@ final class ExtractedField {
 
 /// One `@Index` of an extracted model.
 final class ExtractedIndex {
-  const ExtractedIndex(this.fields, {required this.unique});
+  const ExtractedIndex(
+    this.fields, {
+    required this.unique,
+    required this.site,
+    this.siteDetail,
+  });
 
   /// Index part names, `-` prefix for descending, e.g.
   /// `['accountId', '-bookedOn']`.
@@ -119,6 +125,35 @@ final class ExtractedIndex {
 
   /// Whether the index is unique.
   final bool unique;
+
+  /// Where the index was declared. When the same canonical index is declared
+  /// several ways, the extraction keeps the FIRST declaration and its site.
+  final IndexDeclarationSite site;
+
+  /// The field name when [site] is [IndexDeclarationSite.fieldIndexed],
+  /// otherwise `null`.
+  final String? siteDetail;
+
+  /// The human phrase naming where the index is declared, e.g.
+  /// `by @Indexed() on currency`.
+  String get declaredBy => switch (site) {
+    IndexDeclarationSite.collectionIndexes => 'in @Collection(indexes: [...])',
+    IndexDeclarationSite.stackedIndex => 'as a stacked @Index above the class',
+    IndexDeclarationSite.fieldIndexed => 'by @Indexed() on $siteDetail',
+  };
+}
+
+/// Where a model's index was declared.
+enum IndexDeclarationSite {
+  /// Inside `@Collection(indexes: [...])`.
+  collectionIndexes,
+
+  /// A stacked `@Index([...])` annotation above the class.
+  stackedIndex,
+
+  /// `@Indexed()` (or `@Indexed(descending: true, ...)`) on a field; see
+  /// `ExtractedIndex.siteDetail` for the field name.
+  fieldIndexed,
 }
 
 /// The shape shared by models and embedded classes: stored fields plus the
@@ -240,6 +275,38 @@ LibraryDeclarations? extractLibrary(LibraryReader library) {
   final extraction = _Extraction();
   final models = <ExtractedModel>[];
 
+  // A stacked `@Index` is only valid on a @Collection class; check every
+  // annotated element, so the error fires even when the library has no
+  // models at all.
+  for (final annotated in library.annotatedWith(_indexChecker)) {
+    final element = annotated.element;
+    if (element is! ClassElement ||
+        !_collectionChecker.hasAnnotationOf(element)) {
+      throw CocoonBuildError(
+        '@Index annotates ${element.displayName}, which is not a @Collection '
+        'class; stacked @Index lines declare indexes of a collection model',
+      );
+    }
+  }
+  // The analyzer's `invalid_annotation_target` for a misplaced @Index (on a
+  // field, say) is only a warning, so the build would silently ignore it;
+  // report it as a build error too. `annotatedWith` above does not visit
+  // fields of unannotated classes, so sweep every class of the library.
+  for (final fragment in library.element.fragments) {
+    for (final clazz in fragment.classes) {
+      for (final field in clazz.fields) {
+        if (!_indexChecker.hasAnnotationOf(field.element)) {
+          continue;
+        }
+        throw CocoonBuildError(
+          '@Index annotates the field "${field.name}" of ${clazz.name}, which '
+          'is not a @Collection class; stacked @Index lines declare indexes '
+          'of a collection model',
+        );
+      }
+    }
+  }
+
   for (final annotated in library.annotatedWith(_collectionChecker)) {
     final element = annotated.element;
     if (element is! ClassElement) {
@@ -284,17 +351,45 @@ ExtractedModel _extractModel(
   }
 
   final indexes = <ExtractedIndex>[];
+  // The declarations merge into ONE list: `indexes:` entries first, then the
+  // stacked `@Index` annotations in source order, then the fields'
+  // `@Indexed()` (in field order). The same canonical index declared twice —
+  // in any mix of the forms — is one index: keep the first declaration.
+  void declare(ExtractedIndex candidate) {
+    if (indexes.any((existing) => _sameIndex(existing, candidate))) {
+      return;
+    }
+    indexes.add(candidate);
+  }
+
   final indexList = annotation.read('indexes');
   if (!indexList.isNull) {
     for (final object in indexList.listValue) {
       final index = ConstantReader(object);
-      indexes.add(
-        ExtractedIndex([
-          for (final part in index.read('fields').listValue)
-            part.toStringValue()!,
-        ], unique: index.read('unique').boolValue),
+      declare(
+        ExtractedIndex(
+          [
+            for (final part in index.read('fields').listValue)
+              part.toStringValue()!,
+          ],
+          unique: index.read('unique').boolValue,
+          site: IndexDeclarationSite.collectionIndexes,
+        ),
       );
     }
+  }
+  for (final stacked in _indexChecker.annotationsOf(element)) {
+    final index = ConstantReader(stacked);
+    declare(
+      ExtractedIndex(
+        [
+          for (final part in index.read('fields').listValue)
+            part.toStringValue()!,
+        ],
+        unique: index.read('unique').boolValue,
+        site: IndexDeclarationSite.stackedIndex,
+      ),
+    );
   }
 
   final clazz = _extractClass(
@@ -302,18 +397,16 @@ ExtractedModel _extractModel(
     extraction,
     allowColumnAnnotations: true,
   );
-  // The class-level and field-level declarations are ONE list: a field's
-  // `@Indexed()` appends its one-field index after the class-level composites
-  // (in field order), unless the same index is already declared — an index
-  // declared both ways is one index, and the physical identity comes from the
-  // canonical definition, so moving a one-field `Index([...])` to `@Indexed()`
-  // on the field changes nothing.
+  // The field-level `@Indexed()` declarations close the list (in field
+  // order), unless the same index is already declared — the physical
+  // identity comes from the canonical definition, so moving a one-field
+  // `Index([...])` to `@Indexed()` on the field changes nothing.
   for (final field in clazz.fields) {
     final indexed = field.indexed;
-    if (indexed == null || indexes.any(_sameIndexAs(indexed))) {
+    if (indexed == null) {
       continue;
     }
-    indexes.add(indexed);
+    declare(indexed);
   }
   try {
     tableNameFor(name);
@@ -328,15 +421,14 @@ ExtractedModel _extractModel(
   );
 }
 
-/// Whether an [ExtractedIndex] declares the same index as [index]: the same
-/// parts in the same order, with the same uniqueness.
-bool Function(ExtractedIndex) _sameIndexAs(ExtractedIndex index) =>
-    (other) =>
-        other.fields.length == index.fields.length &&
-        other.unique == index.unique &&
-        Iterable<int>.generate(
-          index.fields.length,
-        ).every((i) => other.fields[i] == index.fields[i]);
+/// Whether [a] and [b] declare the same index: the same parts in the same
+/// order, with the same uniqueness.
+bool _sameIndex(ExtractedIndex a, ExtractedIndex b) =>
+    a.fields.length == b.fields.length &&
+    a.unique == b.unique &&
+    Iterable<int>.generate(
+      a.fields.length,
+    ).every((i) => a.fields[i] == b.fields[i]);
 
 ExtractedClass _extractClass(
   ClassElement element,
@@ -449,9 +541,12 @@ ExtractedClass _extractClass(
           .getField('descending')
           ?.toBoolValue();
       final unique = indexedAnnotation.getField('unique')?.toBoolValue();
-      indexed = ExtractedIndex([
-        descending ?? false ? '-$fieldName' : fieldName,
-      ], unique: unique ?? false);
+      indexed = ExtractedIndex(
+        [descending ?? false ? '-$fieldName' : fieldName],
+        unique: unique ?? false,
+        site: IndexDeclarationSite.fieldIndexed,
+        siteDetail: fieldName,
+      );
     }
     fields.add(
       ExtractedField(

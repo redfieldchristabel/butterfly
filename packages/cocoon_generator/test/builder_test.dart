@@ -1495,4 +1495,241 @@ class Address {
       );
     });
   });
+
+  group('stacked @Index on the class', () {
+    // The same composite declared the two ways: in `indexes:` and stacked
+    // above the class. The lock cannot tell them apart — the canonical form
+    // is the identity, so moving the declaration bumps nothing.
+    const listCompositeModel = '''
+@Collection('accounts/{accountId}/txns', indexes: [
+  Index(['accountId', '-bookedOn']),
+])
+class Txn {
+  const Txn({required this.bookedOn, required this.amountMinor});
+  final int bookedOn;
+  final int amountMinor;
+}
+''';
+    const stackedCompositeModel = '''
+@Collection('accounts/{accountId}/txns')
+@Index(['accountId', '-bookedOn'])
+class Txn {
+  const Txn({required this.bookedOn, required this.amountMinor});
+  final int bookedOn;
+  final int amountMinor;
+}
+''';
+    final compositeLock = lockText(
+      collections: {
+        'Txn': TestCollection(
+          'accounts/{accountId}/txns',
+          const {'bookedOn': 'int', 'amountMinor': 'int'},
+          indexes: const [
+            ['accountId', '-bookedOn'],
+          ],
+        ),
+      },
+    );
+    const fromFields = "IndexDef.fromFields(const ['accountId', '-bookedOn'])";
+
+    test('emits the same IndexDefs as the indexes: form', () async {
+      final fromList = await runCocoonBuilder(
+        _head + listCompositeModel,
+        compositeLock,
+      );
+      final fromStacked = await runCocoonBuilder(
+        _head + stackedCompositeModel,
+        compositeLock,
+      );
+      expect(fromList.succeeded, isTrue, reason: fromList.errors.join('\n'));
+      expect(
+        fromStacked.succeeded,
+        isTrue,
+        reason: fromStacked.errors.join('\n'),
+      );
+      expect(fromList.code, contains(fromFields));
+      expect(fromStacked.code, contains(fromFields));
+      // Exactly one index either way — the declaration moved, nothing was
+      // added.
+      expect(fromFields.allMatches(fromStacked.code), hasLength(1));
+    });
+
+    test('unique: true reaches the IndexDef', () async {
+      const model = '''
+@Collection('accounts/{accountId}/txns')
+@Index(['accountId', 'bookedOn'], unique: true)
+class Txn {
+  const Txn({required this.bookedOn, required this.amountMinor});
+  final int bookedOn;
+  final int amountMinor;
+}
+''';
+      final run = await runCocoonBuilder(
+        _head + model,
+        lockText(
+          collections: {
+            'Txn': TestCollection(
+              'accounts/{accountId}/txns',
+              const {'bookedOn': 'int', 'amountMinor': 'int'},
+              indexes: const [
+                ['accountId', 'bookedOn'],
+              ],
+            ),
+          },
+        ),
+      );
+      expect(run.succeeded, isTrue, reason: run.errors.join('\n'));
+      expect(
+        run.code,
+        contains(
+          "IndexDef.fromFields(const ['accountId', 'bookedOn'], unique: true)",
+        ),
+      );
+    });
+
+    test('repeated stacked lines keep source order', () async {
+      const model = '''
+@Collection('accounts/{accountId}/txns')
+@Index(['accountId', '-bookedOn'])
+@Index(['bookedOn', 'amountMinor'])
+class Txn {
+  const Txn({required this.bookedOn, required this.amountMinor});
+  final int bookedOn;
+  final int amountMinor;
+}
+''';
+      final run = await runCocoonBuilder(
+        _head + model,
+        lockText(
+          collections: {
+            'Txn': TestCollection(
+              'accounts/{accountId}/txns',
+              const {'bookedOn': 'int', 'amountMinor': 'int'},
+              indexes: const [
+                ['accountId', '-bookedOn'],
+                ['bookedOn', 'amountMinor'],
+              ],
+            ),
+          },
+        ),
+      );
+      expect(run.succeeded, isTrue, reason: run.errors.join('\n'));
+      final first = run.code.indexOf(
+        "IndexDef.fromFields(const ['accountId', '-bookedOn'])",
+      );
+      final second = run.code.indexOf(
+        "IndexDef.fromFields(const ['bookedOn', 'amountMinor'])",
+      );
+      expect(first, greaterThan(-1));
+      expect(second, greaterThan(first));
+    });
+
+    test('the same index in several forms is one index', () async {
+      const model = '''
+@Collection('txns', indexes: [
+  Index(['currency']),
+])
+@Index(['currency'])
+class Txn {
+  const Txn({required this.currency});
+  @Indexed()
+  final String currency;
+}
+''';
+      final run = await runCocoonBuilder(
+        _head + model,
+        lockText(
+          collections: {
+            'Txn': TestCollection(
+              'txns',
+              const {'currency': 'String'},
+              indexes: const [
+                ['currency'],
+              ],
+            ),
+          },
+        ),
+      );
+      expect(run.succeeded, isTrue, reason: run.errors.join('\n'));
+      expect(
+        "IndexDef.fromFields(const ['currency'])".allMatches(run.code),
+        hasLength(1),
+      );
+    });
+
+    test(
+      'a @Index on a class without @Collection fails, naming the class',
+      () async {
+        const model = '''
+@Index(['name'])
+class NotACollection {
+  const NotACollection({required this.name});
+  final String name;
+}
+''';
+        final run = await runCocoonBuilder(_head + model, '');
+        expect(run.succeeded, isFalse);
+        expect(
+          run.errors.join('\n'),
+          contains(
+            '@Index annotates NotACollection, which is not a @Collection class',
+          ),
+        );
+      },
+    );
+
+    test('a @Index on a plain class field fails, naming the class', () async {
+      const model = '''
+class NotACollection {
+  const NotACollection();
+  @Index(['name'])
+  final String name = '';
+}
+''';
+      final run = await runCocoonBuilder(_head + model, '');
+      expect(run.succeeded, isFalse);
+      expect(
+        run.errors.join('\n'),
+        contains(
+          '@Index annotates the field "name" of NotACollection, which is not '
+          'a @Collection class',
+        ),
+      );
+    });
+
+    test('a @Index above an @Embedded class fails, naming the class', () async {
+      const model = '''
+@Collection('things')
+class Thing {
+  const Thing({required this.address});
+  final Address address;
+}
+
+@Embedded()
+@Index(['city'])
+class Address {
+  const Address({required this.city});
+  final String city;
+}
+''';
+      final run = await runCocoonBuilder(
+        _head + model,
+        lockText(
+          collections: {
+            'Thing': TestCollection('things', const {
+              'address': 'embedded:Address',
+            }),
+          },
+          embedded: {
+            'Address': const {'city': 'String'},
+          },
+        ),
+      );
+      expect(run.succeeded, isFalse);
+      expect(
+        run.errors.join('\n'),
+        contains('@Index annotates Address, which is not a @Collection class'),
+      );
+    });
+  });
 }

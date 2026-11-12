@@ -12,6 +12,10 @@
 /// );
 /// ```
 ///
+/// The flags pass through the same list: `--unique`, `--dry-run`, and the
+/// batch form `['add', '--missing', 'log.txt']` (or `-` for stdin, read via
+/// `MigrateIo.readAll`).
+///
 /// See the cocoon_generator README for the shape the command edits, its
 /// refusals and exit codes.
 library;

@@ -8,7 +8,10 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:cocoon/cocoon.dart';
+import 'package:cocoon_example/models.dart';
 import 'package:test/test.dart';
+
+import 'support.dart' show accountFixture, txnFixture;
 
 enum STxnStatus { pending, posted, failed }
 
@@ -478,6 +481,31 @@ void main() {
     await db.close();
     expect(File('$file.before-restore').existsSync(), isTrue);
     await dir.delete(recursive: true);
+  });
+
+  test('the stacked @Index sample compiles and runs', () async {
+    // The models.mdx / README shape: composites declared as stacked @Index
+    // lines above the class. models.dart declares txns' and splits'
+    // composites that way; the index serves the scoped newest-first query.
+    final db = await Cocoon.open(
+      await tempDbPath(),
+      collections: [accounts, txns, splits],
+    );
+    final a1 = db.collection(accounts).doc('a1');
+    await a1.set(accountFixture(name: 'Acme'));
+    for (final day in [3, 1, 2]) {
+      await a1.collection(txns).add(txnFixture(bookedOn: 20260100 + day));
+    }
+    final page = await a1
+        .collection(txns)
+        .orderBy(Txn$.bookedOn, descending: true)
+        .get();
+    expect(page.docs.map((snapshot) => snapshot.data.bookedOn).toList(), [
+      20260103,
+      20260102,
+      20260101,
+    ]);
+    await db.close();
   });
 
   test('CocoonOptions knobs compile', () async {
