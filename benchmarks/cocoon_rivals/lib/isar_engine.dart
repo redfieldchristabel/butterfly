@@ -320,6 +320,7 @@ final class IsarBenchEngine implements BenchEngine {
           .filter()
           .bookedOnBetween(firstDay, lastDay)
           .sortByBookedOn()
+          .thenByAccountId()
           .thenByCode()
           .offset(pages * rangePageSize)
           .limit(rangePageSize)
@@ -394,6 +395,7 @@ final class IsarBenchEngine implements BenchEngine {
         .where()
         .statusEqualTo(m.TxnStatus.pending)
         .sortByBookedOnDesc()
+        .thenByAccountIdDesc()
         .thenByCodeDesc()
         .limit(50)
         .findAll();
@@ -435,7 +437,7 @@ final class IsarBenchEngine implements BenchEngine {
       return const [];
     }
     // Isar walks equal index keys in its own order; the contract breaks
-    // amount ties by string id ASC. Fetch every row tied with the 50th
+    // amount ties by (accountId, code). Fetch every row tied with the 50th
     // amount, merge and sort, as an Isar app needing a stable order must.
     final edge = first.last.amountMinor;
     final ties = await _isar!.isarTxns
@@ -446,14 +448,19 @@ final class IsarBenchEngine implements BenchEngine {
       for (final record in first)
         if (record.amountMinor < edge) record,
       ...ties,
-    ]..sort(_byAmountThenCode);
+    ]..sort(_byAmountThenAccountThenCode);
     return [for (final record in merged.take(50)) record.code];
   }
 
-  /// The contract order for the amount shapes: amount ASC, string id ASC.
-  static int _byAmountThenCode(IsarTxn a, IsarTxn b) {
+  /// The contract order for the amount shapes: amount ASC, then the
+  /// identity tie (accountId, code) ASC.
+  static int _byAmountThenAccountThenCode(IsarTxn a, IsarTxn b) {
     final byAmount = a.amountMinor.compareTo(b.amountMinor);
-    return byAmount != 0 ? byAmount : a.code.compareTo(b.code);
+    if (byAmount != 0) {
+      return byAmount;
+    }
+    final byAccount = a.accountId.compareTo(b.accountId);
+    return byAccount != 0 ? byAccount : a.code.compareTo(b.code);
   }
 
   @override
@@ -483,8 +490,9 @@ final class IsarBenchEngine implements BenchEngine {
       pages++;
     }
     // Pages arrive in index (amount) order; equal amounts come in Isar's
-    // own order, so the contract's id tie-break is applied here.
-    records.sort(_byAmountThenCode);
+    // own order, so the contract's (accountId, code) tie-break is applied
+    // here.
+    records.sort(_byAmountThenAccountThenCode);
     ids.addAll([for (final record in records) record.code]);
     // An empty band is a legal answer (the smoke test runs at 500 txns,
     // where it is often empty); the verify dump diffs emptiness loudly.
@@ -508,6 +516,7 @@ final class IsarBenchEngine implements BenchEngine {
           .filter()
           .bookedOnBetween(firstDay, lastDay)
           .sortByBookedOn()
+          .thenByAccountId()
           .thenByCode()
           .offset(pages * rangePageSize)
           .limit(rangePageSize)

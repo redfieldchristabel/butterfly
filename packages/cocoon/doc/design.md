@@ -77,7 +77,27 @@ on the docs site under **Cocoon**:
   at most one range key) or `MissingIndexException` naming the `Index([...])`
   to declare; `.allowFullScan()` opts out. Keyset pagination only, with
   opaque fingerprinted cursors that are query-bound but page-size agnostic.
-  Sort keys are NOT NULL; the document id is the final tiebreaker.
+  Sort keys are NOT NULL; the keyset tiebreak is the document's identity —
+  every path param the scope leaves unbound, then the id (see the next
+  decision).
+- **Keyset tiebreak = the full identity.** A document id is unique only
+  within one parent (the scope key is params + id), so keying a
+  collection-group query's pages by id alone silently skipped every later
+  row sharing the last row's id under another parent — a 2,500-row group
+  paged 1,000 at a time read 1,000 rows, no error — and an order on a path
+  param dropped a cursor key and threw `InvalidCursorException` on page 2.
+  The planner now appends every scope-unbound param (pattern order) before
+  the id, all with the last sort key's direction, and cursor keys are built
+  one per effective order from the row's own result columns (field column,
+  param column or id), never from the de-duplicated SELECT list. The index
+  check keeps the user keys + id as its tail expectation, so the param
+  tiebreakers need no index backing and no query an index served regresses:
+  SQLite orders the params from the row itself (a bare group scan rides the
+  scope index for the identity order). Scoped-query plans (all params bound)
+  are byte-identical — same SQL, fingerprints and cursor bytes; a group
+  query's fingerprint changed, so cursors from an older build for a group
+  query are rejected with a `CursorMismatchException`, which is correct —
+  they were wrong.
 - **Transactions** wrap sqlite_async's write transaction; reads see the
   transaction's own writes (never the cache); cache updates are staged and
   applied only after the commit succeeds. Standalone writes each open their
@@ -403,6 +423,7 @@ executor, so it is deferred.
 | Storage engine (executor, tables, index columns, transactions) | done |
 | Hand-written adapter contract (`CollectionAdapter`, columns, indexes) | done |
 | Indexed queries, keyset pagination, count, index rule | done |
+| Keyset tiebreak = the full identity: collection-group pages key by the unbound path params + id, cursor keys one per effective order (field/param/id columns), scoped-query plans and cursor bytes unchanged | done |
 | Open + reconcile (backfill, column/index diff, shape hash) | done |
 | Document ids (`newDocId`, UUIDv7) | done |
 | Bounded LRU document cache | done |

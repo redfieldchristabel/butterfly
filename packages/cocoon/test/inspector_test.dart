@@ -528,9 +528,11 @@ void main() {
       });
       expect(result['error'], isNull);
       final plan = result['plan']! as Map<String, Object?>;
-      expect(plan['usedIndex'], isFalse);
-      expect(plan['indexName'], isNull);
-      expect(plan['explain'], contains('SCAN'));
+      // The planner chose no serving index for the filter. The raw EXPLAIN
+      // may still ride the scope index to avoid sorting the identity
+      // tiebreak (p_account_id, id) — it stays a whole-table SCAN either
+      // way, never an index seek on the filter.
+      expect(plan['explain'], contains('SCAN txn'));
     },
   );
 

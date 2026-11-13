@@ -321,6 +321,7 @@ final class DriftBenchEngine implements BenchEngine {
                 )
                 ..orderBy([
                   (t) => OrderingTerm.asc(t.bookedOn),
+                  (t) => OrderingTerm.asc(t.accountId),
                   (t) => OrderingTerm.asc(t.id),
                 ])
                 ..limit(rangePageSize, offset: pages * rangePageSize))
@@ -392,6 +393,7 @@ final class DriftBenchEngine implements BenchEngine {
               ..where((t) => t.status.equals(m.TxnStatus.pending.name))
               ..orderBy([
                 (t) => OrderingTerm.desc(t.bookedOn),
+                (t) => OrderingTerm.desc(t.accountId),
                 (t) => OrderingTerm.desc(t.id),
               ])
               ..limit(50))
@@ -417,10 +419,13 @@ final class DriftBenchEngine implements BenchEngine {
   @override
   Future<List<String>> bigspendIds(String baseDir) async {
     // One ordered index scan, limit 50 — drift's documented select API.
+    // Ties by (accountId, id) — the identity order the all-accounts ops
+    // share.
     final rows =
         await (_db!.select(_db!.txnRows)
               ..orderBy([
                 (t) => OrderingTerm.asc(t.amountMinor),
+                (t) => OrderingTerm.asc(t.accountId),
                 (t) => OrderingTerm.asc(t.id),
               ])
               ..limit(50))
@@ -445,6 +450,7 @@ final class DriftBenchEngine implements BenchEngine {
                 )
                 ..orderBy([
                   (t) => OrderingTerm.asc(t.amountMinor),
+                  (t) => OrderingTerm.asc(t.accountId),
                   (t) => OrderingTerm.asc(t.id),
                 ])
                 ..limit(
@@ -486,6 +492,7 @@ final class DriftBenchEngine implements BenchEngine {
                 )
                 ..orderBy([
                   (t) => OrderingTerm.asc(t.bookedOn),
+                  (t) => OrderingTerm.asc(t.accountId),
                   (t) => OrderingTerm.asc(t.id),
                 ])
                 ..limit(rangePageSize, offset: pages * rangePageSize))

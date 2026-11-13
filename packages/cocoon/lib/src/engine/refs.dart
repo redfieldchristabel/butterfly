@@ -196,8 +196,8 @@ final class CollectionRef<T extends Object> {
   /// Starts a query filtered by [filter].
   CocoonQuery<T> where(QueryFilter filter) => query().where(filter);
 
-  /// Starts a query sorted by [column]; the document id is always appended
-  /// as the final tiebreaker.
+  /// Starts a query sorted by [column]; the identity tiebreaker (unbound
+  /// path params, then the document id) follows the last sort key.
   CocoonQuery<T> orderBy(
     FieldColumn<T, Object?> column, {
     bool descending = false,

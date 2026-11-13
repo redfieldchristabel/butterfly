@@ -1,5 +1,23 @@
 ## Unreleased
 
+- **Paging a collection group no longer skips documents that share an id.**
+  A document id is unique only within one parent, so a collection-group
+  query's keyset tiebreak is now the full identity — the unbound path params
+  (in pattern order), then the id, following the last sort key's direction.
+  Before, a group query whose page ended on an id shared under another
+  parent silently skipped every later row with that id: paging a 2,500-row
+  collection group returned 1,000 rows, no error. Scoped queries (every
+  param bound by the parent) keep their cursor bytes and fingerprints —
+  only collection-group cursors from an older build changed, and those are
+  rejected with a `CursorMismatchException` instead of paging wrong (they
+  were wrong).
+- **Paging ordered by a path param no longer throws on page 2.** Cursor
+  keys are built one per sort key, reading each key's own result column
+  (field column, param column or id), instead of from a de-duplicated
+  column list that dropped param columns — an order on a path param (as the
+  DevTools query runner allows) no longer fails every page after the first
+  with `InvalidCursorException: Cursor key count does not match the query
+  sort order`.
 - **Composite indexes stack as `@Index` lines above the class.** Instead of
   growing the `@Collection(indexes: [...])` list, put one `@Index([...])`
   line per index directly above the model class, in index order

@@ -312,6 +312,7 @@ final class ObjectBoxBenchEngine implements BenchEngine {
     final query = _box
         .query(ObTxn_.bookedOn.between(firstDay, lastDay))
         .order(ObTxn_.bookedOn)
+        .order(ObTxn_.accountId)
         .order(ObTxn_.id)
         .build();
     try {
@@ -395,6 +396,7 @@ final class ObjectBoxBenchEngine implements BenchEngine {
     final query = _box
         .query(ObTxn_.status.equals(m.TxnStatus.pending.name))
         .order(ObTxn_.bookedOn, flags: Order.descending)
+        .order(ObTxn_.accountId, flags: Order.descending)
         .order(ObTxn_.id, flags: Order.descending)
         .build();
     try {
@@ -424,11 +426,12 @@ final class ObjectBoxBenchEngine implements BenchEngine {
   @override
   Future<List<String>> bigspendIds(String baseDir) async {
     // No amount filter (the dataset's 50 smallest amounts are always
-    // debits); the amount index backs the first order, the id order
-    // breaks the ties.
+    // debits); the amount index backs the first order, the (accountId, id)
+    // order breaks the ties.
     final query = _box
         .query()
         .order(ObTxn_.amountMinor)
+        .order(ObTxn_.accountId)
         .order(ObTxn_.id)
         .build();
     try {
@@ -447,6 +450,7 @@ final class ObjectBoxBenchEngine implements BenchEngine {
     final query = _box
         .query(ObTxn_.amountMinor.between(amountBandLo, amountBandHi - 1))
         .order(ObTxn_.amountMinor)
+        .order(ObTxn_.accountId)
         .order(ObTxn_.id)
         .build();
     try {
@@ -485,6 +489,7 @@ final class ObjectBoxBenchEngine implements BenchEngine {
               ObTxn_.bookedOn.between(firstDay, lastDay),
         )
         .order(ObTxn_.bookedOn)
+        .order(ObTxn_.accountId)
         .order(ObTxn_.id)
         .build();
     try {

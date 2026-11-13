@@ -35,8 +35,9 @@ Rules on ordering:
 - Sort keys are never null: `orderBy` on a nullable column throws.
 - Blob columns cannot be sorted.
 - Each column can appear once as a sort key.
-- The document id is always appended as the final tiebreaker, following the
-  direction of the last sort key.
+- The identity tiebreaker follows the last sort key: every path param the
+  query's scope does not bind (in pattern order), then the document id —
+  all with that key's direction.
 - A subcollection ref scopes by its parent automatically: `a1`'s txns never
   include `a2`'s.
 
@@ -181,6 +182,15 @@ while (page != null) {
       : await q.startAfter(page.nextCursor!).get();
 }
 ```
+
+A cursor's tiebreak is the document's full identity. Within one concrete
+parent the id is unique, so a scoped query pages by the sort keys plus the
+id. A collection-group query spans parents — two documents under different
+parents may share an id — so a group query's keyset ties by every path param
+the query's scope leaves unbound (in pattern order) between the sort keys
+and the id, all following the last sort key's direction; ordering a group
+query by a path param works the same way. Group rows always carry the param
+columns, so reading the keys costs nothing extra.
 
 ## Pagination: With Cocoon vs. raw sqlite
 

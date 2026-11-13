@@ -285,7 +285,11 @@ final class SembastBenchEngine implements BenchEngine {
             Filter.greaterThanOrEquals('bookedOn', firstDay),
             Filter.lessThanOrEquals('bookedOn', lastDay),
           ]),
-          sortOrders: [SortOrder('bookedOn'), SortOrder(Field.key)],
+          sortOrders: [
+            SortOrder('bookedOn'),
+            SortOrder('accountId'),
+            SortOrder(Field.key),
+          ],
           offset: pages * rangePageSize,
           limit: rangePageSize,
         ),
@@ -356,7 +360,11 @@ final class SembastBenchEngine implements BenchEngine {
       _db!,
       finder: Finder(
         filter: Filter.equals('status', m.TxnStatus.pending.name),
-        sortOrders: [SortOrder('bookedOn', false), SortOrder(Field.key, false)],
+        sortOrders: [
+          SortOrder('bookedOn', false),
+          SortOrder('accountId', false),
+          SortOrder(Field.key, false),
+        ],
         limit: 50,
       ),
     );
@@ -381,11 +389,16 @@ final class SembastBenchEngine implements BenchEngine {
   @override
   Future<List<String>> bigspendIds(String baseDir) async {
     // No indexes: sembast sorts the (in-RAM) store for the contract order —
-    // smallest amount (the largest debit) first, key order for ties.
+    // smallest amount (the largest debit) first, (accountId, key) order for
+    // ties.
     final records = await _txns.find(
       _db!,
       finder: Finder(
-        sortOrders: [SortOrder('amountMinor'), SortOrder(Field.key)],
+        sortOrders: [
+          SortOrder('amountMinor'),
+          SortOrder('accountId'),
+          SortOrder(Field.key),
+        ],
         limit: 50,
       ),
     );
@@ -407,7 +420,11 @@ final class SembastBenchEngine implements BenchEngine {
             Filter.greaterThanOrEquals('amountMinor', amountBandLo),
             Filter.lessThan('amountMinor', amountBandHi),
           ]),
-          sortOrders: [SortOrder('amountMinor'), SortOrder(Field.key)],
+          sortOrders: [
+            SortOrder('amountMinor'),
+            SortOrder('accountId'),
+            SortOrder(Field.key),
+          ],
           offset: pages * amountRangePageSize,
           limit: amountRangePageSize,
         ),
@@ -443,7 +460,11 @@ final class SembastBenchEngine implements BenchEngine {
             Filter.greaterThanOrEquals('bookedOn', firstDay),
             Filter.lessThanOrEquals('bookedOn', lastDay),
           ]),
-          sortOrders: [SortOrder('bookedOn'), SortOrder(Field.key)],
+          sortOrders: [
+            SortOrder('bookedOn'),
+            SortOrder('accountId'),
+            SortOrder(Field.key),
+          ],
           offset: pages * rangePageSize,
           limit: rangePageSize,
         ),

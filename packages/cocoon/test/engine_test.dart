@@ -1118,6 +1118,8 @@ void main() {
         );
 
         // Mixed-direction keyset (expanded OR form) still uses the index.
+        // The group query's identity tiebreak adds the unbound parent param
+        // between the sort keys and the id, so the cursor carries four keys.
         final mixed = planQuery(
           entry: entry,
           scopePath: null,
@@ -1133,6 +1135,7 @@ void main() {
         final cursor = CursorCodec.encode(mixed.fingerprint, [
           20260101,
           'MYR',
+          'a1',
           'id1',
         ]);
         expectIndexed(

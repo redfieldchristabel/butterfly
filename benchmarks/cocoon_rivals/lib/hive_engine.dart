@@ -14,6 +14,10 @@ import 'package:cocoon_rivals/engine.dart';
 import 'package:cocoon_rivals/models.dart' as m;
 import 'package:hive_ce/hive.dart';
 
+/// One row collected for the Dart-side sorts of the all-accounts ops: the
+/// string id, its account (the identity tie's first key) and the sort value.
+typedef _SortItem = ({String key, String account, int value});
+
 final class HiveBenchEngine implements BenchEngine {
   /// Builds the engine; [backupFile] overrides the NDJSON file `restore`
   /// reads (the tests point it at a small backup).
@@ -256,23 +260,22 @@ final class HiveBenchEngine implements BenchEngine {
     final firstDay = rangeMonthKey * 100 + 1;
     final lastDay = rangeMonthKey * 100 + 31;
     final sw = Stopwatch()..start();
-    // One Dart-side pass collects the month's (id, bookedOn) pairs in
-    // contract order; paging by 100 slices that list (Hive has no
-    // server-side pagination to model).
-    final month = <MapEntry<String, int>>[];
+    // One Dart-side pass collects the month's rows in contract order;
+    // paging by 100 slices that list (Hive has no server-side pagination to
+    // model).
+    final month = <_SortItem>[];
     for (final key in _txns!.keys.cast<String>()) {
-      final bookedOn = _txns!.get(key)!['bookedOn']! as int;
+      final value = _txns!.get(key)!;
+      final bookedOn = value['bookedOn']! as int;
       if (bookedOn >= firstDay && bookedOn <= lastDay) {
-        month.add(MapEntry(key, bookedOn));
+        month.add((
+          key: key,
+          account: value['accountId']! as String,
+          value: bookedOn,
+        ));
       }
     }
-    month.sort((a, b) {
-      final byDay = a.value.compareTo(b.value);
-      if (byDay != 0) {
-        return byDay;
-      }
-      return a.key.compareTo(b.key);
-    });
+    month.sort(_byValueThenIdentity);
     final ids = [for (final entry in month) entry.key];
     sw.stop();
     if (ids.isEmpty) {
@@ -327,38 +330,42 @@ final class HiveBenchEngine implements BenchEngine {
       }
       top.add(MapEntry(key, value));
       if (top.length > 400) {
-        top.sort((a, b) {
-          final byDay = (b.value['bookedOn']! as int).compareTo(
-            a.value['bookedOn']! as int,
-          );
-          if (byDay != 0) {
-            return byDay;
-          }
-          return b.key.compareTo(a.key);
-        });
+        top.sort(_byDayDescThenIdentity);
         top.removeRange(200, top.length);
       }
     }
-    top.sort((a, b) {
-      final byDay = (b.value['bookedOn']! as int).compareTo(
-        a.value['bookedOn']! as int,
-      );
-      if (byDay != 0) {
-        return byDay;
-      }
-      return b.key.compareTo(a.key);
-    });
+    top.sort(_byDayDescThenIdentity);
     return [for (final entry in top.take(50)) entry.key];
   }
 
-  /// The contract comparator over (amountMinor, id): smallest amount — the
-  /// largest debit — first, ties by string id ASC.
-  static int _amountThenKey(MapEntry<String, int> a, MapEntry<String, int> b) {
-    final byAmount = a.value.compareTo(b.value);
-    if (byAmount != 0) {
-      return byAmount;
+  /// The contract comparator for the latest-N shapes: `bookedOn DESC`, ties
+  /// by the document's identity (account, then string id) `DESC`.
+  static int _byDayDescThenIdentity(
+    MapEntry<String, Map<dynamic, dynamic>> a,
+    MapEntry<String, Map<dynamic, dynamic>> b,
+  ) {
+    final byDay = (b.value['bookedOn']! as int).compareTo(
+      a.value['bookedOn']! as int,
+    );
+    if (byDay != 0) {
+      return byDay;
     }
-    return a.key.compareTo(b.key);
+    final byAccount = (b.value['accountId']! as String).compareTo(
+      a.value['accountId']! as String,
+    );
+    return byAccount != 0 ? byAccount : b.key.compareTo(a.key);
+  }
+
+  /// The contract comparator over (value, accountId, key): smallest value —
+  /// the largest debit, or the earliest day — first, ties by the document's
+  /// identity (account, then string id) ASC.
+  static int _byValueThenIdentity(_SortItem a, _SortItem b) {
+    final byValue = a.value.compareTo(b.value);
+    if (byValue != 0) {
+      return byValue;
+    }
+    final byAccount = a.account.compareTo(b.account);
+    return byAccount != 0 ? byAccount : a.key.compareTo(b.key);
   }
 
   @override
@@ -381,33 +388,42 @@ final class HiveBenchEngine implements BenchEngine {
     // No query engine: scan the box, keep the smallest amounts (the largest
     // debits) by the contract order. A bounded top-50, like
     // `statusSearchIds`.
-    final top = <MapEntry<String, int>>[];
+    final top = <_SortItem>[];
     for (final key in _txns!.keys.cast<String>()) {
-      final value = _txns!.get(key)!['amountMinor']! as int;
-      top.add(MapEntry(key, value));
+      final value = _txns!.get(key)!;
+      top.add((
+        key: key,
+        account: value['accountId']! as String,
+        value: value['amountMinor']! as int,
+      ));
       if (top.length > 400) {
-        top.sort(_amountThenKey);
+        top.sort(_byValueThenIdentity);
         top.removeRange(200, top.length);
       }
     }
-    top.sort(_amountThenKey);
+    top.sort(_byValueThenIdentity);
     return [for (final entry in top.take(50)) entry.key];
   }
 
   @override
   Future<List<String>> amountRangeIds(String baseDir) async {
-    // One Dart-side pass collects the band's (id, amountMinor) pairs in
-    // contract order; paging by 100 slices that list (Hive has no
-    // server-side pagination to model), the way `rangeMonthIds` does it.
+    // One Dart-side pass collects the band's rows in contract order; paging
+    // by 100 slices that list (Hive has no server-side pagination to model),
+    // the way `rangeMonthIds` does it.
     final sw = Stopwatch()..start();
-    final band = <MapEntry<String, int>>[];
+    final band = <_SortItem>[];
     for (final key in _txns!.keys.cast<String>()) {
-      final amountMinor = _txns!.get(key)!['amountMinor']! as int;
+      final value = _txns!.get(key)!;
+      final amountMinor = value['amountMinor']! as int;
       if (amountMinor >= amountBandLo && amountMinor < amountBandHi) {
-        band.add(MapEntry(key, amountMinor));
+        band.add((
+          key: key,
+          account: value['accountId']! as String,
+          value: amountMinor,
+        ));
       }
     }
-    band.sort(_amountThenKey);
+    band.sort(_byValueThenIdentity);
     final ordered = [for (final entry in band) entry.key];
     final ids = [
       for (var p = 0; p * amountRangePageSize < ordered.length; p++)
@@ -426,11 +442,11 @@ final class HiveBenchEngine implements BenchEngine {
 
   @override
   Future<List<String>> pendingMonthIds(String baseDir) async {
-    // One Dart-side pass collects the month's pending (id, bookedOn) pairs
-    // in contract order; paging by 100 slices that list.
+    // One Dart-side pass collects the month's pending rows in contract
+    // order; paging by 100 slices that list.
     final firstDay = rangeMonthKey * 100 + 1;
     final lastDay = rangeMonthKey * 100 + 31;
-    final month = <MapEntry<String, int>>[];
+    final month = <_SortItem>[];
     for (final key in _txns!.keys.cast<String>()) {
       final value = _txns!.get(key)!;
       if (value['status'] != m.TxnStatus.pending.name) {
@@ -438,16 +454,14 @@ final class HiveBenchEngine implements BenchEngine {
       }
       final bookedOn = value['bookedOn']! as int;
       if (bookedOn >= firstDay && bookedOn <= lastDay) {
-        month.add(MapEntry(key, bookedOn));
+        month.add((
+          key: key,
+          account: value['accountId']! as String,
+          value: bookedOn,
+        ));
       }
     }
-    month.sort((a, b) {
-      final byDay = a.value.compareTo(b.value);
-      if (byDay != 0) {
-        return byDay;
-      }
-      return a.key.compareTo(b.key);
-    });
+    month.sort(_byValueThenIdentity);
     final ordered = [for (final entry in month) entry.key];
     final ids = [
       for (var p = 0; p * rangePageSize < ordered.length; p++)

@@ -154,7 +154,9 @@ bool get _assertsEnabled {
 bool get missingIndexScanPossible => _assertsEnabled;
 
 /// One sort key of a query: a model field or path param name with its
-/// direction. The document id is always appended as the final tiebreaker.
+/// direction. The planner appends the identity tiebreaker after the last
+/// user key: every path param the query's scope does not bind (in pattern
+/// order), then the document id — all with that key's direction.
 final class QueryOrder {
   /// Builds a sort key for [name].
   const QueryOrder(this.name, {this.descending = false});
@@ -336,7 +338,9 @@ final class PlannedQuery {
   /// cursor from another query is rejected.
   final String fingerprint;
 
-  /// SQL column names the cursor keys are read from, in order-part order.
+  /// The SQL result column each cursor key is read from — exactly one per
+  /// effective sort order, in that order (a field column, a param column or
+  /// `id`).
   final List<String> cursorColumns;
 
   /// The physical index the planner selected for this query, or `null` when
@@ -349,9 +353,10 @@ final class PlannedQuery {
 }
 
 /// The shared front half of query planning: the scope param filters plus the
-/// user filters, the effective sort order (the id tiebreaker appended), the
-/// WHERE fragments with their bound values, and the first index that serves
-/// the shape — `null` when the query opted out with `.allowFullScan()`.
+/// user filters, the effective sort order (the identity tiebreaker appended
+/// after the user keys), the WHERE fragments with their bound values, and
+/// the first index that serves the shape — `null` when the query opted out
+/// with `.allowFullScan()`.
 ///
 /// [planQuery], [planAggregate] and [planGroupAggregate] share it, so the
 /// index rule is decided once and identically for reads, counts and
@@ -369,7 +374,11 @@ final class ResolvedFilters {
   /// the user's.
   final List<QueryFilter> allFilters;
 
-  /// The sort keys with the document id appended as the final tiebreaker.
+  /// The sort keys with the identity tiebreaker appended: every path param
+  /// the scope does not bind (pattern order), then the document id, all
+  /// following the last sort key's direction. A scope that binds every param
+  /// (a subcollection ref) fixes those params for all its rows, so the rule
+  /// degrades to the id alone.
   final List<QueryOrder> effectiveOrders;
 
   /// SQL fragments for [allFilters], ANDed together.
@@ -404,14 +413,27 @@ ResolvedFilters resolveQueryFilters({
     ...filters,
   ];
 
-  // The document id is always appended as the final tiebreaker, following
-  // the direction of the last sort key so the index order can be reused.
+  // The tiebreaker is the row's full identity — every path param the scope
+  // leaves unbound (in pattern order), then the document id — all following
+  // the direction of the last sort key so the index order can be reused. A
+  // document id is unique only within one parent, so a collection-group
+  // query (or any query whose scope leaves a param unbound) must break ties
+  // by the params too, or keyset pages silently skip every later row that
+  // shares the last row's id under another parent. A scope that binds every
+  // param fixes them for all rows, and the rule is exactly the old
+  // `[...orders, id]`.
+  final tiebreakDescending = orders.isEmpty ? false : orders.last.descending;
+  final unboundParams = [
+    for (final name in entry.paramNames)
+      if (!scopeValues.containsKey(name) &&
+          !orders.any((order) => order.name == name))
+        name,
+  ];
   final effectiveOrders = <QueryOrder>[
     ...orders,
-    QueryOrder(
-      'id',
-      descending: orders.isEmpty ? false : orders.last.descending,
-    ),
+    for (final name in unboundParams)
+      QueryOrder(name, descending: tiebreakDescending),
+    QueryOrder('id', descending: tiebreakDescending),
   ];
 
   final equalityNames = <String>{};
@@ -423,6 +445,12 @@ ResolvedFilters resolveQueryFilters({
   // Which index serves the query (or none, for a full scan — or for a query
   // the debug scanAndWarn fallback accepts as a scan). The engine holds the
   // query while that index is deferred by a bulk writer.
+  //
+  // The check keeps the user keys plus the id as its tail expectation: the
+  // appended param tiebreakers are read from the row and ordered by SQLite
+  // (the serving index's order plus a sort over them), so they need no
+  // index backing. No query an index served before regresses to a full scan
+  // or a MissingIndexException because of them.
   final serving = fullScan
       ? null
       : _servingIndexOrNull(
@@ -431,7 +459,7 @@ ResolvedFilters resolveQueryFilters({
           equalityNames,
           rangeNames,
           orders,
-          effectiveOrders,
+          ordersWithId(orders, tiebreakDescending),
           onMissingIndex,
         );
 
@@ -450,6 +478,14 @@ ResolvedFilters resolveQueryFilters({
     serving?.name,
   );
 }
+
+/// The user sort keys plus the id tiebreaker — the tail an index must
+/// provide for the query to be served. The appended param tiebreakers of an
+/// identity-keyed query are deliberately absent: they need no index backing.
+List<QueryOrder> ordersWithId(List<QueryOrder> orders, bool idDescending) => [
+  ...orders,
+  QueryOrder('id', descending: idDescending),
+];
 
 /// Builds the SQL for a query: filters, index check, sort order, keyset
 /// pagination and count. Pure function over the registry entry.
@@ -518,7 +554,7 @@ PlannedQuery planQuery({
     sql: sql,
     args: args,
     fingerprint: fingerprint,
-    cursorColumns: _cursorColumns(entry, effectiveOrders),
+    cursorColumns: _cursorKeyColumns(entry, effectiveOrders),
     servingIndex: resolved.servingIndex,
   );
 }
@@ -965,7 +1001,7 @@ IndexPlan? _servingIndexOrNull(
   Set<String> equalityNames,
   Set<String> rangeNames,
   List<QueryOrder> orders,
-  List<QueryOrder> effectiveOrders,
+  List<QueryOrder> ordersWithId,
   MissingIndexScanDecision? onMissingIndex,
 ) {
   final target = '${entry.adapter.model} (${entry.adapter.pattern})';
@@ -981,7 +1017,7 @@ IndexPlan? _servingIndexOrNull(
     equalityNames: equalityNames,
     rangeName: rangeName,
     hasUserOrder: orders.isNotEmpty,
-    orders: effectiveOrders,
+    orders: ordersWithId,
   );
   if (serving != null) {
     return serving;
@@ -1060,29 +1096,33 @@ String _opSymbol(FilterOp op) => switch (op) {
 String _selectSql(RegistryEntry entry, List<QueryOrder> orders) {
   // The param columns travel with every page so a row can be turned back
   // into a DocRef — its full path is derived from the params and the id,
-  // which is also every row's stored identity (the scope key).
-  final columns = <String>[
-    'id',
-    'data',
-    ...entry.paramSqlNames,
-    ..._cursorColumns(entry, orders),
-  ];
-  return 'SELECT ${columns.join(', ')} FROM ${entry.table}';
-}
-
-List<String> _cursorColumns(RegistryEntry entry, List<QueryOrder> orders) {
-  final columns = <String>[];
+  // which is also every row's stored identity (the scope key). This list is
+  // only what the page SELECT carries: an order's column that is already
+  // here (a param column, or the id) is not selected twice. The cursor keys
+  // are built separately, one per effective order, from
+  // [PlannedQuery.cursorColumns].
+  final columns = <String>['id', 'data', ...entry.paramSqlNames];
   for (final order in orders) {
     if (order.name == 'id') {
       continue; // already selected
     }
     final sqlName = _orderSqlName(entry, order.name);
-    if (!columns.contains(sqlName) && !entry.paramSqlNames.contains(sqlName)) {
+    if (!columns.contains(sqlName)) {
       columns.add(sqlName);
     }
   }
-  return columns;
+  return 'SELECT ${columns.join(', ')} FROM ${entry.table}';
 }
+
+/// The result column each effective order reads its cursor key from — one
+/// entry per effective order, in order (a field's `f_` column, a param's
+/// `p_` column, or `id`). One key per order, never from a de-duplicated
+/// column list: an order on a path param (which [_selectSql] deliberately
+/// does not re-select, the params already travel with every page) must still
+/// contribute its value, or the cursor carries fewer keys than the sort
+/// order and every page after the first throws.
+List<String> _cursorKeyColumns(RegistryEntry entry, List<QueryOrder> orders) =>
+    [for (final order in orders) _orderSqlName(entry, order.name)];
 
 String _orderSqlName(RegistryEntry entry, String name) {
   if (name == 'id') {
@@ -1220,8 +1260,9 @@ final class QuerySpec<T extends Object> {
   /// The filters, in the order they were added.
   final List<QueryFilter> filters;
 
-  /// The sort keys, in the order they were added (without the id
-  /// tiebreaker, which the planner appends).
+  /// The sort keys, in the order they were added (without the identity
+  /// tiebreaker — unbound path params, then the id — which the planner
+  /// appends).
   final List<QueryOrder> orders;
 
   /// The page size, or `null` for unpaginated queries.
@@ -1282,9 +1323,10 @@ final class CocoonQuery<T extends Object> {
     return _copy(filters: [..._filters, filter]);
   }
 
-  /// Sorts by [column], ascending unless [descending]. The document id is
-  /// always appended as the final tiebreaker. Ordering by a nullable column
-  /// throws: sort keys are never null.
+  /// Sorts by [column], ascending unless [descending]. The identity
+  /// tiebreaker follows the last sort key: every path param the query's
+  /// scope does not bind (pattern order), then the document id. Ordering by
+  /// a nullable column throws: sort keys are never null.
   CocoonQuery<T> orderBy(
     FieldColumn<T, Object?> column, {
     bool descending = false,

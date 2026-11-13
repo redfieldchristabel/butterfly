@@ -44,7 +44,9 @@ List<String> canonicalLatest(BenchDataset data, String accountId, int limit) {
 }
 
 /// The contract order of one month's txns across all accounts: bookedOn ASC,
-/// ties by the string id ASC.
+/// ties by `(accountId, id)` ASC — the document's identity, the order
+/// Cocoon's group keyset produces (an id alone does not separate two
+/// documents sharing one under different parents).
 List<String> canonicalRange(BenchDataset data, int month) {
   final firstDay = month * 100 + 1;
   final lastDay = month * 100 + 31;
@@ -54,18 +56,23 @@ List<String> canonicalRange(BenchDataset data, int month) {
           .toList()
         ..sort((a, b) {
           final byDay = a.txn.bookedOn.compareTo(b.txn.bookedOn);
-          return byDay != 0 ? byDay : a.id.compareTo(b.id);
+          if (byDay != 0) return byDay;
+          final byAccount = a.accountId.compareTo(b.accountId);
+          return byAccount != 0 ? byAccount : a.id.compareTo(b.id);
         });
   return [for (final benchTxn in txns) benchTxn.id];
 }
 
-/// The pending txns' ids in the latest-50 contract order.
+/// The pending txns' ids in the latest-50 contract order (bookedOn DESC,
+/// ties by `(accountId, id)` DESC — the all-accounts identity tie).
 List<String> canonicalStatus(BenchDataset data, int limit) {
   final txns =
       data.txns.where((t) => t.txn.status == m.TxnStatus.pending).toList()
         ..sort((a, b) {
           final byDay = b.txn.bookedOn.compareTo(a.txn.bookedOn);
-          return byDay != 0 ? byDay : b.id.compareTo(a.id);
+          if (byDay != 0) return byDay;
+          final byAccount = b.accountId.compareTo(a.accountId);
+          return byAccount != 0 ? byAccount : b.id.compareTo(a.id);
         });
   return [for (final benchTxn in txns.take(limit)) benchTxn.id];
 }
@@ -87,17 +94,20 @@ Map<String, int> canonicalYearSums(BenchDataset data, int year) {
 }
 
 /// The contract order of the 50 largest debits: amountMinor ASC, ties by
-/// the string id ASC, limit [limit].
+/// `(accountId, id)` ASC, limit [limit].
 List<String> canonicalBigspend(BenchDataset data, int limit) {
   final txns = [...data.txns]
     ..sort((a, b) {
       final byAmount = a.txn.amountMinor.compareTo(b.txn.amountMinor);
-      return byAmount != 0 ? byAmount : a.id.compareTo(b.id);
+      if (byAmount != 0) return byAmount;
+      final byAccount = a.accountId.compareTo(b.accountId);
+      return byAccount != 0 ? byAccount : a.id.compareTo(b.id);
     });
   return [for (final benchTxn in txns.take(limit)) benchTxn.id];
 }
 
-/// The txns with amountMinor in [lo, hi), amountMinor ASC, ties by id ASC.
+/// The txns with amountMinor in [lo, hi), amountMinor ASC, ties by
+/// `(accountId, id)` ASC.
 List<String> canonicalAmountRange(BenchDataset data, int lo, int hi) {
   final txns =
       data.txns
@@ -105,13 +115,15 @@ List<String> canonicalAmountRange(BenchDataset data, int lo, int hi) {
           .toList()
         ..sort((a, b) {
           final byAmount = a.txn.amountMinor.compareTo(b.txn.amountMinor);
-          return byAmount != 0 ? byAmount : a.id.compareTo(b.id);
+          if (byAmount != 0) return byAmount;
+          final byAccount = a.accountId.compareTo(b.accountId);
+          return byAccount != 0 ? byAccount : a.id.compareTo(b.id);
         });
   return [for (final benchTxn in txns) benchTxn.id];
 }
 
-/// The pending txns of one month, all accounts, bookedOn ASC, ties by id
-/// ASC.
+/// The pending txns of one month, all accounts, bookedOn ASC, ties by
+/// `(accountId, id)` ASC.
 List<String> canonicalPendingMonth(BenchDataset data, int month) {
   final firstDay = month * 100 + 1;
   final lastDay = month * 100 + 31;
@@ -126,7 +138,9 @@ List<String> canonicalPendingMonth(BenchDataset data, int month) {
           .toList()
         ..sort((a, b) {
           final byDay = a.txn.bookedOn.compareTo(b.txn.bookedOn);
-          return byDay != 0 ? byDay : a.id.compareTo(b.id);
+          if (byDay != 0) return byDay;
+          final byAccount = a.accountId.compareTo(b.accountId);
+          return byAccount != 0 ? byAccount : a.id.compareTo(b.id);
         });
   return [for (final benchTxn in txns) benchTxn.id];
 }

@@ -393,7 +393,10 @@ void main() {
       'ORDER BY f_booked_on DESC, id DESC LIMIT ?',
     );
     expect(plan.args, ['a1', 20260101, 51]);
-    expect(plan.cursorColumns, ['f_booked_on']);
+    // One column per effective order: the sort key, then the id — the
+    // identity tiebreak of a fully-scoped query is still the id alone, so
+    // the plan is byte-identical to a pre-identity build's.
+    expect(plan.cursorColumns, ['f_booked_on', 'id']);
     expect(plan.fingerprint, matches(RegExp(r'^[0-9a-f]{16}$')));
   });
 
@@ -422,8 +425,14 @@ void main() {
     expect(countPlan.sql, 'SELECT count(*) AS c FROM txn WHERE f_status = ?');
     expect(countPlan.args, ['posted']);
 
-    // A valid cursor changes the page SQL but never the aggregate SQL.
-    final cursor = CursorCodec.encode(plan.fingerprint, [20260101, 'tx1']);
+    // A valid cursor changes the page SQL but never the aggregate SQL. The
+    // group query's identity tiebreak adds the parent param between the sort
+    // key and the id, so the cursor carries three keys.
+    final cursor = CursorCodec.encode(plan.fingerprint, [
+      20260101,
+      'a1',
+      'tx1',
+    ]);
     final paged = planQuery(
       entry: entry,
       scopePath: null,
@@ -445,7 +454,10 @@ void main() {
     expect(pagedCountPlan.sql, countPlan.sql);
     expect(pagedCountPlan.args, countPlan.args);
     expect(paged.fingerprint, plan.fingerprint);
-    expect(paged.sql, contains('AND (f_booked_on, id) < (?, ?)'));
+    expect(
+      paged.sql,
+      contains('AND (f_booked_on, p_account_id, id) < (?, ?, ?)'),
+    );
   });
 
   test('a range filter without sort keys takes the extra index slot', () {
@@ -465,5 +477,74 @@ void main() {
       'WHERE p_account_id = ? AND f_booked_on > ? '
       'ORDER BY id ASC',
     );
+  });
+
+  test('a collection-group plan ties pages by the full identity', () {
+    // Group query, filter only, no sort keys: the tiebreak is the unbound
+    // parent param, then the id — the declared (currency, id) index still
+    // serves it (the param tiebreak needs no index backing).
+    final plan = planQuery(
+      entry: entry,
+      scopePath: null,
+      filters: [txnCurrency.isEqualTo('USD')],
+      orders: const [],
+      limit: 10,
+      cursor: null,
+      fullScan: false,
+    );
+    expect(
+      plan.sql,
+      'SELECT id, data, p_account_id FROM txn '
+      'WHERE f_currency = ? '
+      'ORDER BY p_account_id ASC, id ASC LIMIT ?',
+    );
+    expect(plan.args, ['USD', 11]);
+    expect(plan.cursorColumns, ['p_account_id', 'id']);
+    expect(plan.servingIndex, isNot('cx_txn_scope'));
+    // The keyset predicate binds one value per effective order.
+    final cursor = CursorCodec.encode(plan.fingerprint, ['a2', 'tx9']);
+    final paged = planQuery(
+      entry: entry,
+      scopePath: null,
+      filters: [txnCurrency.isEqualTo('USD')],
+      orders: const [],
+      limit: 10,
+      cursor: cursor,
+      fullScan: false,
+    );
+    expect(paged.sql, contains('(p_account_id, id) > (?, ?)'));
+    expect(paged.args, ['USD', 'a2', 'tx9', 11]);
+  });
+
+  test('a scoped query keeps the pre-identity plan byte for byte', () {
+    // All params bound by the scope: effective orders = [bookedOn, id], the
+    // pre-identity rule. The cursor a pre-identity build encoded — sort key
+    // value, then the id, under the unchanged fingerprint — still pages.
+    final scope = txns.pattern.resolve({'accountId': 'a1'});
+    final plan = planQuery(
+      entry: entry,
+      scopePath: scope,
+      filters: [txnBookedOn.isGreaterThanOrEqualTo(20260101)],
+      orders: const [QueryOrder('bookedOn', descending: true)],
+      limit: 50,
+      cursor: null,
+      fullScan: false,
+    );
+    final legacyCursor = CursorCodec.encode(plan.fingerprint, [
+      20260101,
+      'tx1',
+    ]);
+    final paged = planQuery(
+      entry: entry,
+      scopePath: scope,
+      filters: [txnBookedOn.isGreaterThanOrEqualTo(20260101)],
+      orders: const [QueryOrder('bookedOn', descending: true)],
+      limit: 50,
+      cursor: legacyCursor,
+      fullScan: false,
+    );
+    expect(paged.fingerprint, plan.fingerprint);
+    expect(paged.sql, contains('AND (f_booked_on, id) < (?, ?)'));
+    expect(paged.args, ['a1', 20260101, 20260101, 'tx1', 51]);
   });
 }

@@ -533,8 +533,9 @@ final count = await q.count(); // SELECT count(*), same index rule
 Filter ops: `isEqualTo`, `isNotEqualTo`, `isLessThan`, `isLessThanOrEqualTo`,
 `isGreaterThan`, `isGreaterThanOrEqualTo`, `whereIn` (at most 30 values) and
 `isNull`/`isNotNull` on nullable columns. Sort keys are never null: ordering
-by a nullable column throws. The document id is always appended as the final
-tiebreaker.
+by a nullable column throws. The identity tiebreaker follows the last sort
+key: every path param the scope does not bind, then the document id — so a
+collection group pages by (params, id) and a scoped query by the id alone.
 
 A subcollection ref scopes by its parent automatically; `a1`'s txns never
 include `a2`'s. Dropping the parent filter gives a collection-group query,

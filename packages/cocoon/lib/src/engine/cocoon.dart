@@ -1070,13 +1070,13 @@ final class Cocoon {
     String? nextCursor;
     if (limit != null && rows.length > limit) {
       pageRows = rows.sublist(0, limit);
-      // Cursor keys follow the effective order: the sort-key SQL values and
-      // the document id last, as the tiebreaker.
+      // One cursor key per effective order, read from that order's own
+      // result column (field column, param column or id) — never from a
+      // de-duplicated column list, so the param tiebreakers of a
+      // collection-group query carry their values too and the key count
+      // always matches the sort order the next page re-uses.
       final last = pageRows.last;
-      final keys = [
-        for (final column in plan.cursorColumns) last[column]!,
-        last['id']!,
-      ];
+      final keys = [for (final column in plan.cursorColumns) last[column]!];
       nextCursor = CursorCodec.encode(plan.fingerprint, keys);
     }
     final docs = <DocSnapshot<T>>[

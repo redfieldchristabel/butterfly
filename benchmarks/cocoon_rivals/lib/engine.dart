@@ -18,19 +18,25 @@
 ///   account-day at 1M, so the tie-break carries real weight; engines whose
 ///   query API lacks a string id get one ordered by construction.)
 /// - **range month**: every txn with `bookedOn` in the month, all accounts,
-///   ordered by `bookedOn ASC`, ties by id `ASC`, paged by [rangePageSize].
+///   ordered by `bookedOn ASC`, ties by `(accountId, id)` `ASC`, paged by
+///   [rangePageSize]. The all-accounts ops tie by the document's identity —
+///   the parent path's params, then the id, following the sort key's
+///   direction — which is the order Cocoon's group keyset (and Firestore's
+///   implicit path order) produces; an id alone does not separate two
+///   documents that share one under different parents.
 /// - **year report**: per-account per-month `amountMinor` sums of one year.
 /// - **status search**: latest 50 `pending` txns across all accounts, same
-///   order as latest-50.
+///   order as latest-50 with the identity tie (`bookedOn DESC`, then
+///   `(accountId, id)` `DESC`).
 /// - **bigspend**: the 50 largest debits across all accounts —
-///   `amountMinor ASC` (most negative first), ties by the string id `ASC`,
-///   limit 50. No amount filter: with the dataset's distribution the 50
-///   smallest amounts are always debits, and every engine must agree.
+///   `amountMinor ASC` (most negative first), ties by `(accountId, id)`
+///   `ASC`, limit 50. No amount filter: with the dataset's distribution the
+///   50 smallest amounts are always debits, and every engine must agree.
 /// - **amount range**: every txn with `amountMinor` in the fixed band
 ///   `[amountBandLo, amountBandHi)` (all accounts), `amountMinor ASC`, ties
-///   by id `ASC`, paged by [amountRangePageSize].
+///   by `(accountId, id)` `ASC`, paged by [amountRangePageSize].
 /// - **pending month**: every `pending` txn of [rangeMonthKey] (all
-///   accounts), `bookedOn ASC`, ties by id `ASC`, paged by
+///   accounts), `bookedOn ASC`, ties by `(accountId, id)` `ASC`, paged by
 ///   [rangePageSize].
 /// - **deep page**: one account's history newest-first (the latest-50
 ///   order), [deeppagePageCount] pages of [deeppagePageSize] documents by
@@ -188,8 +194,9 @@ abstract interface class BenchEngine {
   Future<List<int>> writeUs(List<SampledDoc> docs, String baseDir);
 
   /// Pages every txn of one month ([rangeMonthKey], all accounts) by
-  /// [rangePageSize], in `bookedOn ASC`, ties by id `ASC` order, and returns
-  /// every id in order. The CLI derives pages from the count.
+  /// [rangePageSize], in `bookedOn ASC`, ties by `(accountId, id)` `ASC`
+  /// order, and returns every id in order. The CLI derives pages from the
+  /// count.
   Future<List<String>> rangeMonthIds(String baseDir);
 
   /// Per-account per-month `amountMinor` sums of [reportYear] across every
@@ -197,30 +204,31 @@ abstract interface class BenchEngine {
   /// `<accountId>|<yyyyMM>` for the smoke test.
   Future<(int, Map<String, int>, int)> yearReport(String baseDir);
 
-  /// The latest 50 `pending` txns across all accounts — [statusRuns]
-  /// executions, timed per run. Returns the per-run durations in
-  /// microseconds, in the order asked.
+  /// The latest 50 `pending` txns across all accounts — `bookedOn DESC`,
+  /// ties by `(accountId, id)` `DESC` — [statusRuns] executions, timed per
+  /// run. Returns the per-run durations in microseconds, in the order asked.
   Future<List<int>> statusSearchUs(String baseDir);
 
   /// The ids the status search returns, for the smoke test.
   Future<List<String>> statusSearchIds(String baseDir);
 
   /// The 50 largest debits across all accounts — `amountMinor ASC`, ties by
-  /// string id `ASC`, limit 50 — [bigspendRuns] executions, timed per run.
-  /// Returns the per-run durations in microseconds, in the order asked.
+  /// `(accountId, id)` `ASC`, limit 50 — [bigspendRuns] executions, timed
+  /// per run. Returns the per-run durations in microseconds, in the order
+  /// asked.
   Future<List<int>> bigspendUs(String baseDir);
 
   /// The ids the bigspend query returns, for the smoke/verify checks.
   Future<List<String>> bigspendIds(String baseDir);
 
   /// Pages every txn with `amountMinor` in `[amountBandLo, amountBandHi)`
-  /// (all accounts) by [amountRangePageSize], `amountMinor ASC`, ties by id
-  /// `ASC`, and returns every id in order.
+  /// (all accounts) by [amountRangePageSize], `amountMinor ASC`, ties by
+  /// `(accountId, id)` `ASC`, and returns every id in order.
   Future<List<String>> amountRangeIds(String baseDir);
 
   /// Pages every `pending` txn of [rangeMonthKey] (all accounts) by
-  /// [rangePageSize], `bookedOn ASC`, ties by id `ASC`, and returns every
-  /// id in order.
+  /// [rangePageSize], `bookedOn ASC`, ties by `(accountId, id)` `ASC`, and
+  /// returns every id in order.
   Future<List<String>> pendingMonthIds(String baseDir);
 
   /// One account's history newest-first, [deeppagePageCount] pages of
