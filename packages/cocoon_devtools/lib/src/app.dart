@@ -5,7 +5,7 @@ library;
 import 'dart:async';
 
 import 'package:devtools_extensions/devtools_extensions.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'api.dart';
 import 'changes_panel.dart';

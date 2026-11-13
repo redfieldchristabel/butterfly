@@ -13,6 +13,7 @@ dependencies:
   devtools_extensions: ^0.5.1
   flutter:
     sdk: flutter
+  material_ui: ^1.2.0
   vm_service: ">=13.0.0 <16.0.0"
 
 dev_dependencies:

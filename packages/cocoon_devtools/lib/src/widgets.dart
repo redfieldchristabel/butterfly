@@ -2,7 +2,7 @@
 /// the path breadcrumb and the JSON field renderer.
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'models.dart';
 
