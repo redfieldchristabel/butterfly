@@ -1,5 +1,9 @@
 ## Unreleased
 
+- **Builds on current Flutter/Dart.** The generator now requires analyzer 14
+  (what Flutter 3.50 / Dart 3.14 resolves); generated adapters and locks are
+  unchanged — every committed `cocoon.lock` and generated file rebuilds
+  byte-identically.
 - **`migrate` writes a YAML `cocoon.lock` now**, formatted like
   `pubspec.lock` so reviews next to the migration files stay quiet; the
   file is byte-stable — writing, reading and writing again is

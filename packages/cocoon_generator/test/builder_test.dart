@@ -1242,6 +1242,46 @@ class LedgerTxn {
         );
       },
     );
+
+    test('super formals are rejected; this formals still build', () async {
+      final lock = lockText(
+        collections: {
+          'Thing': TestCollection('things', const {'name': 'String'}),
+        },
+      );
+      const superModel = '''
+class Base {
+  final String name;
+  const Base({required this.name});
+}
+
+@Collection('things')
+class Thing extends Base {
+  const Thing({required super.name});
+}
+''';
+      final superRun = await runCocoonBuilder(_head + superModel, lock);
+      expect(superRun.succeeded, isFalse);
+      expect(
+        superRun.errors.join('\n'),
+        contains(
+          'Class Thing: super parameter "name" is not supported; declare '
+          'constructor parameters as this.<field>',
+        ),
+      );
+
+      const thisModel = '''
+@Collection('things')
+class Thing {
+  const Thing({required this.name});
+
+  final String name;
+}
+''';
+      final thisRun = await runCocoonBuilder(_head + thisModel, lock);
+      expect(thisRun.succeeded, isTrue, reason: thisRun.errors.join('\n'));
+      expect(thisRun.code, contains('writer.writeString(1, value.name);'));
+    });
   });
 
   group('the migration gate', () {

@@ -471,7 +471,10 @@ ExtractedClass _extractClass(
         'Class $name has a constructor parameter without a name',
       );
     }
-    if (parameter.isSuperFormal) {
+    // Analyzer 14 models a `super.x` parameter as a dedicated
+    // [SuperFormalParameterElement]; analyzer 12 exposed the same fact as the
+    // `isSuperFormal` flag.
+    if (parameter is SuperFormalParameterElement) {
       throw CocoonBuildError(
         'Class $name: super parameter "${parameter.name}" is not supported; '
         'declare constructor parameters as this.<field>',

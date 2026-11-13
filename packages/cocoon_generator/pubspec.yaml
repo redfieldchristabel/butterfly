@@ -14,7 +14,7 @@ environment:
   sdk: ^3.11.0
 
 dependencies:
-  analyzer: ^12.1.0
+  analyzer: ^14.0.0
   build: ^4.0.0
   cocoon: ^0.1.0
   glob: ^2.1.2
@@ -22,9 +22,9 @@ dependencies:
   yaml: ^3.1.0
 
 dev_dependencies:
-  # Pinned: 3.5.17+ pulls newer build_runner versions than this workspace
-  # locks, and 3.5.23 needs build ^5.
-  build_test: 3.5.16
+  # build_test pins build_runner exactly per release (3.5.21 -> 2.16.2, what
+  # this workspace locks; 3.5.22+ need 2.17 and build ^5).
+  build_test: 3.5.21
   lints: ^6.0.0
   package_config: ^2.1.0
   test: ^1.24.0
