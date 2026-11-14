@@ -1,4 +1,5 @@
-# Publishes packages/cocoon_generator to pub.dev when a tag like cocoon_generator-v0.1.1 is pushed.
+# Publishes packages/cocoon_generator to pub.dev when a tag like cocoon_generator-v0.1.1 is pushed
+# (release_please.yml pushes it when its release PR is merged).
 # Uses pub.dev automated publishing (GitHub OIDC, no secrets). Enable it once on
 # pub.dev: package admin -> Automated publishing -> GitHub Actions, repository
 # redfieldchristabel/butterfly, tag pattern cocoon_generator-v{{version}}.
@@ -11,10 +12,37 @@ on:
     tags:
       - 'cocoon_generator-v[0-9]+.[0-9]+.[0-9]+*'
 
+# Runs its own Flutter setup (instead of dart-lang/setup-dart's reusable
+# publish workflow) because the pub workspace contains Flutter packages:
+# resolving the workspace needs the Flutter SDK, which plain Dart cannot do.
+# Without setup-dart, the OIDC token exchange setup-dart does is done by hand
+# in the "Authenticate" step.
 jobs:
   publish:
+    runs-on: ubuntu-latest
     permissions:
       id-token: write
-    uses: dart-lang/setup-dart/.github/workflows/publish.yml@v1
-    with:
-      working-directory: packages/cocoon_generator
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.9
+          cache: true
+
+      - name: Install workspace dependencies
+        run: flutter pub get
+
+      - name: Authenticate with pub.dev (GitHub OIDC)
+        run: |
+          TOKEN=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://pub.dev" | jq -r .value)
+          echo "::add-mask::$TOKEN"
+          echo "PUB_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+
+      - name: Publish
+        working-directory: packages/cocoon_generator
+        run: |
+          dart pub token add https://pub.dev --env-var PUB_TOKEN
+          dart pub publish --force

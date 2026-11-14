@@ -1,0 +1,21 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "caa2e83079456e8cdd97c89c22d99e4974f577f5",
+  "include-component-in-tag": true,
+  "tag-separator": "-",
+  "separate-pull-requests": true,
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": true,
+  "packages": {
+    "packages/cocoon": {
+      "release-type": "dart",
+      "component": "cocoon",
+      "package-name": "cocoon"
+    },
+    "packages/cocoon_generator": {
+      "release-type": "dart",
+      "component": "cocoon_generator",
+      "package-name": "cocoon_generator"
+    }
+  }
+}
