@@ -1,4 +1,7 @@
-## Unreleased
+## 0.1.0
+
+First release on pub.dev. The newest changes come first; the full
+0.1.0 feature set follows under "Everything in 0.1.0".
 
 - **New: run the engine off the UI isolate — one option.**
   `CocoonOptions(isolate: CocoonIsolate.background)` spawns one worker
@@ -175,7 +178,7 @@
   `tx.get(ref)`; `collection.getAll(ids)` is the sugar when you already
   have the collection in hand.
 
-## 0.1.0
+### Everything in 0.1.0
 
 Cocoon is a typed, disk-backed, Firestore-style local database for Dart and
 Flutter, built on SQLite. Your model classes are the schema; documents live

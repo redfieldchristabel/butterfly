@@ -1,4 +1,7 @@
-## Unreleased
+## 0.1.0
+
+First release on pub.dev. The newest changes come first; the full
+0.1.0 feature set follows under "Everything in 0.1.0".
 
 - **Builds on current Flutter/Dart.** The generator now requires analyzer 14
   (what Flutter 3.50 / Dart 3.14 resolves); generated adapters and locks are
@@ -20,7 +23,7 @@
   exist for scripted runs on a developer machine, and `--check` is
   read-only but redundant in CI because the build already fails.
 
-## 0.1.0
+### Everything in 0.1.0
 
 This package is the build_runner code generator for
 [Cocoon](https://pub.dev/packages/cocoon), the typed, disk-backed,
