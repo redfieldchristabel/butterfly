@@ -273,6 +273,20 @@ class _CocoonInspectorAppState extends State<CocoonInspectorApp> {
                   : selected.path!,
               style: Theme.of(context).textTheme.bodySmall,
             ),
+          if (selected.isolate != 'caller') ...[
+            const SizedBox(width: 8),
+            Tooltip(
+              message: selected.isolateStats == null
+                  ? 'This database runs in a ${selected.isolate} isolate; '
+                        'the inspector handlers are registered there.'
+                  : selected.isolateStats!.summary,
+              child: Icon(
+                Icons.memory,
+                size: 18,
+                color: Theme.of(context).colorScheme.secondary,
+              ),
+            ),
+          ],
           const Spacer(),
           if (_error != null)
             Tooltip(

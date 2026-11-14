@@ -7,6 +7,7 @@ import 'package:cocoon/src/engine/transaction_guard.dart'
 import 'package:test/test.dart';
 
 import 'support/models.dart';
+import 'support/open_db.dart';
 
 final otherTxn = Txn(
   bookedOn: 20260201,
@@ -27,7 +28,7 @@ void main() {
   Future<Cocoon> openDatabase({
     List<CollectionAdapter<Object?>>? collections,
   }) async {
-    final opened = await Cocoon.open(
+    final opened = await openCocoon(
       dbPath(),
       collections: collections ?? [accounts, txns, splits],
     );
@@ -390,7 +391,7 @@ void main() {
       'a second open Cocoon on another file can be read and written',
       () async {
         final db = await openDatabase();
-        final other = await Cocoon.open(
+        final other = await openCocoon(
           dbPath('other.db'),
           collections: [accounts, txns, splits],
         );
@@ -411,7 +412,7 @@ void main() {
       'a runTransaction on another database inside the body is allowed',
       () async {
         final db = await openDatabase();
-        final other = await Cocoon.open(
+        final other = await openCocoon(
           dbPath('other.db'),
           collections: [accounts, txns, splits],
         );

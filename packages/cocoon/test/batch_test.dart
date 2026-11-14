@@ -7,6 +7,7 @@ import 'package:test/test.dart';
 
 import 'support/models.dart';
 import 'support/spy_executor.dart';
+import 'support/open_db.dart';
 
 /// Lets broadcast-stream deliveries and SQLite round trips land.
 Future<void> settle([int ms = 25]) =>
@@ -21,7 +22,7 @@ void main() {
     CocoonOptions options = const CocoonOptions(),
     List<CollectionAdapter<Object?>>? collections,
   }) async {
-    final opened = await Cocoon.open(
+    final opened = await openCocoon(
       '${dir.path}${Platform.pathSeparator}$name',
       collections: collections ?? [accounts, txns, splits],
       options: options,
@@ -116,7 +117,7 @@ void main() {
         status: TxnStatus.posted,
         createdAt: DateTime.utc(2026, 1, 15),
       );
-      final writer = await Cocoon.open(file, collections: [accounts, txns]);
+      final writer = await openCocoon(file, collections: [accounts, txns]);
       await writer
           .collection(accounts)
           .doc('a1')
@@ -125,7 +126,7 @@ void main() {
           .set(txnOf(100));
       await writer.close();
 
-      final updater = await Cocoon.open(file, collections: [accounts, txns]);
+      final updater = await openCocoon(file, collections: [accounts, txns]);
       openDbs.add(updater);
       final t1 = updater
           .collection(accounts)
@@ -136,7 +137,7 @@ void main() {
       await updater.close();
 
       // Cache-cold: a third instance reads what is actually on disk.
-      final reader = await Cocoon.open(file, collections: [accounts, txns]);
+      final reader = await openCocoon(file, collections: [accounts, txns]);
       openDbs.add(reader);
       expect(
         (await reader
@@ -164,7 +165,7 @@ void main() {
       await settle();
       final eventsBefore = events.length;
       expect(eventsBefore, 1); // the watch's initial snapshot
-      final cacheBefore = db.debugCacheLength;
+      final cacheBefore = await db.debugCacheLength;
       final changesBefore = await db.changesSince(0);
 
       final batch = db.batch()
@@ -178,7 +179,7 @@ void main() {
 
       expect(await t9.get(), isNull);
       expect((await t0.get())!.data.amountMinor, 100);
-      expect(db.debugCacheLength, cacheBefore);
+      expect(await db.debugCacheLength, cacheBefore);
       await settle();
       expect(events.length, eventsBefore); // nothing for the failed batch
       expect(await db.changesSince(0), changesBefore);

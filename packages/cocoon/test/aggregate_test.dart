@@ -8,6 +8,7 @@ import 'package:test/test.dart';
 
 import 'support/models.dart';
 import 'support/spy_executor.dart';
+import 'support/open_db.dart';
 
 Txn txnOf(
   int amountMinor, {
@@ -38,7 +39,7 @@ void main() {
       '${dir.path}${Platform.pathSeparator}$name';
 
   Future<Cocoon> openDatabase({List<CollectionAdapter<Object?>>? collections}) {
-    return Cocoon.open(
+    return openCocoon(
       dbPath(),
       collections: collections ?? [accounts, txns, splits],
     ).then((opened) {

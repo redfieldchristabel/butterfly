@@ -163,7 +163,7 @@ void main() {
     expect(snaps[2], isNull);
     expect(snaps[3]!.data, const Account(name: 'Acme', active: true));
     // Every fetched document populated the cache, like get() does.
-    expect(cold.debugCacheLength, 3);
+    expect(await cold.debugCacheLength, 3);
   });
 
   test(
@@ -322,7 +322,7 @@ void main() {
       final db = await openDatabase();
       final a1 = txnsOf(db, 'a1');
       await a1.doc('t0').set(txnOf(20260101));
-      final cachedBefore = db.debugCacheLength;
+      final cachedBefore = await db.debugCacheLength;
 
       await db.runTransaction((tx) async {
         final t1 = a1.doc('t1');
@@ -337,10 +337,10 @@ void main() {
         expect(snaps[3]!.data.amountMinor, 1000);
         // Transaction reads never touch the shared cache; the writes stay
         // staged until the commit succeeds.
-        expect(db.debugCacheLength, cachedBefore);
+        expect(await db.debugCacheLength, cachedBefore);
       });
 
-      expect(db.debugCacheLength, cachedBefore + 2);
+      expect(await db.debugCacheLength, cachedBefore + 2);
       expect((await a1.doc('t1').get())!.data.amountMinor, 1000);
     },
   );
@@ -360,7 +360,7 @@ void main() {
     );
 
     expect(await t1.get(), isNull);
-    expect(db.debugCacheLength, 0);
+    expect(await db.debugCacheLength, 0);
   });
 
   test('empty input answers without SQL', () async {
@@ -378,7 +378,7 @@ void main() {
     await writeTxns(db, 'a1', ['t1', 't2']);
     final cold = await reopen();
 
-    expect(cold.debugCacheLength, 0);
+    expect(await cold.debugCacheLength, 0);
     final snaps = await cold.getAll([
       txnsOf(cold, 'a1').doc('t1'),
       txnsOf(cold, 'a1').doc('t2'),
@@ -388,7 +388,7 @@ void main() {
     expect(snaps[0]!.id, 't1');
     expect(snaps[1]!.id, 't2');
     expect(identical(snaps[2], snaps[0]), isTrue);
-    expect(cold.debugCacheLength, 2);
+    expect(await cold.debugCacheLength, 2);
     // The populated cache serves the next call.
     final again = await cold.getAll([txnsOf(cold, 'a1').doc('t1')]);
     expect(again.single!.data.amountMinor, 1000);

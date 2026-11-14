@@ -5,8 +5,8 @@ import 'adapter.dart';
 import 'aggregate.dart';
 import 'cocoon.dart';
 import 'query.dart';
+import 'runtime.dart';
 import 'transaction_guard.dart';
-import 'write_buffer.dart';
 
 /// A document as read from the database: its [ref], its [id] and its decoded
 /// [data].
@@ -282,7 +282,7 @@ final class CocoonTransaction {
   @internal
   const CocoonTransaction(this._wtx);
 
-  final WriteTx _wtx;
+  final CocoonWriteTx _wtx;
 
   /// Reads a document inside the transaction, seeing its own writes.
   Future<DocSnapshot<T>?> get<T extends Object>(DocRef<T> ref) =>
@@ -307,4 +307,11 @@ final class CocoonTransaction {
 
   /// Deletes a document and its whole subtree inside the transaction.
   Future<void> delete(DocRef<Object> ref) => _wtx.delete(ref);
+
+  /// The engine write surface behind this transaction; the isolate plumbing
+  /// routes the background mode's transaction messages through it (the
+  /// message protocol carries the replace-existing `update` form, which the
+  /// public `set` does not surface).
+  @internal
+  CocoonWriteTx get writeTx => _wtx;
 }

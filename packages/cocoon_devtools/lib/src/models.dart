@@ -59,6 +59,8 @@ final class InspectorDatabase {
     required this.path,
     required this.open,
     required this.collectionCount,
+    this.isolate = 'caller',
+    this.isolateStats,
   });
 
   /// Parses one entry of the `listDatabases` result.
@@ -69,10 +71,20 @@ final class InspectorDatabase {
       path: map['path'] as String?,
       open: map['open'] == true,
       collectionCount: _intOf(map['collectionCount'], 'collectionCount'),
+      isolate: map['isolate'] is String ? map['isolate'] as String : 'caller',
+      isolateStats: map['isolateStats'] is Map<Object?, Object?>
+          ? IsolateStatsInfo.fromJson(
+              map['isolateStats']! as Map<Object?, Object?>,
+            )
+          : null,
     );
   }
 
   /// The stable id every other extension call addresses the database by.
+  ///
+  /// The extension merges every isolate that answers `listDatabases`, so
+  /// the id is a composite `<isolate id>/<database id>`; calls route
+  /// through it to the owning isolate.
   final String id;
 
   /// The file the database was opened from, or `null` when the app opened
@@ -85,10 +97,18 @@ final class InspectorDatabase {
   /// How many collections the database registers.
   final int collectionCount;
 
+  /// The isolate mode the database opened in: `caller`, `background` (the
+  /// worker isolate serves this database) or `auto`.
+  final String isolate;
+
+  /// The auto mode's live counters, when the database runs in `auto`.
+  final IsolateStatsInfo? isolateStats;
+
   /// A human label for headers and the database picker.
   String get label {
     final where = path == null ? 'custom executor' : path!;
-    return closedSuffix(open, 'Database $id — $where');
+    final mode = isolate == 'caller' ? '' : ' · $isolate isolate';
+    return closedSuffix(open, 'Database $id — $where$mode');
   }
 
   /// Parses the whole `listDatabases` result.
@@ -99,6 +119,37 @@ final class InspectorDatabase {
         InspectorDatabase.fromJson(entry),
     ];
   }
+}
+
+/// The auto mode's live counters as `listDatabases` reports them.
+final class IsolateStatsInfo {
+  const IsolateStatsInfo({
+    required this.inlineCalls,
+    required this.helperCalls,
+    required this.helperBytesMoved,
+  });
+
+  /// Parses the `isolateStats` entry of one `listDatabases` result.
+  factory IsolateStatsInfo.fromJson(Map<Object?, Object?> json) =>
+      IsolateStatsInfo(
+        inlineCalls: _intOf(json['inlineCalls'], 'inlineCalls'),
+        helperCalls: _intOf(json['helperCalls'], 'helperCalls'),
+        helperBytesMoved: _intOf(json['helperBytesMoved'], 'helperBytesMoved'),
+      );
+
+  /// Operations that ran inline on the caller.
+  final int inlineCalls;
+
+  /// Operations served by the helper isolate.
+  final int helperCalls;
+
+  /// Approximate payload bytes moved over the helper channel.
+  final int helperBytesMoved;
+
+  /// A one-line summary for the inspector's database header.
+  String get summary =>
+      'auto: $inlineCalls inline, $helperCalls helper, '
+      '${(helperBytesMoved / 1024).toStringAsFixed(1)} KiB moved';
 }
 
 /// Prepends '(closed) ' to [text] while [open] is false, so tombstones read

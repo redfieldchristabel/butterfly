@@ -1,5 +1,26 @@
 ## Unreleased
 
+- **New: run the engine off the UI isolate — one option.**
+  `CocoonOptions(isolate: CocoonIsolate.background)` spawns one worker
+  isolate per database and runs the whole engine there (decoding pages,
+  aggregates, group-bys, bulk-writer encodes, migrations, compaction
+  bookkeeping), so that work no longer runs on the isolate that called
+  `Cocoon.open`. `CocoonIsolate.auto` keeps small work
+  and every transaction inline on the caller with zero round trips and moves
+  the heavy reads and bulk encodes to a helper isolate automatically.
+  Everything else — refs, queries, watches, transactions, batch, bulkWriter,
+  backups — behaves the same in every mode, and the default (`caller`) is
+  byte-for-byte today's behaviour. Measured: the worker round trip is
+  near-free (single-get p50 0.32 ms → 0.34 ms) and reads decode off the
+  caller (a 10k-page read 103 ms → 75 ms wall in `auto`), and the worst
+  single caller stall in a mixed read/write workload drops from 102 ms to
+  27 ms in `background`, but a 100k bulk
+  import's caller stall does not drop yet — the document copies that cross
+  the boundary cost about what the encode they replace saved (~0.9 s total
+  stall in `caller` against ~1.1–1.3 s); returning encoded bytes as
+  `TransferableTypedData` (decoded lazily on access) is the identified next
+  step. Full table and the recommendation:
+  [Isolates](https://docs.page/use.docs.page/butterfly/libraries/cocoon/isolates).
 - **Paging a collection group no longer skips documents that share an id.**
   A document id is unique only within one parent, so a collection-group
   query's keyset tiebreak is now the full identity — the unbound path params

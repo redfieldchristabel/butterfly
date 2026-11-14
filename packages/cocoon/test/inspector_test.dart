@@ -150,11 +150,12 @@ void main() {
         .firstWhere((e) => e['id'] == id);
     expect(
       mine.keys,
-      unorderedEquals(['id', 'path', 'open', 'collectionCount']),
+      unorderedEquals(['id', 'path', 'open', 'collectionCount', 'isolate']),
     );
     expect(mine['path'], dbPath());
     expect(mine['open'], isTrue);
     expect(mine['collectionCount'], 3);
+    expect(mine['isolate'], 'caller');
 
     await db.close();
     final closedResult = await CocoonInspectorService.dispatch(
@@ -181,6 +182,68 @@ void main() {
     expect(nullPathEntries, isNotEmpty);
     expect(nullPathEntries.last['collectionCount'], 1);
   });
+
+  test(
+    'listDatabases reports the isolate mode, and auto reports its stats',
+    () async {
+      // A background database registers on ITS worker isolate (the
+      // DevTools extension discovers that isolate), so the dispatch here —
+      // this isolate's registry — sees only caller and auto databases.
+      final auto = await Cocoon.open(
+        dbPath('auto_stats.db'),
+        collections: [accounts, txns],
+        options: const CocoonOptions(isolate: CocoonIsolate.auto),
+      );
+      openDbs.add(auto);
+      await auto
+          .collection(accounts)
+          .doc('a1')
+          .set(const Account(name: 'Acme', active: true));
+      await auto
+          .collection(accounts)
+          .doc('a1')
+          .collection(txns)
+          .doc('t1')
+          .set(
+            Txn(
+              bookedOn: 20260101,
+              amountMinor: 100,
+              rate: 1,
+              currency: 'MYR',
+              status: TxnStatus.posted,
+              createdAt: DateTime.utc(2026, 1, 1),
+            ),
+          );
+      // An unbounded query: helper-routed in auto, so the helper counters
+      // move.
+      await auto.collection(accounts).doc('a1').collection(txns).query().get();
+      final result = await CocoonInspectorService.dispatch('listDatabases', {});
+      final autoEntry = (result['databases']! as List<Object?>)
+          .map((e) => e! as Map<String, Object?>)
+          .firstWhere((e) => e['path'] == dbPath('auto_stats.db'));
+      expect(autoEntry['isolate'], 'auto');
+      final stats = autoEntry['isolateStats']! as Map<String, Object?>;
+      expect(stats['inlineCalls'], greaterThan(0));
+      expect(stats['helperCalls'], greaterThan(0));
+      expect(stats['helperBytesMoved'], greaterThan(0));
+
+      // A caller-mode database reports its mode and carries no stats.
+      final caller = await Cocoon.open(
+        dbPath('caller_mode.db'),
+        collections: [accounts],
+      );
+      openDbs.add(caller);
+      final callerResult = await CocoonInspectorService.dispatch(
+        'listDatabases',
+        {},
+      );
+      final callerEntry = (callerResult['databases']! as List<Object?>)
+          .map((e) => e! as Map<String, Object?>)
+          .firstWhere((e) => e['path'] == dbPath('caller_mode.db'));
+      expect(callerEntry['isolate'], 'caller');
+      expect(callerEntry.containsKey('isolateStats'), isFalse);
+    },
+  );
 
   test(
     'listCollections returns model, pattern, table, counts and indexes',
@@ -879,15 +942,15 @@ void main() {
     () async {
       final db = await openDatabase(collections: [accounts]);
       // No feed before any DevTools request: apps nobody inspects pay nothing.
-      expect(db.debugWatcherCount, 0);
+      expect(await db.debugWatcherCount, 0);
       await CocoonInspectorService.dispatch('listDatabases', {});
-      expect(db.debugWatcherCount, 1);
+      expect(await db.debugWatcherCount, 1);
 
       await db
           .collection(accounts)
           .doc('a1')
           .set(const Account(name: 'Acme', active: true));
-      expect(db.debugWatcherCount, 1);
+      expect(await db.debugWatcherCount, 1);
 
       final second = await openDatabase(
         name: 'second.db',
@@ -897,7 +960,7 @@ void main() {
       await CocoonInspectorService.dispatch('listCollections', {
         'databaseId': secondId,
       });
-      expect(second.debugWatcherCount, 1);
+      expect(await second.debugWatcherCount, 1);
       await second.close();
     },
   );

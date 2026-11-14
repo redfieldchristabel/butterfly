@@ -478,6 +478,11 @@ final class AggregateQuerySnapshot<T extends Object?> {
 
   final int _count;
 
+  /// The snapshot's aggregate values, in spec order; the isolate plumbing
+  /// rebuilds snapshots across isolate boundaries from these.
+  @internal
+  List<Object?> get values => _values;
+
   /// How many documents the query matched — `count()`'s value. Nulls are
   /// counted; every matching document counts, like Firestore's `COUNT(*)`.
   int get count => _count;
@@ -565,6 +570,16 @@ final class AggregateGroup<T extends Object?> {
   final List<AggregateFunction<T>> _specs;
   final List<Object?> _values;
   final int _count;
+
+  /// The group's key values, in key order; the isolate plumbing rebuilds
+  /// groups across isolate boundaries from these.
+  @internal
+  List<Object?> get keyValues => _keyValues;
+
+  /// The group's aggregate values, in spec order; the isolate plumbing
+  /// rebuilds groups across isolate boundaries from these.
+  @internal
+  List<Object?> get values => _values;
 
   /// How many documents this group holds — the group's `count()` value.
   int get count => _count;

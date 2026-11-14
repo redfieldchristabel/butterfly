@@ -17,6 +17,7 @@ import 'package:test/test.dart';
 
 import 'support/models.dart';
 import 'support/spy_executor.dart';
+import 'support/open_db.dart';
 
 /// The format-1 DDL pieces: the internal tables predate the shared helpers.
 String _oldMetaSql() =>
@@ -263,7 +264,7 @@ void main() {
     final path = dbPath();
     await buildOldFormatFile(path, txnRows: 400, padding: 900);
     // Upgrade once WITHOUT compaction, so the file carries the freelist.
-    final upgraded = await Cocoon.open(
+    final upgraded = await openCocoon(
       path,
       collections: [accounts, LegacyTxnAdapter()],
       options: const CocoonOptions(compactAfterUpgrade: false),

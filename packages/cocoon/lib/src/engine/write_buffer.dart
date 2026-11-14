@@ -1,10 +1,13 @@
 import '../id.dart';
 import 'cache.dart';
 import 'changes.dart';
+import 'dart:typed_data';
+
 import 'cocoon.dart';
 import 'executor.dart';
 import 'naming.dart';
 import 'refs.dart';
+import 'runtime.dart';
 import 'schema_sql.dart';
 
 /// How many buffered rows one write transaction accumulates before it
@@ -50,7 +53,7 @@ final class BufferedWrite {
 /// error) throws out of the transaction, which rolls everything back; the
 /// [CacheStage] is simply discarded, so neither the database nor the
 /// hot-document cache reflects any of it.
-final class WriteTx {
+final class WriteTx implements CocoonWriteTx {
   /// Builds the transaction state over [tx]; [db] supplies the registry, the
   /// change-log policy and the delete helpers. With `logChanges: false` the
   /// transaction writes no change-log rows (a bulk-writer chunk opt-out);
@@ -61,6 +64,7 @@ final class WriteTx {
   final Cocoon _db;
 
   /// The SQL transaction every statement of this write runs in.
+  @override
   final CocoonTx tx;
 
   /// The cache stage this transaction's updates accumulate on, applied only
@@ -80,6 +84,7 @@ final class WriteTx {
   /// Reads a document inside the transaction, seeing its own writes: the
   /// buffer flushes first, so the read reaches SQLite after every queued
   /// write of this transaction.
+  @override
   Future<DocSnapshot<T>?> get<T extends Object>(DocRef<T> ref) async {
     await flush();
     return _db.readDocInTx<T>(tx, ref);
@@ -91,6 +96,7 @@ final class WriteTx {
   /// allowed. Never touches the hot-document cache: reads inside a
   /// transaction go to SQLite, and cache updates stay staged until the
   /// commit succeeds ([Cocoon.getAllDocsInTx]).
+  @override
   Future<List<DocSnapshot<T>?>> getAll<T extends Object>(
     List<DocRef<T>> refs,
   ) async {
@@ -103,6 +109,7 @@ final class WriteTx {
 
   /// Upserts [value] at [ref] (or, with [update], replaces an existing
   /// document and fails the transaction when it does not exist).
+  @override
   Future<void> put<T extends Object>(
     DocRef<T> ref,
     T value, {
@@ -139,9 +146,35 @@ final class WriteTx {
   }
 
   /// Adds a document with a fresh time-ordered id.
+  @override
   Future<DocRef<T>> add<T extends Object>(CollectionRef<T> ref, T value) {
     final docRef = ref.doc(newDocId());
     return put(docRef, value).then((_) => docRef);
+  }
+
+  /// Queues a write whose statement arguments [args] were built ahead of
+  /// the transaction ([PreparedWrite] shape: `data, f_columns...,
+  /// params..., id` in [entry]'s upsert/update order). Same staging,
+  /// change and cache bookkeeping as [put]; the document's encoded bytes
+  /// ([args] first element) are what the cache holds, so the
+  /// read-your-writes guarantee stays byte-exact.
+  @override
+  Future<void> putPrepared(
+    DocRef<Object> ref,
+    RegistryEntry entry,
+    List<Object?> args, {
+    bool update = false,
+  }) {
+    _writes.add(BufferedWrite(entry, update, ref.path.path, args));
+    if (!update) {
+      _writtenPaths.add(ref.path.path);
+    }
+    _queueChange(entry.table, ref.path.path, ChangeOp.set);
+    stage.put(ref.path.path, EncodedDoc(args.first! as Uint8List));
+    if (_writes.length >= writeFlushThreshold) {
+      return flush();
+    }
+    return Future.value();
   }
 
   /// Deletes [ref] and its whole subtree. The buffer flushes first, so
@@ -152,6 +185,7 @@ final class WriteTx {
   /// a descendant table's first N params are exactly the deleted
   /// collection's params (the patterns share their path prefix). All in one
   /// transaction.
+  @override
   Future<void> delete(DocRef<Object> ref) async {
     await flush();
     final entry = _db.registry.entryFor(ref.adapter);

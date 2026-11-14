@@ -61,6 +61,7 @@ const int inspectorDefaultQueryLimit = 50;
 final class _InspectorDatabase {
   _InspectorDatabase(this.id, Cocoon database)
     : databasePath = database.databasePath,
+      isolateMode = database.isolateModeName,
       collectionCount = database.registry.entries.length {
     db = database;
     _modelsByTable = {
@@ -74,6 +75,10 @@ final class _InspectorDatabase {
 
   /// The file the database was opened from, or `null` for [Cocoon.openWith].
   final String? databasePath;
+
+  /// The isolate mode the database was opened in, frozen at attach so a
+  /// closed tombstone still says which mode served it.
+  final String isolateMode;
 
   /// `null` once the database closed; the entry stays as a tombstone
   /// because service extensions cannot be unregistered.
@@ -616,6 +621,20 @@ final class CocoonInspectorService {
     'path': entry.databasePath,
     'open': entry.isOpen,
     'collectionCount': entry.collectionCount,
+    // The mode the database opened in: `caller` and `auto` databases are
+    // registered on the isolate that opened them (auto's engine home is the
+    // caller); a `background` database is registered by its worker isolate,
+    // and the DevTools extension reaches it through isolate discovery.
+    'isolate': entry.isolateMode,
+    // The auto mode's live counters; absent for caller and background
+    // databases (the latter keep their counters nowhere — the engine state
+    // is in the worker and the proxy exposes none).
+    if (entry.db?.isolateStats case final stats?)
+      'isolateStats': {
+        'inlineCalls': stats.inlineCalls,
+        'helperCalls': stats.helperCalls,
+        'helperBytesMoved': stats.helperBytesMoved,
+      },
   };
 
   static _InspectorDatabase _openEntryOf(Map<String, String> params) {

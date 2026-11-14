@@ -11,6 +11,7 @@ import 'package:test/test.dart';
 
 import 'support/models.dart';
 import 'support/spy_executor.dart';
+import 'support/open_db.dart';
 
 final allTypesTxn = Txn(
   bookedOn: 20260115,
@@ -33,7 +34,7 @@ void main() {
     CocoonOptions options = const CocoonOptions(),
     List<CollectionAdapter<Object?>>? collections,
   }) async {
-    final opened = await Cocoon.open(
+    final opened = await openCocoon(
       dbPath(),
       collections: collections ?? [accounts, txns, splits],
       options: options,
@@ -144,11 +145,23 @@ void main() {
       openDbs.remove(db);
 
       // v2: the memo column (and its index) appears; the reconciler adds the
-      // column and backfills every row from the stored wire bytes.
+      // column and backfills every row from the stored wire bytes. Refs are
+      // adapter-bound and instance-bound: re-resolve the two documents on
+      // the reopened database before reading them.
       final reopened = await openDatabase();
-      final roundtripped = await t1.get();
+      final reopenedT1 = reopened
+          .collection(accounts)
+          .doc('a1')
+          .collection(txns)
+          .doc(t1.id);
+      final reopenedT2 = reopened
+          .collection(accounts)
+          .doc('a1')
+          .collection(txns)
+          .doc(t2.id);
+      final roundtripped = await reopenedT1.get();
       expect(roundtripped!.data.memo, 'groceries');
-      final nullMemo = await t2.get();
+      final nullMemo = await reopenedT2.get();
       expect(nullMemo!.data.memo, isNull);
 
       // The backfilled column is queryable through its index.
@@ -489,7 +502,7 @@ void main() {
 
       // Prime the cache with the pre-transaction value.
       expect((await existing.get())!.data.status, TxnStatus.posted);
-      final cachedLength = db.debugCacheLength;
+      final cachedLength = await db.debugCacheLength;
       expect(cachedLength, greaterThan(0));
 
       await expectLater(
@@ -509,7 +522,7 @@ void main() {
       expect(snap!.data.status, TxnStatus.posted);
       expect(await txnsRef.count(), 1);
       // Cache: exactly the pre-transaction documents, pre-transaction values.
-      expect(db.debugCacheLength, cachedLength);
+      expect(await db.debugCacheLength, cachedLength);
       expect((await existing.get())!.data.status, TxnStatus.posted);
     });
 
@@ -536,14 +549,14 @@ void main() {
         final snap = await ref.get();
         expect(snap, isNotNull);
       }
-      expect(db.debugCacheLength, 3);
+      expect(await db.debugCacheLength, 3);
 
       // Evicted or not, every read is correct.
       for (var i = 0; i < refs.length; i++) {
         final snap = await refs[i].get();
         expect(snap!.data.amountMinor, i);
       }
-      expect(db.debugCacheLength, 3);
+      expect(await db.debugCacheLength, 3);
     });
 
     test('writes update and deletes evict cached documents', () async {
@@ -552,13 +565,13 @@ void main() {
       final ref = await txnsRef.add(allTypesTxn);
       await txnsRef.add(allTypesTxn.copyWith(currency: 'USD'));
       await ref.get();
-      expect(db.debugCacheLength, 2);
+      expect(await db.debugCacheLength, 2);
 
       await ref.set(allTypesTxn.copyWith(status: TxnStatus.failed));
       expect((await ref.get())!.data.status, TxnStatus.failed);
 
       await db.collection(accounts).doc('a1').delete();
-      expect(db.debugCacheLength, 0);
+      expect(await db.debugCacheLength, 0);
       expect(await ref.get(), isNull);
     });
 
@@ -570,7 +583,7 @@ void main() {
           .collection(txns)
           .add(allTypesTxn);
       await ref.get();
-      expect(db.debugCacheLength, 0);
+      expect(await db.debugCacheLength, 0);
       expect((await ref.get())!.data, allTypesTxn);
     });
   });

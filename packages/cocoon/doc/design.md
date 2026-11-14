@@ -392,6 +392,60 @@ on the docs site under **Cocoon**:
   commit succeeds.
 - **Document ids**: time-ordered UUIDv7 (`newDocId()`); `validateDocId`
   enforces path-safe ids.
+- **Isolates are an option, not a rewrite** (`CocoonIsolate.caller` |
+  `background` | `auto`, default `caller` — today's behaviour, byte for
+  byte). The engine sits behind an internal `CocoonRuntime` interface (the
+  methods `Cocoon` already called: getDoc, putDoc, runQuery, writeTx, watch
+  feeds, changes, backup, close, ...), so the same public API has two
+  homes:
+  - **`background`**: `Cocoon.open` spawns ONE worker isolate per database
+    (same isolate group, `Isolate.spawn`, so adapters and model objects are
+    sendable without serialization), opens the ordinary local engine there,
+    and the returned `Cocoon` is a proxy: refs and query specs are built on
+    the caller and the SPEC crosses (never closures), results come back
+    decoded (snapshots, pages with cursors, aggregates, groups), errors
+    cross with their type and message (`MissingIndexException` with its fix
+    command, `TransactionMisuseError` with its operation, cursor and
+    state errors; anything unsendable becomes a `CocoonIsolateException`
+    carrying type name, message and stack text). Watches run in the worker
+    and push emissions; the write lock, hot-document cache, change log and
+    transaction sessions all live in the worker, so a crashed worker fails
+    every pending and future call with `CocoonIsolateException` and a
+    caller isolate that dies mid-transaction is rolled back by the worker
+    (an exit-marker message, then exit). The transaction BODY runs on the
+    caller (user code with captured state); each `tx` call is one message
+    tagged with the transaction id and the worker holds the write lock
+    until the body commits or throws. `batch()` and `bulkWriter()` queue on
+    the caller and ship in chunks (one message per chunk, not per op).
+    DevTools: the inspector attaches in the worker (its engine is local
+    there); the extension lists the process's isolates and picks the ones
+    that answer `ext.cocoon.listDatabases`, merging their database lists
+    under composite ids.
+  - **`auto`**: ONE engine home on the CALLER (write lock, cache, watch
+    notifier, change log and the transaction guard stay single and
+    unchanged) plus ONE helper isolate that never writes: it serves heavy
+    reads from its own read-only connection (same WAL snapshot rules as
+    sqlite_async's read pool, so read-your-writes after commit holds and a
+    heavy query during an open transaction sees pre-commit state), and it
+    does the CPU side of heavy writes — encoding bulkWriter chunks — while
+    the caller's single writer executes the prepared rows. Routing is the
+    deterministic `AutoRouter` rule set over `CocoonAutoThresholds`
+    (inlineRows 200, inlineWriteOps 500 by default, both documented against
+    the isolates benchmark): doc ops, counts, aggregates and ALL
+    transactions run inline
+    with zero round trips; getAll/queries/groupBy/batch above the
+    thresholds and bulkWriter always go to the helper; a heavy watch
+    re-runs its query in the helper while the notifier stays on the caller.
+    A crashed helper degrades to inline execution with one logged warning —
+    auto never bricks the database — and `db.isolateStats` (inline vs
+    helper calls, bytes moved) surfaces the split, in the DevTools
+    inspector too. Measured outcome (the isolates docs page carries the
+    table): the worker/helper round trip is near-free and read walls
+    improve, but bulk-load caller stalls do not drop yet — the copies of
+    the documents crossing the boundary cost about what the encode they
+    replaced saved; returning encoded bytes as `TransferableTypedData`
+    (decoded lazily on access) is the identified next step within this
+    protocol.
 
 ## Money
 
@@ -453,6 +507,7 @@ executor, so it is deferred.
 | `migrate` documented as a development tool, not a CI step (CI only builds; `--check` is the only migrate form the Butterfly CLI's MCP server exposes, and why) | done |
 | pub.dev packaging (both packages at 0.1.0: repository/issue_tracker/topics metadata, install + quick-start README with a runnable generator-free `example/`, CHANGELOG released, `dart pub publish --dry-run` verified) | done |
 | Transactions guard: database calls inside a `runTransaction` body (`DocRef`/`CollectionRef`/query/aggregate/getAll/batch commit/BulkWriter/nested `runTransaction`/`backupTo`) throw `TransactionMisuseError` immediately with the operation and a `Fix:` hint — write lock, stale reads, always on; a second `Cocoon` and `watch()` stay allowed inside a body | done |
+| Isolate modes: `CocoonIsolate.caller` (default, unchanged) / `background` (one worker isolate per database: the whole engine there, a spec-based proxy on the caller, typed results and errors crossing, worker-side watch/tx/bulk sessions, caller-death rollback, worker-crash `CocoonIsolateException`s) / `auto` (engine home on the caller, one read-only helper isolate for heavy reads and bulk encodes, deterministic `AutoRouter` thresholds, `db.isolateStats`, crash-degrades-to-inline); whole suite green in all three modes; measured stall/wall/RSS table in the isolates docs page | done |
 | `tx.query(...)` (read through the write connection, seeing the transaction's own writes — the fix for the stale-read rule's workaround) | planned |
 | Publishing to pub.dev (maintainer: push, then `dart pub publish` in cocoon, then cocoon_generator) | planned |
 | Export/import streams (documents through the public API, NDJSON-shaped) | planned |

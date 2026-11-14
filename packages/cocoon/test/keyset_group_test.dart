@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:cocoon/cocoon.dart';
 import 'package:cocoon/src/engine/query.dart' show QueryOrder;
 import 'package:test/test.dart';
+import 'support/open_db.dart';
 
 /// Keyset pagination over a collection group: a document's id is unique only
 /// within one parent, so a group query's tiebreaker must be the full
@@ -91,7 +92,7 @@ void main() {
 
   setUp(() async {
     dir = await Directory.systemTemp.createTemp('cocoon_keyset');
-    db = await Cocoon.open('${dir.path}/b.db', collections: [entries, lines]);
+    db = await openCocoon('${dir.path}/b.db', collections: [entries, lines]);
   });
 
   tearDown(() async {

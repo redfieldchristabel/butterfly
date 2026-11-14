@@ -573,6 +573,38 @@ void main() {
     expect(db.instanceId, isNotEmpty);
     await db.close();
   });
+
+  test('the isolates.mdx sample compiles and runs', () async {
+    // The isolates docs page: the same database API in every isolate mode —
+    // open with `auto` here (it exercises both inline and helper routing),
+    // then read the routing counters the page's debug section shows.
+    final db = await Cocoon.open(
+      await tempDbPath(),
+      collections: [saccounts, stxns],
+      options: const CocoonOptions(
+        isolate: CocoonIsolate.auto,
+        autoThresholds: CocoonAutoThresholds(
+          inlineRows: 200,
+          inlineWriteOps: 500,
+        ),
+      ),
+    );
+    final a1 = db.collection(saccounts).doc('a1');
+    await a1.set(const SAccount(name: 'Acme')); // inline: doc ops never move
+    await a1.collection(stxns).add(stxn());
+    final page = await a1.collection(stxns).query().limit(50).get();
+    expect(page.docs, hasLength(1)); // inline: limit <= inlineRows
+    final groups = await a1
+        .collection(stxns)
+        .groupBy([key(stxnStatus)])
+        .aggregate([count()])
+        .get();
+    expect(groups, hasLength(1)); // small result, but uncapped: the helper
+    final stats = db.isolateStats!;
+    expect(stats.inlineCalls, greaterThan(0));
+    expect(stats.helperCalls, greaterThan(0)); // the uncapped groupBy moved
+    await db.close();
+  });
 }
 
 void _ignore(Object error) {}

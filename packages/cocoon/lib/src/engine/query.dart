@@ -1651,6 +1651,16 @@ final class GroupByQuery<T extends Object> {
 final class AggregateGroupQuery<T extends Object> {
   AggregateGroupQuery._(this.query, this.keys, this.maxGroups, this.specs);
 
+  /// Rebuilds a group query from its parts; the isolate mode's worker uses
+  /// this to host a watch over the caller's group query.
+  @internal
+  AggregateGroupQuery.rebuild(
+    this.query,
+    this.keys,
+    this.maxGroups,
+    this.specs,
+  );
+
   /// The query whose filters shape the groups.
   @internal
   final CocoonQuery<T> query;

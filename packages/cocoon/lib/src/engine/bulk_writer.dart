@@ -2,10 +2,11 @@ import 'dart:async';
 
 import 'package:meta/meta.dart';
 
-import 'batch.dart' show BatchOpKind;
+import 'batch.dart' show BatchOp, BatchOpKind;
 import 'cocoon.dart';
 import 'naming.dart';
 import 'refs.dart';
+import 'runtime.dart';
 import 'schema_sql.dart';
 import 'transaction_guard.dart';
 
@@ -58,38 +59,6 @@ final class BulkWriterOptions {
   final bool logChanges;
 }
 
-/// One queued [BulkWriter] operation.
-final class _QueuedOp {
-  const _QueuedOp(this.kind, this.entry, this.ref, this.value);
-
-  /// The kind of write.
-  final BatchOpKind kind;
-
-  /// The collection the document belongs to (its table and write SQL).
-  final RegistryEntry entry;
-
-  /// The document the operation targets.
-  final DocRef<Object> ref;
-
-  /// The value to store, for [BatchOpKind.set] and [BatchOpKind.update].
-  final Object? value;
-}
-
-/// A secondary index this writer deferred: the SQL table, the physical index
-/// name, and the `CREATE INDEX` statement that rebuilds it.
-final class _DeferredIndex {
-  const _DeferredIndex(this.table, this.name, this.sql);
-
-  /// The SQL table the index belongs to.
-  final String table;
-
-  /// The physical index name (`cx_<table>_<hex>`).
-  final String name;
-
-  /// The exact `CREATE ... INDEX IF NOT EXISTS` statement to rebuild it.
-  final String sql;
-}
-
 /// A Firestore-style BulkWriter: many writes, buffered in memory, committed
 /// in chunks — not atomic as a whole, atomic per chunk.
 ///
@@ -134,10 +103,119 @@ final class _DeferredIndex {
 /// A writer is single-use: [close] flushes everything, rebuilds the deferred
 /// indexes and completes; calling it or queueing after that throws a
 /// [StateError].
-final class BulkWriter {
+abstract interface class BulkWriter {
+  /// Queues an upsert of [value] at [ref].
+  ///
+  /// Throws an [ArgumentError] when [ref]'s adapter was not registered when
+  /// the database was opened (the same validation a standalone `set` runs,
+  /// but at queue time), a [StateError] after [close], and a
+  /// [TransactionMisuseError] when called inside a [Cocoon.runTransaction]
+  /// body of the same database — a chunk commit would wait forever for the
+  /// transaction's own write lock.
+  void set<T extends Object>(DocRef<T> ref, T value);
+
+  /// Queues a replace of the existing document at [ref] with [value].
+  ///
+  /// The chunk fails when the document does not exist at commit time.
+  /// Throws an [ArgumentError] at queue time for an unregistered adapter,
+  /// a [StateError] after [close], and a [TransactionMisuseError] when
+  /// called inside a [Cocoon.runTransaction] body of the same database.
+  void update<T extends Object>(DocRef<T> ref, T value);
+
+  /// Queues a delete of [ref] and its whole subtree.
+  ///
+  /// Throws an [ArgumentError] at queue time for an unregistered adapter,
+  /// a [StateError] after [close], and a [TransactionMisuseError] when
+  /// called inside a [Cocoon.runTransaction] body of the same database.
+  void delete(DocRef<Object> ref);
+
+  /// Commits every operation queued so far and resolves when they are
+  /// durable; later operations keep buffering for the next chunk. Resolves
+  /// immediately when nothing is queued.
+  ///
+  /// Throws the chunk failure when a chunk already failed (its writes rolled
+  /// back; the writer is then unusable), and a [TransactionMisuseError]
+  /// when called inside a [Cocoon.runTransaction] body of the same
+  /// database — the chunk commit would wait forever for the transaction's
+  /// own write lock.
+  Future<void> flush();
+
+  /// Flushes every queued operation, rebuilds the indexes the writer
+  /// deferred (one write transaction: `CREATE INDEX` per index, meta rows
+  /// deleted), and resolves when everything is durable. Using the writer
+  /// after [close] throws a [StateError], and so does closing it twice.
+  ///
+  /// If a chunk failed, [close] still rebuilds the deferred indexes (the
+  /// database must not keep them dropped) and then rethrows that failure.
+  /// Closing inside a [Cocoon.runTransaction] body of the same database
+  /// throws a [TransactionMisuseError]: the flush and the index rebuild
+  /// would wait forever for the transaction's own write lock.
+  Future<void> close();
+}
+
+/// One write the engine executes with pre-built statement arguments: the
+/// buffered-write arguments in [RegistryEntry.upsertSql] /
+/// [RegistryEntry.updateSql] order (`data, f_columns..., params..., id`),
+/// encoded ahead of the write transaction.
+///
+/// Auto mode's helper isolate produces these (encode + row build off the
+/// caller); every other mode encodes inside the transaction as before. A
+/// delete has no prepared arguments (the chunk's delete ops leave `null`
+/// slots in the prepared list).
+typedef PreparedWrite = (DocRef<Object> ref, List<Object?> args);
+
+/// A secondary index a local writer deferred: the SQL table, the physical
+/// index name, and the `CREATE INDEX` statement that rebuilds it.
+final class _DeferredIndex {
+  const _DeferredIndex(this.table, this.name, this.sql);
+
+  /// The SQL table the index belongs to.
+  final String table;
+
+  /// The physical index name (`cx_<table>_<hex>`).
+  final String name;
+
+  /// The exact `CREATE ... INDEX IF NOT EXISTS` statement to rebuild it.
+  final String sql;
+}
+
+/// One queued operation of the local [BulkWriter]: its kind, its registry
+/// entry, the document ref and, for writes, the value.
+final class _QueuedOp {
+  const _QueuedOp(this.kind, this.entry, this.ref, this.value);
+
+  /// The kind of write.
+  final BatchOpKind kind;
+
+  /// The collection the document belongs to (its table and write SQL).
+  final RegistryEntry entry;
+
+  /// The document the operation targets.
+  final DocRef<Object> ref;
+
+  /// The value to store, for [BatchOpKind.set] and [BatchOpKind.update].
+  final Object? value;
+}
+
+/// The [BulkWriter] over an engine in this isolate: operations queue here
+/// and commit in chunks through the database's own write transaction.
+///
+/// With a [chunkPreparer] (auto mode), every chunk's document encodes are
+/// prepared off-isolate first and the prepared arguments are executed as
+/// built; without one, the encodes happen inside the transaction as before.
+@internal
+final class LocalBulkWriter implements BulkWriter {
   /// Builds a writer over [db]; applications get one from `db.bulkWriter()`.
+  /// [chunkPreparer], when given (auto mode), encodes a chunk's write
+  /// operations off the transaction path first — one [PreparedWrite] per
+  /// set/update in chunk order, `null` at every delete's position — and the
+  /// prepared arguments are executed as built.
   @internal
-  BulkWriter(this._db, [this._options = const BulkWriterOptions()]) {
+  LocalBulkWriter(
+    this._db, [
+    this._options = const BulkWriterOptions(),
+    this.chunkPreparer,
+  ]) {
     if (_options.chunkSize < 1) {
       throw ArgumentError.value(
         _options.chunkSize,
@@ -145,11 +223,20 @@ final class BulkWriter {
         'Must be at least 1',
       );
     }
+    // A chunk commit would wait forever for the transaction's own write
+    // lock; the same rule the facade's dartdoc states.
+    checkNotInTransaction(_db, 'Cocoon.bulkWriter', read: false);
     _db.noteBulkWriterActive();
   }
 
   final Cocoon _db;
   final BulkWriterOptions _options;
+
+  /// Encodes a chunk's writes off the transaction path, when the runtime
+  /// provides one (auto mode): one [PreparedWrite] per position in chunk
+  /// order, `null` at every delete's position.
+  final Future<List<PreparedWrite?>?> Function(List<BatchOp> chunk)?
+  chunkPreparer;
 
   final List<_QueuedOp> _ops = [];
 
@@ -178,37 +265,21 @@ final class BulkWriter {
   Object? _failure;
   StackTrace? _failureTrace;
 
-  /// Queues an upsert of [value] at [ref].
-  ///
-  /// Throws an [ArgumentError] when [ref]'s adapter was not registered when
-  /// the database was opened (the same validation a standalone `set` runs,
-  /// but at queue time), a [StateError] after [close], and a
-  /// [TransactionMisuseError] when called inside a [Cocoon.runTransaction]
-  /// body of the same database — a chunk commit would wait forever for the
-  /// transaction's own write lock.
+  @override
   void set<T extends Object>(DocRef<T> ref, T value) {
     _checkUsable();
     checkNotInTransaction(_db, 'BulkWriter.set', read: false);
     _queue(ref, value, BatchOpKind.set);
   }
 
-  /// Queues a replace of the existing document at [ref] with [value].
-  ///
-  /// The chunk fails when the document does not exist at commit time.
-  /// Throws an [ArgumentError] at queue time for an unregistered adapter,
-  /// a [StateError] after [close], and a [TransactionMisuseError] when
-  /// called inside a [Cocoon.runTransaction] body of the same database.
+  @override
   void update<T extends Object>(DocRef<T> ref, T value) {
     _checkUsable();
     checkNotInTransaction(_db, 'BulkWriter.update', read: false);
     _queue(ref, value, BatchOpKind.update);
   }
 
-  /// Queues a delete of [ref] and its whole subtree.
-  ///
-  /// Throws an [ArgumentError] at queue time for an unregistered adapter,
-  /// a [StateError] after [close], and a [TransactionMisuseError] when
-  /// called inside a [Cocoon.runTransaction] body of the same database.
+  @override
   void delete(DocRef<Object> ref) {
     _checkUsable();
     checkNotInTransaction(_db, 'BulkWriter.delete', read: false);
@@ -216,15 +287,7 @@ final class BulkWriter {
     _enqueue(_QueuedOp(BatchOpKind.delete, entry, ref, null));
   }
 
-  /// Commits every operation queued so far and resolves when they are
-  /// durable; later operations keep buffering for the next chunk. Resolves
-  /// immediately when nothing is queued.
-  ///
-  /// Throws the chunk failure when a chunk already failed (its writes rolled
-  /// back; the writer is then unusable), and a [TransactionMisuseError]
-  /// when called inside a [Cocoon.runTransaction] body of the same
-  /// database — the chunk commit would wait forever for the transaction's
-  /// own write lock.
+  @override
   Future<void> flush() {
     _checkUsable();
     checkNotInTransaction(_db, 'BulkWriter.flush', read: false);
@@ -242,16 +305,7 @@ final class BulkWriter {
     return _waitFor(target);
   }
 
-  /// Flushes every queued operation, rebuilds the indexes the writer
-  /// deferred (one write transaction: `CREATE INDEX` per index, meta rows
-  /// deleted), and resolves when everything is durable. Using the writer
-  /// after [close] throws a [StateError], and so does closing it twice.
-  ///
-  /// If a chunk failed, [close] still rebuilds the deferred indexes (the
-  /// database must not keep them dropped) and then rethrows that failure.
-  /// Closing inside a [Cocoon.runTransaction] body of the same database
-  /// throws a [TransactionMisuseError]: the flush and the index rebuild
-  /// would wait forever for the transaction's own write lock.
+  @override
   Future<void> close() async {
     _checkUsable();
     checkNotInTransaction(_db, 'BulkWriter.close', read: false);
@@ -329,7 +383,8 @@ final class BulkWriter {
 
   /// Commits the first [take] buffered operations as one chunk: one write
   /// transaction, one cache stage, one watch event, one batch of change-log
-  /// rows.
+  /// rows. With a [chunkPreparer], the chunk's writes are encoded off the
+  /// transaction path first and executed as prepared arguments.
   Future<void> _commitChunk(int take) async {
     final chunk = List<_QueuedOp>.of(_ops.take(take));
     _ops.removeRange(0, take);
@@ -353,6 +408,13 @@ final class BulkWriter {
       firstTouch.add(entry);
     }
     final deferredInTx = <_DeferredIndex>[];
+    final preparer = chunkPreparer;
+    final prepared = (preparer == null)
+        ? null
+        : await preparer([
+            for (final op in chunk)
+              BatchOp(op.kind, op.ref, op.value),
+          ]);
 
     await _db.writeTx<void>((wtx) async {
       for (final entry in firstTouch) {
@@ -380,12 +442,13 @@ final class BulkWriter {
           deferredInTx.add(_DeferredIndex(entry.table, index.name, sql));
         }
       }
+      var preparedIndex = 0;
       for (final op in chunk) {
         switch (op.kind) {
           case BatchOpKind.set:
-            await wtx.put(op.ref, op.value!);
+            await _put(wtx, op, prepared, preparedIndex++);
           case BatchOpKind.update:
-            await wtx.put(op.ref, op.value!, update: true);
+            await _put(wtx, op, prepared, preparedIndex++, update: true);
           case BatchOpKind.delete:
             await wtx.delete(op.ref);
         }
@@ -406,6 +469,49 @@ final class BulkWriter {
     _deferred.addAll(deferredInTx);
     _db.noteIndexesDeferred([for (final d in deferredInTx) d.name]);
   }
+
+  /// Queues one write: with prepared arguments available for this position,
+  /// execute them as built (the encode already happened off the transaction
+  /// path); otherwise encode here, as before.
+  Future<void> _put(
+    CocoonWriteTx wtx,
+    _QueuedOp op,
+    List<PreparedWrite?>? prepared,
+    int index, {
+    bool update = false,
+  }) async {
+    final preparedWrite = prepared == null ? null : prepared[index];
+    if (preparedWrite != null) {
+      await wtx.putPrepared(op.ref, op.entry, preparedWrite.$2, update: update);
+      return;
+    }
+    await wtx.put(op.ref, op.value!, update: update);
+  }
+
+  /// The engine's committed-count waiter, used by the background mode's
+  /// worker-side bulk session: resolves when [target] operations have
+  /// committed (or the writer failed).
+  @internal
+  Future<void> waitForCommitted(int target) => _waitFor(target);
+
+  /// Sets the commit goal to at least [target], starts the chunk loop
+  /// (partial chunks included), and resolves when [target] operations have
+  /// committed. The background mode's flush: the caller ships its queued
+  /// operations in chunks and then names the goal; the worker's writer
+  /// commits up to it, exactly like a local [flush].
+  @internal
+  Future<void> drainTo(int target) {
+    if (_goal < target) {
+      _goal = target;
+    }
+    _kick();
+    return _waitFor(target);
+  }
+
+  /// How many operations have committed so far; the background mode's
+  /// worker-side bulk session reports progress with it.
+  @internal
+  int get debugCommittedOps => _committed;
 
   /// A future that completes when [target] operations have been committed
   /// (or the writer failed, or the database closed under it).

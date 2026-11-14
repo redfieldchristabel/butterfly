@@ -12,6 +12,7 @@ import 'dart:typed_data';
 import 'package:cocoon/cocoon.dart';
 import 'package:sqlite_async/sqlite_async.dart';
 import 'package:test/test.dart';
+import 'support/open_db.dart';
 
 // -- The evolving Staff model ------------------------------------------------
 
@@ -287,7 +288,7 @@ void main() {
   test(
     'a pending backfill sets the added fields on every existing document',
     () async {
-      final old = await Cocoon.open(
+      final old = await openCocoon(
         dbPath(),
         collections: [StaffV1Adapter()],
         schemaVersion: 2,
@@ -303,7 +304,7 @@ void main() {
       final seqBefore = await old.lastChangeSeq();
       await old.close();
 
-      final db = await Cocoon.open(
+      final db = await openCocoon(
         dbPath(),
         collections: [StaffV2Adapter()],
         schemaVersion: 3,
@@ -332,7 +333,7 @@ void main() {
       // disk, not from anything the migration left behind.
       await db.close();
       openDbs.remove(db);
-      final reopened = await Cocoon.open(
+      final reopened = await openCocoon(
         dbPath(),
         collections: [StaffV2Adapter()],
         schemaVersion: 3,
@@ -349,7 +350,7 @@ void main() {
   );
 
   test('progress reports every processed document', () async {
-    final old = await Cocoon.open(
+    final old = await openCocoon(
       dbPath(),
       collections: [StaffV1Adapter()],
       schemaVersion: 2,
@@ -363,7 +364,7 @@ void main() {
     await old.close();
 
     final progress = <(int, int)>[];
-    final db = await Cocoon.open(
+    final db = await openCocoon(
       dbPath(),
       collections: [StaffV2Adapter()],
       schemaVersion: 3,
@@ -384,7 +385,7 @@ void main() {
   });
 
   test('a bare document that predates every field is backfilled too', () async {
-    final old = await Cocoon.open(
+    final old = await openCocoon(
       dbPath(),
       collections: [StaffV1Adapter()],
       schemaVersion: 2,
@@ -406,7 +407,7 @@ void main() {
     ]);
     await raw.close();
 
-    final db = await Cocoon.open(
+    final db = await openCocoon(
       dbPath(),
       collections: [StaffV2Adapter()],
       schemaVersion: 3,
@@ -426,7 +427,7 @@ void main() {
     () async {
       // v3 rewrites staffId (String, #2) -> staffNo (int, #4) AND backfills
       // title (String, #3). The stub must read the REWRITTEN number.
-      final old = await Cocoon.open(
+      final old = await openCocoon(
         dbPath(),
         collections: [StaffV1Adapter()],
         schemaVersion: 2,
@@ -437,7 +438,7 @@ void main() {
           .set(const StaffV1(name: 'Ada', staffId: '4112'));
       await old.close();
 
-      final db = await Cocoon.open(
+      final db = await openCocoon(
         dbPath(),
         collections: [StaffRewrittenAdapter()],
         schemaVersion: 3,
@@ -481,7 +482,7 @@ void main() {
   );
 
   test('a throwing backfill stub rolls the whole open back', () async {
-    final old = await Cocoon.open(
+    final old = await openCocoon(
       dbPath(),
       collections: [StaffV1Adapter()],
       schemaVersion: 2,
@@ -494,7 +495,7 @@ void main() {
     await old.close();
 
     await expectLater(
-      Cocoon.open(
+      openCocoon(
         dbPath(),
         collections: [StaffV2Adapter()],
         schemaVersion: 3,
@@ -518,7 +519,7 @@ void main() {
     );
 
     // Nothing changed on disk: version, data and change log are the old ones.
-    final reopened = await Cocoon.open(
+    final reopened = await openCocoon(
       dbPath(),
       collections: [StaffV1Adapter()],
       schemaVersion: 2,
@@ -532,7 +533,7 @@ void main() {
   });
 
   test('a null backfill value fails the open with the field named', () async {
-    final old = await Cocoon.open(
+    final old = await openCocoon(
       dbPath(),
       collections: [StaffV1Adapter()],
       schemaVersion: 2,
@@ -544,7 +545,7 @@ void main() {
     await old.close();
 
     await expectLater(
-      Cocoon.open(
+      openCocoon(
         dbPath(),
         collections: [StaffV2Adapter()],
         schemaVersion: 3,
@@ -574,7 +575,7 @@ void main() {
     );
 
     // The rollback left the old data untouched.
-    final reopened = await Cocoon.open(
+    final reopened = await openCocoon(
       dbPath(),
       collections: [StaffV1Adapter()],
       schemaVersion: 2,
@@ -589,7 +590,7 @@ void main() {
   });
 
   test('a backfill value of the wrong type fails the open', () async {
-    final old = await Cocoon.open(
+    final old = await openCocoon(
       dbPath(),
       collections: [StaffV1Adapter()],
       schemaVersion: 2,
@@ -601,7 +602,7 @@ void main() {
     await old.close();
 
     await expectLater(
-      Cocoon.open(
+      openCocoon(
         dbPath(),
         collections: [StaffV2Adapter()],
         schemaVersion: 3,
@@ -627,7 +628,7 @@ void main() {
 
   test('a backfill for an unregistered model is refused', () async {
     await expectLater(
-      Cocoon.open(
+      openCocoon(
         dbPath(),
         collections: const [],
         schemaVersion: 1,

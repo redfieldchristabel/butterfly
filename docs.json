@@ -139,6 +139,7 @@
         { "title": "Backup & Restore", "href": "/libraries/cocoon/backup", "icon": "box-archive" },
         { "title": "DevTools Inspector", "href": "/libraries/cocoon/inspector", "icon": "gauge-high" },
         { "title": "Performance", "href": "/libraries/cocoon/performance", "icon": "chart-line" },
+        { "title": "Isolates: Caller, Background, Auto", "href": "/libraries/cocoon/isolates", "icon": "microchip" },
         { "title": "Internals & Storage Layout", "href": "/libraries/cocoon/internals", "icon": "screwdriver-wrench" }
       ]
     },

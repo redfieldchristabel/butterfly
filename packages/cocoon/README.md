@@ -970,6 +970,39 @@ One `Cocoon` instance must own its database file: do not open the same file
 from two instances or two processes — SQLite's write lock and the hot-cache
 both assume a single writer.
 
+## Isolates: caller, background, auto
+
+By default the engine runs on the isolate that called `Cocoon.open` — a
+Flutter app's UI isolate — which is right for small books and wrong for a
+10k-document page, a 100k-row group-by or a bulk import, all of which decode
+or encode on the caller. One option moves the work off; the API is otherwise
+identical:
+
+```dart
+final db = await Cocoon.open(
+  file,
+  collections: [accounts, txns],
+  options: const CocoonOptions(isolate: CocoonIsolate.background),
+  // or: isolate: CocoonIsolate.auto — small work stays inline, heavy work
+  //     moves off the caller automatically (thresholds are tunable).
+);
+// every call is unchanged: refs, queries, aggregates, groupBy, watches,
+// transactions, batch, bulkWriter, getAll, changesSince, backupTo, close.
+```
+
+- `caller` (default): today's behaviour, byte for byte.
+- `background`: one worker isolate per database runs the whole engine;
+  watches, transactions (body on the caller, ops as messages), batch and
+  bulkWriter all work unchanged; a crashed worker fails later calls with a
+  `CocoonIsolateException` instead of hanging.
+- `auto`: the engine stays on the caller and a read-only helper isolate
+  takes the heavy reads and the bulk encodes above the
+  `CocoonAutoThresholds` (200 rows / 500 write ops). Transactions always run
+  inline, so they behave exactly like `caller` mode.
+
+See [Isolates](/libraries/cocoon/isolates) for the semantics, the measured
+stall/wall/RSS table and which mode a Flutter app should pick.
+
 ## Backup and restore
 
 Cocoon owns two engine primitives — a consistent whole-file copy and a safe

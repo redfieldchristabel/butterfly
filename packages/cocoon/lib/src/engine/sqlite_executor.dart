@@ -134,6 +134,111 @@ final class CocoonSqliteOpenFactory extends NativeSqliteOpenFactory {
 /// The WAL size SQLite truncates back to after a checkpoint (4 MiB).
 const walIdleLimitBytes = 4 * 1024 * 1024;
 
+/// A read-only [CocoonExecutor] over a database FILE, for the isolate mode's
+/// helper isolate: one raw `package:sqlite3` connection opened
+/// `OpenMode.readOnly`, so SQLite itself refuses every write.
+///
+/// The helper exists to move decode/encode work off the caller; statements
+/// here run synchronously on the helper's own event loop, which is exactly
+/// the work that was moved. Reading a WAL database read-only sees the same
+/// committed snapshots sqlite_async's read pool serves (same visibility
+/// rules, so read-your-writes after a committed write holds); an uncommitted
+/// caller-side transaction is invisible, as for every other read connection.
+final class ReadOnlySqliteExecutor implements CocoonExecutor {
+  /// Opens [path] read-only with a busy timeout; SQLite multi-connection WAL
+  /// locking coordinates with the main database's writer.
+  ReadOnlySqliteExecutor(String path)
+    : _db = raw.sqlite3.open(path, mode: raw.OpenMode.readOnly) {
+    _db.execute('PRAGMA busy_timeout = 10000');
+  }
+
+  final raw.Database _db;
+  bool _closed = false;
+
+  void _checkOpen() {
+    if (_closed) {
+      throw StateError('The database is closed');
+    }
+  }
+
+  @override
+  Future<List<Map<String, Object?>>> getAll(
+    String sql, [
+    List<Object?> args = const [],
+  ]) async {
+    _checkOpen();
+    return [
+      for (final row in _db.select(sql, args)) Map<String, Object?>.of(row),
+    ];
+  }
+
+  @override
+  Future<Map<String, Object?>?> getOptional(
+    String sql, [
+    List<Object?> args = const [],
+  ]) async {
+    _checkOpen();
+    final rows = _db.select(sql, args);
+    return rows.isEmpty ? null : Map<String, Object?>.of(rows.first);
+  }
+
+  @override
+  Future<void> execute(String sql, [List<Object?> args = const []]) async {
+    _checkOpen();
+    _db.execute(sql, args);
+  }
+
+  @override
+  Future<void> executeBatch(String sql, List<List<Object?>> parameterSets) async {
+    _checkOpen();
+    _db.execute('BEGIN');
+    try {
+      final statement = _db.prepare(sql);
+      try {
+        for (final parameters in parameterSets) {
+          statement.execute(parameters);
+        }
+      } finally {
+        statement.close();
+      }
+      _db.execute('COMMIT');
+    } on Object {
+      try {
+        _db.execute('ROLLBACK');
+      } on Object {
+        // A statement error may have rolled the transaction back already.
+      }
+      rethrow;
+    }
+  }
+
+  @override
+  Future<T> writeTransaction<T>(Future<T> Function(CocoonTx tx) body) async {
+    _checkOpen();
+    throw StateError(
+      'The isolate helper connection is read-only: writes always run on the '
+      "database's home isolate",
+    );
+  }
+
+  @override
+  Future<T> readTransaction<T>(Future<T> Function(CocoonRead tx) body) async {
+    _checkOpen();
+    // A single read-only connection is its own consistent snapshot per
+    // statement; wrap the body without SQL (the isolation the callers need
+    // is "one request, one answer").
+    return body(this);
+  }
+
+  @override
+  Future<void> close() async {
+    if (!_closed) {
+      _closed = true;
+      _db.close();
+    }
+  }
+}
+
 final class _SqliteTx implements CocoonTx {
   _SqliteTx(this._ctx);
 

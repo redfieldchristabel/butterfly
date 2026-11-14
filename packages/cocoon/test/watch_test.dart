@@ -9,6 +9,7 @@ import 'package:test/test.dart';
 
 import 'support/models.dart';
 import 'support/spy_executor.dart';
+import 'support/open_db.dart';
 
 /// Delays statements matching [gate] before they reach SQLite, so tests can
 /// hold a watch's re-run in flight and prove commits coalesce. Everything is
@@ -112,7 +113,7 @@ void main() {
       '${dir.path}${Platform.pathSeparator}$name';
 
   Future<Cocoon> openDatabase({CocoonOptions options = const CocoonOptions()}) {
-    return Cocoon.open(
+    return openCocoon(
       dbPath(),
       collections: [accounts, txns, splits],
       options: options,
@@ -263,7 +264,7 @@ void main() {
       final second = <DocSnapshot<Txn>?>[];
       final sub1 = stream.listen(first.add);
       final sub2 = stream.listen(second.add);
-      expect(db.debugWatcherCount, 1);
+      expect(await db.debugWatcherCount, 1);
       await settle();
       expect(first, hasLength(1));
       expect(second, hasLength(1));
@@ -274,14 +275,14 @@ void main() {
       expect(second.last!.data.memo, 'two');
 
       await sub1.cancel();
-      expect(db.debugWatcherCount, 1);
+      expect(await db.debugWatcherCount, 1);
 
       await t1.set(txn(bookedOn: 20260101, memo: 'three'));
       await settle();
       expect(second.last!.data.memo, 'three');
 
       await sub2.cancel();
-      expect(db.debugWatcherCount, 0);
+      expect(await db.debugWatcherCount, 0);
     });
   });
 
@@ -497,13 +498,13 @@ void main() {
 
       final emissions = <QueryPage<Txn>>[];
       final sub = txnsRef.query().watch().listen(emissions.add);
-      expect(db.debugWatcherCount, 1);
+      expect(await db.debugWatcherCount, 1);
       await settle();
       expect(emissions, hasLength(1));
       final baseline = queryRuns();
 
       await sub.cancel();
-      expect(db.debugWatcherCount, 0);
+      expect(await db.debugWatcherCount, 0);
 
       // A write after the cancel must not re-run the query: nothing is
       // registered anymore.
@@ -514,17 +515,17 @@ void main() {
       // A fresh watch registers again and starts from the current value.
       final emissions2 = <QueryPage<Txn>>[];
       final sub2 = txnsRef.query().watch().listen(emissions2.add);
-      expect(db.debugWatcherCount, 1);
+      expect(await db.debugWatcherCount, 1);
       await settle();
       expect(emissions2.single.docs, hasLength(2));
       await sub2.cancel();
-      expect(db.debugWatcherCount, 0);
+      expect(await db.debugWatcherCount, 0);
 
       // The doc watch unregisters the same way.
       final docSub = t1.watch().listen((_) {});
-      expect(db.debugWatcherCount, 1);
+      expect(await db.debugWatcherCount, 1);
       await docSub.cancel();
-      expect(db.debugWatcherCount, 0);
+      expect(await db.debugWatcherCount, 0);
     });
 
     test('closing the database completes all watch streams', () async {
@@ -546,7 +547,7 @@ void main() {
       await Future.wait([docDone.future, queryDone.future]);
       await docSub.cancel();
       await querySub.cancel();
-      expect(db.debugWatcherCount, 0);
+      expect(await db.debugWatcherCount, 0);
     });
   });
 }

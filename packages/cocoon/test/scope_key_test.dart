@@ -1,9 +1,9 @@
 import 'dart:io';
-import 'package:cocoon/cocoon.dart';
 import 'package:cocoon/src/engine/schema_sql.dart';
 import 'package:test/test.dart';
 
 import 'support/models.dart';
+import 'support/open_db.dart';
 
 /// The scope key IS the stored identity in the format-2 layout: the p_ param
 /// columns plus id, one unique index, and the full path derived from it.
@@ -83,7 +83,7 @@ void main() {
       () async {
         final dir = Directory.systemTemp.createTempSync('cocoon_scope_test');
         try {
-          final db = await Cocoon.open(
+          final db = await openCocoon(
             '${dir.path}${Platform.pathSeparator}scope.db',
             collections: [accounts, txns],
           );

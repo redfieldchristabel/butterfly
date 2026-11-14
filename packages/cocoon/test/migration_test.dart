@@ -11,6 +11,7 @@ import 'package:cocoon/cocoon.dart';
 import 'package:cocoon/src/engine/naming.dart' show metaTableName;
 import 'package:sqlite_async/sqlite_async.dart';
 import 'package:test/test.dart';
+import 'support/open_db.dart';
 
 // -- The evolving Staff model ------------------------------------------------
 
@@ -184,7 +185,7 @@ void main() {
 
   test('a fresh database just stores the schema version', () async {
     var converted = 0;
-    final db = await Cocoon.open(
+    final db = await openCocoon(
       dbPath(),
       collections: [StaffV2Adapter()],
       schemaVersion: 3,
@@ -228,7 +229,7 @@ void main() {
 
   test('a pending migration converts stored documents exactly once', () async {
     // 1. Write documents under the old schema and version.
-    final old = await Cocoon.open(
+    final old = await openCocoon(
       dbPath(),
       collections: [StaffV1Adapter()],
       schemaVersion: 2,
@@ -241,7 +242,7 @@ void main() {
 
     // 2. Reopen under the new schema with the migration.
     final adapter = StaffV2Adapter();
-    final db = await Cocoon.open(
+    final db = await openCocoon(
       dbPath(),
       collections: [adapter],
       schemaVersion: 3,
@@ -279,7 +280,7 @@ void main() {
     final changesBefore = (await db.changesSince(0)).length;
     await db.close();
     openDbs.remove(db);
-    final reopened = await Cocoon.open(
+    final reopened = await openCocoon(
       dbPath(),
       collections: [adapter],
       schemaVersion: 3,
@@ -294,7 +295,7 @@ void main() {
   });
 
   test('progress reports every processed document', () async {
-    final old = await Cocoon.open(
+    final old = await openCocoon(
       dbPath(),
       collections: [StaffV1Adapter()],
       schemaVersion: 2,
@@ -306,7 +307,7 @@ void main() {
     await old.close();
 
     final progress = <(int, int)>[];
-    final db = await Cocoon.open(
+    final db = await openCocoon(
       dbPath(),
       collections: [StaffV2Adapter()],
       schemaVersion: 3,
@@ -327,7 +328,7 @@ void main() {
   });
 
   test('a failing conversion rolls the whole open back', () async {
-    final old = await Cocoon.open(
+    final old = await openCocoon(
       dbPath(),
       collections: [StaffV1Adapter()],
       schemaVersion: 2,
@@ -340,7 +341,7 @@ void main() {
     await old.close();
 
     await expectLater(
-      Cocoon.open(
+      openCocoon(
         dbPath(),
         collections: [StaffV2Adapter()],
         schemaVersion: 3,
@@ -351,7 +352,7 @@ void main() {
 
     // Nothing changed on disk: version, data and columns are the old ones.
     expect(await storedVersion(), 2);
-    final reopened = await Cocoon.open(
+    final reopened = await openCocoon(
       dbPath(),
       collections: [StaffV1Adapter()],
       schemaVersion: 2,
@@ -368,14 +369,14 @@ void main() {
   });
 
   test('a database newer than the app refuses to open', () async {
-    final db = await Cocoon.open(
+    final db = await openCocoon(
       dbPath(),
       collections: [StaffV1Adapter()],
       schemaVersion: 2,
     );
     await db.close();
     await expectLater(
-      Cocoon.open(dbPath(), collections: [StaffV1Adapter()], schemaVersion: 1),
+      openCocoon(dbPath(), collections: [StaffV1Adapter()], schemaVersion: 1),
       throwsA(
         isA<SchemaTooNewException>().having(
           (e) => e.toString(),
@@ -388,7 +389,7 @@ void main() {
 
   test('a migration for an unregistered model is refused', () async {
     await expectLater(
-      Cocoon.open(
+      openCocoon(
         dbPath(),
         collections: const [],
         schemaVersion: 1,
@@ -399,7 +400,7 @@ void main() {
   });
 
   test('documents without the old field are left untouched', () async {
-    final old = await Cocoon.open(
+    final old = await openCocoon(
       dbPath(),
       collections: [StaffV1Adapter()],
       schemaVersion: 2,
@@ -421,7 +422,7 @@ void main() {
     );
     await raw.close();
 
-    final db = await Cocoon.open(
+    final db = await openCocoon(
       dbPath(),
       collections: [StaffV2Adapter()],
       schemaVersion: 3,
@@ -439,7 +440,7 @@ void main() {
   });
 
   test('several pending versions run in order, in one pass', () async {
-    final old = await Cocoon.open(
+    final old = await openCocoon(
       dbPath(),
       collections: [StaffV1Adapter()],
       schemaVersion: 1,
@@ -452,7 +453,7 @@ void main() {
 
     // v2: staffId (String, #2) -> staffUid (int, #3).
     // v3: staffUid (int, #3) -> staffNo (double, #4).
-    final db = await Cocoon.open(
+    final db = await openCocoon(
       dbPath(),
       collections: [StaffV3Adapter()],
       schemaVersion: 3,
@@ -501,7 +502,7 @@ void main() {
   });
 
   test('keepChanges: false migrates without writing change rows', () async {
-    final old = await Cocoon.open(
+    final old = await openCocoon(
       dbPath(),
       collections: [StaffV1Adapter()],
       schemaVersion: 2,
@@ -513,7 +514,7 @@ void main() {
     final seqBefore = await old.lastChangeSeq();
     await old.close();
 
-    final db = await Cocoon.open(
+    final db = await openCocoon(
       dbPath(),
       collections: [StaffV2Adapter()],
       schemaVersion: 3,

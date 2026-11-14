@@ -1,0 +1,241 @@
+---
+title: "Isolates: Caller, Background, Auto"
+description: One option to move Cocoon's engine off the UI isolate - what moves, what stays, the measured stall/wall/RSS table, and which mode a Flutter app should pick.
+---
+
+Cocoon runs its SQLite work in `sqlite_async`'s own isolates, but everything
+else — decoding every document of a page, encoding writes, building rows,
+planning, group-by result mapping, bulk-writer chunk preparation, change-log
+bookkeeping, migrations — runs on the isolate that called `Cocoon.open`. In
+a Flutter app that is the UI isolate, so a 100k bulk import or a big page
+read costs frames. One option moves the work off; everything else about the
+API is unchanged.
+
+```dart
+final db = await Cocoon.open(
+  file,
+  collections: [accounts, txns],
+  options: const CocoonOptions(isolate: CocoonIsolate.background),
+);
+// every existing call is unchanged: refs, queries, aggregates, groupBy,
+// watch(), runTransaction, batch(), bulkWriter(), getAll, changesSince,
+// backupTo, compact, close ...
+```
+
+The enum is `CocoonIsolate { caller, background, auto }`; the default is
+`caller` — today's behaviour, byte for byte. There is no second class to
+learn: the object you get back is the same `Cocoon`, and the static
+file-level helpers (`restoreBackup`, `inspectBackup`, the migration CLI)
+are unaffected. No web: native 64-bit int is assumed on every platform
+(Android, iOS, macOS, Linux, Windows).
+
+## What each mode does
+
+- **`caller`** (default): the engine — write lock, hot-document cache, watch
+  notifier, change log, transaction guard — lives on the isolate that called
+  `Cocoon.open`. Zero message round trips.
+- **`background`**: `Cocoon.open` spawns ONE worker isolate per database
+  (same isolate group, `Isolate.spawn`, so adapters and model objects are
+  sendable without serialization) and opens the ordinary engine there. The
+  returned `Cocoon` is a proxy: refs, queries and aggregates are built on
+  the caller and their spec crosses, results come back decoded.
+- **`auto`**: ONE engine home on the caller (the write lock, cache, watch
+  notifier, change log and transaction guard stay single and unchanged) plus
+  ONE helper isolate that never writes. Small work runs inline with zero
+  round trips; heavy reads run in the helper on its own read-only
+  connection, and the CPU side of heavy writes (bulk-writer encodes) runs
+  there too, with the caller's single writer executing the prepared rows.
+
+## The measured table
+
+`packages/cocoon_bench` ships the harness
+(`dart run bin/isolate_bench.dart`), run with `bash tool/run_isolate_bench.sh`
+in `packages/cocoon_bench`: one process per (mode, operation), the same
+seeded database file for every mode, ledger-shaped documents
+(`benchmarks/cocoon_rivals`' generator), `Durability.normal` everywhere (the
+question is what moves between isolates, not fsync behaviour — that is
+identical in all three). The caller-isolate stall is sampled by a 1 ms
+periodic timer whose lateness IS the event-loop gap; wall time and the stall
+are medians of three runs (mixed is one long run), peak RSS is the process
+peak (a bare `dart run` floor of roughly 340 MB sits under every number on
+this machine — an 8-core Linux desktop). The ops: `page` is one 10,000-doc
+page read; `group` a group-by over 100,000 rows; `import` a 100,000-doc
+`bulkWriter()` load; `latency` 200 single gets (p50/p95 in the notes);
+`writes` 1,000 single writes; `mixed` 1,000 single writes with a whole-scope
+page read after every 50th write — the shape of a live app.
+
+| op | mode | wall ms | longest stall ms | total stall ms | stalls >8ms | peak RSS MB |
+|---|---|---|---|---|---|---|
+| page | caller | 102.8 | 10.4 | 19.0 | 1 | 350 |
+| page | background | 123.0 | 16.1 | 82.4 | 3 | 366 |
+| page | auto | 74.5 | 11.1 | 44.8 | 1 | 346 |
+| group | caller | 20.3 | 1.2 | 6.8 | 0 | 341 |
+| group | background | 27.7 | 1.2 | 12.8 | 0 | 341 |
+| group | auto | 24.4 | 1.2 | 10.7 | 0 | 338 |
+| import | caller | 1421.1 | 95.3 | 905.0 | 8 | 548 |
+| import | background | 1742.7 | 441.1 | 1113.0 | 2 | 543 |
+| import | auto | 1926.3 | 154.7 | 1252.2 | 17 | 613 |
+| latency | caller | 88.4 | 5.9 | 48.4 | 0 | 341 | p50 323us p95 717us
+| latency | background | 89.4 | 7.9 | 47.9 | 0 | 337 | p50 339us p95 706us
+| latency | auto | 70.7 | 3.6 | 36.1 | 0 | 348 | p50 278us p95 540us
+| writes | caller | 385.0 | 3.4 | 193.3 | 0 | 337 |
+| writes | background | 432.9 | 1.4 | 215.1 | 0 | 342 |
+| writes | auto | 288.3 | 1.3 | 143.3 | 0 | 340 |
+| mixed | caller | 1769.8 | 102.2 | 1319.0 | 25 | 481 |
+| mixed | background | 2423.2 | 27.1 | 1574.4 | 57 | 507 |
+| mixed | auto | 2213.0 | 51.6 | 1515.6 | 51 | 385 |
+
+## How to read the table
+
+These numbers did not all come out the way the feature hopes, and the
+difference is the honest headline:
+
+- **The message round trip is nearly free.** A single get's p50 is 323 µs
+  in `caller`, 339 µs in `background` (+5%), 278 µs in `auto`; 1,000 single
+  writes land within 25% of `caller` (`auto` a little better). The feared
+  per-op latency tax of a worker isolate did not show up — a small op's
+  round trip is tens of microseconds.
+- **Reads already win a little.** `auto` posts the best 10k-page wall time
+  (74.5 ms against `caller`'s 102.8) because the helper decodes while
+  SQLite streams; the 100k groupBy is SQL's work everywhere (~20-28 ms),
+  and the group list that crosses is tiny.
+- **Bulk loads are where the copy dominates — say it plainly.** The caller
+  hands every document to the engine as a Dart object, so something copies
+  each one at the boundary, and that copy costs about what the encode it
+  replaces saved. The 100k import blocks the caller ~0.9 s in total in
+  `caller` mode and ~1.1 s (`background`) / ~1.25 s (`auto`); the mixed
+  workload ~1.3 s against ~1.5 s. **On the current protocol, isolate modes
+  did not reduce caller stalls for bulk loads.** The fix, in order of
+  preference, is returning encoded bytes as `TransferableTypedData`
+  (decoded lazily on access — reads pay the decode only for documents the
+  app touches) and smaller pages/chunks; both fit the current API and are
+  the identified next step, not a hidden regression.
+- **The worst single stall is what users see as jank, and there
+  `background` wins the mixed workload:** its longest caller stall is
+  27 ms against 102 ms in `caller` (52 ms in `auto`). Totals are higher
+  because the copies are spread out, but no single frame-killing block.
+  On the bulk import the opposite holds (441 ms longest in `background`):
+  the import hands the documents over in large chunks, and each chunk copy
+  is one long block on the caller.
+- **Peak RSS sits within ~15% across modes** (the extra isolate costs a
+  few percent; `auto`'s import peak, 613 MB, is the high end).
+
+## Which mode should a Flutter app pick?
+
+- **`caller` (default) remains the right choice when in doubt.** It has
+  the lowest total caller stall on page reads, group-bys, imports and
+  the mixed workload, and no extra isolate to manage.
+- **`auto`** is the choice for a big, read-heavy book: the best page and
+  small-write wall times, unchanged latency, and every transaction at
+  `caller` speed with zero round trips. Its bulk-load stalls still pay the
+  copy — the encoded-bytes protocol above is what will move those.
+- **`background`** is the choice when the caller must never execute ANY
+  engine work (a widget tree that janks at a 30 ms decode, or a database
+  shared with other Dart work); it also cut the worst stall of the mixed
+  workload the most. Its per-op round trip measured near-free,
+  so the usual latency fear is not the price; the price shows on bulk
+  loads, as in every isolate mode. It is the only mode where a database
+  handle survives the isolate that opened it being replaced (a crashed
+  worker fails every later call with `CocoonIsolateException`; the handle
+  is then unusable — open again).
+
+## Semantics that hold in every mode
+
+The API is identical; these are the guarantees the modes must keep:
+
+- **Results** (snapshots, pages with `nextCursor`, counts, aggregates,
+  groupBy groups) arrive decoded, with the same types as `caller` mode.
+- **Errors** arrive with the same type and message —
+  `MissingIndexException` (with `fixCommand`), `TransactionMisuseError`
+  (with `operation`), `InvalidCursorException`, `CursorMismatchException`,
+  `StateError`s — plus the worker stack trace as the error's `stackTrace`.
+  Anything unsendable becomes a `CocoonIsolateException` carrying the type
+  name, message and stack text.
+- **`watch()`** runs its reads where the engine is and pushes emissions;
+  cancelling the subscription stops the watch; `close()` completes every
+  stream, like today.
+- **`runTransaction(body)`** always runs the body on the CALLER (it is user
+  code with captured state). Each `tx.get/getAll/set/add/delete` is a
+  message tagged with a transaction id (`background`); the worker holds the
+  write lock until the body commits or throws. The step-27
+  `TransactionMisuseError` guard works exactly as in `caller` mode:
+  non-transaction calls on the same database inside the body fail fast,
+  other databases are allowed. If the caller isolate dies mid-transaction,
+  the worker rolls back. In `auto`, transactions are entirely inline, so
+  they behave exactly like `caller` mode.
+- **`batch()` and `bulkWriter()`** queue on the caller and ship in chunks
+  (one message per chunk, not per op); flush/close semantics and the
+  deferred-index rebuild are unchanged. `bulkWriter()` always prepares in
+  the helper in `auto` mode.
+- **Callbacks** (`onMigrationProgress`, bulk-writer progress) are delivered
+  on the isolate that called `open`.
+- **The hot-document cache** lives where the engine lives: in the worker
+  (`background`), on the caller (`auto`, single source of truth).
+- **`close()`** closes the engine, stops the worker/helper, completes every
+  watch stream and fails later calls with `StateError` like a closed
+  database does today. A crashed `background` worker fails every pending
+  and future call with `CocoonIsolateException`. A crashed `auto` helper
+  degrades to inline execution with one logged warning — auto never bricks
+  the database.
+- **Static/file-level helpers** (`restoreBackup`, `inspectBackup`, the
+  migration CLI) are unaffected.
+
+## Routing in auto mode
+
+Routing is a pure function of the thresholds (`CocoonAutoThresholds`, default
+`inlineRows: 200`, `inlineWriteOps: 500` — both picked from the benchmark
+above) and the operation's a-priori size, so it is unit-tested without a
+database and never depends on timing:
+
+| Operation | Inline (caller) | Helper isolate |
+|---|---|---|
+| doc get / set / update / delete | always | never |
+| `getAll` | at most `inlineRows` ids | more |
+| query / watch re-run | explicit `limit` at most `inlineRows` | no limit, or a bigger one |
+| count, exists, aggregates | always | never (SQL does the work) |
+| `groupBy` | capped at most `inlineRows` groups | uncapped, or a bigger cap |
+| `runTransaction` | always (the body is user code) | never |
+| `batch().commit()` | at most `inlineWriteOps` ops | more |
+| `bulkWriter()` | never — the chunk's encodes always prepare in the helper | always |
+
+`db.isolateStats` (auto mode only) exposes the counters — inline vs helper
+calls and the approximate payload bytes the helper channel carried — and the
+DevTools inspector shows them on the database. The thresholds are a
+constructor argument; `0` sends that whole class of work to the helper.
+
+## Consistency
+
+- An inline write is immediately visible to a heavy helper query **after it
+  commits** (the helper reads the same WAL snapshots sqlite_async's read
+  pool does — read-your-writes holds, as it does today).
+- A heavy query concurrent with an open transaction sees pre-commit state —
+  the same committed snapshot it would see in `caller` mode.
+- A watch over a heavy query re-runs the query in the helper on each change
+  notification; the notifier stays on the caller.
+
+## Limits
+
+- No web (the worker/helper need `Isolate.spawn` and native SQLite).
+- **Per-operation latency in `background`**: every small op pays one message
+  round trip, but the table measured it near-free (single-get p50 323 µs in
+  `caller` against 339 µs in `background`). Latency-sensitive loops over
+  very many single documents should still prefer `getAll`, a query, or
+  `auto` mode — the round trips add up linearly — but a modest number of
+  small ops per frame will not show.
+- **DevTools**: the inspector handlers register on the isolate the engine
+  runs in — the main isolate for `caller`/`auto` databases, the worker
+  isolate for `background` databases. The extension lists the process's
+  isolates and merges every `ext.cocoon.listDatabases` answer under
+  composite ids, so background databases appear in the database picker and
+  every handler works against the worker. `db.isolateStats` is shown for
+  auto databases.
+- **Error types**: the errors Cocoon throws itself arrive with their real
+  type (`MissingIndexException`, `TransactionMisuseError`, cursor and state
+  errors, `ArgumentError`). An error the engine does not recognise (one
+  with a captured closure, or a foreign type) cannot cross an isolate
+  boundary, so it arrives as a `CocoonIsolateException` carrying the
+  original type name, message and stack-trace text.
+- `Cocoon.openWith` (a custom executor) accepts only `caller`: the executor
+  belongs to the calling isolate, and there is no way to move someone
+  else's connection. Passing a background/auto mode throws an
+  `ArgumentError` at open.

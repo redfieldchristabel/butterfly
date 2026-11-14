@@ -81,6 +81,14 @@ final class TransactionMisuseError extends StateError {
         'one returns.',
   );
 
+  /// Rebuilds the error on the far side of an isolate boundary from the
+  /// [operation] and [message] the original carried, so a
+  /// [TransactionMisuseError] thrown inside a background worker arrives
+  /// with the same type, operation and message on the caller.
+  @internal
+  factory TransactionMisuseError.reconstruct(String operation, String message) =>
+      TransactionMisuseError._(operation, message);
+
   /// The rejected operation, e.g. `DocRef.set` or `Cocoon.runTransaction`.
   final String operation;
 

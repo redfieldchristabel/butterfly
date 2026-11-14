@@ -174,7 +174,7 @@ void main() {
       final sub = t0.watch().listen(events.add);
       await settle();
       final eventsBefore = events.length;
-      final cacheBefore = db.debugCacheLength;
+      final cacheBefore = await db.debugCacheLength;
       final changesBefore = await db.changesSince(0);
 
       await expectLater(
@@ -199,7 +199,7 @@ void main() {
             .get(),
         isNull,
       );
-      expect(db.debugCacheLength, cacheBefore);
+      expect(await db.debugCacheLength, cacheBefore);
       await settle();
       expect(events.length, eventsBefore);
       expect(await db.changesSince(0), changesBefore);
@@ -266,7 +266,7 @@ void main() {
         );
 
         await t1.set(value);
-        expect(db.debugCacheLength, 1); // the write cached its bytes
+        expect(await db.debugCacheLength, 1); // the write cached its bytes
 
         final first = await t1.get();
         expect(first!.data.createdAt.isUtc, isTrue);
@@ -278,7 +278,7 @@ void main() {
 
         // The decode promoted the value; no second cache entry, and a
         // later read returns exactly what the stored bytes decode to.
-        expect(db.debugCacheLength, 1);
+        expect(await db.debugCacheLength, 1);
         final second = await t1.get();
         expect(second!.data, first.data);
         expect(second.data.createdAt.isUtc, isTrue);
