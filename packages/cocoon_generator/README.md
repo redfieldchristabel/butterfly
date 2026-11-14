@@ -1,3 +1,5 @@
+<p align="center"><img src="https://raw.githubusercontent.com/redfieldchristabel/butterfly/master/packages/cocoon/doc/kepo.png" width="160" alt="Kepo, the Cocoon mascot"></p>
+
 # cocoon_generator
 
 build_runner code generation for

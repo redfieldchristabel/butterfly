@@ -1,3 +1,5 @@
+<p align="center"><img src="https://raw.githubusercontent.com/redfieldchristabel/butterfly/master/packages/cocoon/doc/kepo.png" width="160" alt="Kepo, the Cocoon mascot"></p>
+
 # Cocoon
 
 A typed, disk-backed, Firestore-style local database for Dart and Flutter,
