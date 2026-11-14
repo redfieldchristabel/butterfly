@@ -136,6 +136,22 @@ void cocoonAutoHelperMain(AutoHelperInit init) {
               AutoResponse(id, null, envelopeFrom(error, stackTrace)),
             );
           }
+        case _AutoShutdownRequest(:final id):
+          // The connection must close cleanly before the caller kills the
+          // isolate: a killed isolate's native handle never runs
+          // sqlite3_close, and a connection left attached keeps SQLite from
+          // deleting the -wal when the main connection closes last — the
+          // -wal then sits beside the file holding every un-checkpointed
+          // page, ready to replay over whatever file is later swapped in
+          // next to it.
+          try {
+            await executor.close();
+            events.send(AutoResponse(id, null, null));
+          } on Object catch (error, stackTrace) {
+            events.send(
+              AutoResponse(id, null, envelopeFrom(error, stackTrace)),
+            );
+          }
         default:
           break;
       }
@@ -193,6 +209,14 @@ final class _AutoPrepareRequest {
 
   final int id;
   final List<(BatchOpKind, int, DocPath, Object?)> ops;
+}
+
+/// The last message a closing link sends: the helper closes its read-only
+/// connection and answers before the isolate is killed.
+final class _AutoShutdownRequest {
+  const _AutoShutdownRequest(this.id);
+
+  final int id;
 }
 
 final class AutoResponse {
@@ -347,13 +371,26 @@ final class AutoHelperLink {
     if (_dead) {
       return;
     }
-    _dead = true;
     for (final completer in _pending.values) {
       if (!completer.isCompleted) {
         completer.completeError(StateError('The database was closed'));
       }
     }
     _pending.clear();
+    // Let the helper close its read-only connection before the kill: the
+    // main connection can only delete the -wal when it is the last
+    // connection attached, and a killed isolate's native handle never runs
+    // sqlite3_close. A bounded wait: a helper that will not answer (a read
+    // stuck behind a long decode) must not hang the close — the kill below
+    // stays the backstop.
+    try {
+      await request<Object?>((id) => _AutoShutdownRequest(id)).timeout(
+        const Duration(seconds: 10),
+      );
+    } on Object {
+      // The kill below settles the helper either way.
+    }
+    _dead = true;
     await _subscription.cancel();
     _events.close();
     _helperErrors.close();
@@ -863,8 +900,13 @@ final class AutoCocoonRuntime implements CocoonRuntime {
   Future<void> close() async {
     final helper = _helper;
     _helper = null;
-    await _local.close();
+    // The helper goes first: its read-only connection must be detached
+    // before the main connection closes, or SQLite keeps the -wal beside
+    // the file (the last-close cleanup never runs) and the -wal replays its
+    // un-checkpointed pages over whatever main file is later swapped in
+    // beside it — a restore's renamed-in book, for one.
     await helper?.close();
+    await _local.close();
   }
 
   @override
