@@ -4,6 +4,7 @@ description: "Code generator for Cocoon: build_runner codegen for @Collection mo
 version: 0.1.0
 repository: https://github.com/redfieldchristabel/butterfly/tree/master/packages/cocoon_generator
 issue_tracker: https://github.com/redfieldchristabel/butterfly/issues
+documentation: https://docs.page/redfieldchristabel/butterfly/libraries/cocoon
 topics:
   - database
   - sqlite

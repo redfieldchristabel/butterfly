@@ -3,6 +3,11 @@
 A typed, disk-backed, Firestore-style local database for Dart and Flutter,
 built on SQLite.
 
+**Documentation: [docs.page/redfieldchristabel/butterfly/libraries/cocoon](https://docs.page/redfieldchristabel/butterfly/libraries/cocoon)**
+([Getting Started](https://docs.page/redfieldchristabel/butterfly/libraries/cocoon/getting-started) ·
+[Performance & benchmarks](https://docs.page/redfieldchristabel/butterfly/libraries/cocoon/performance) ·
+[Migrations](https://docs.page/redfieldchristabel/butterfly/libraries/cocoon/migrations))
+
 - **Firestore-style API**: collections, documents and subcollections
   (`accounts/{accountId}/txns`).
 - **Typed**: your model class is the schema. No `Map<String, Object?>`.
@@ -1238,7 +1243,7 @@ shows whether an index served each one ("Used index `cx_txn_ab12cd34`" /
 "Full scan: add `Index([...])`"), streams committed changes live, and shows the
 schema (live tables plus the lock's field numbers and reserved numbers when
 the app passed `schemaLock:` to `Cocoon.open`). Product builds never register
-the inspector. See the [DevTools Inspector](https://docs.page/butterfly/libraries/cocoon/inspector)
+the inspector. See the [DevTools Inspector](https://docs.page/redfieldchristabel/butterfly/libraries/cocoon/inspector)
 guide for the panels and the `ext.cocoon.*` service extensions behind them.
 
 To hand the schema view the lock, pass the parsed `cocoon.lock` on open:

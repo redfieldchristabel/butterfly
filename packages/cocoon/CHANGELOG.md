@@ -3,6 +3,11 @@
 First release on pub.dev. The newest changes come first; the full
 0.1.0 feature set follows under "Everything in 0.1.0".
 
+- **Closing an `auto` database no longer leaves a `-wal` behind.** The
+  helper isolate now closes its read-only connection before it is killed,
+  so SQLite's last-close cleanup runs and removes the `-wal` and `-shm`
+  sidecars. Before, the leftover `-wal` could replay its un-checkpointed
+  pages over a database file restored into the same path.
 - **New: run the engine off the UI isolate — one option.**
   `CocoonOptions(isolate: CocoonIsolate.background)` spawns one worker
   isolate per database and runs the whole engine there (decoding pages,
@@ -23,7 +28,7 @@ First release on pub.dev. The newest changes come first; the full
   stall in `caller` against ~1.1–1.3 s); returning encoded bytes as
   `TransferableTypedData` (decoded lazily on access) is the identified next
   step. Full table and the recommendation:
-  [Isolates](https://docs.page/use.docs.page/butterfly/libraries/cocoon/isolates).
+  [Isolates](https://docs.page/redfieldchristabel/butterfly/libraries/cocoon/isolates).
 - **Paging a collection group no longer skips documents that share an id.**
   A document id is unique only within one parent, so a collection-group
   query's keyset tiebreak is now the full identity — the unbound path params

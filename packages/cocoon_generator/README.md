@@ -4,6 +4,10 @@ build_runner code generation for
 [Cocoon](https://pub.dev/packages/cocoon), the typed, Firestore-style local
 database on SQLite. Standalone: no Butterfly packages required.
 
+**Documentation: [Models & Code Generation](https://docs.page/redfieldchristabel/butterfly/libraries/cocoon/models)**
+([Getting Started](https://docs.page/redfieldchristabel/butterfly/libraries/cocoon/getting-started) ·
+[Schema Migrations](https://docs.page/redfieldchristabel/butterfly/libraries/cocoon/migrations))
+
 For every `@Collection` model it generates the `CollectionAdapter`, typed
 query handles (`Txn$.bookedOn`, `Txn$.accountId`) and the canonical protobuf
 codec; for every `@Embedded` class, a nested-message codec. Field numbers come

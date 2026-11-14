@@ -4,6 +4,7 @@ description: "A typed, disk-backed, Firestore-style local database for Dart and 
 version: 0.1.0
 repository: https://github.com/redfieldchristabel/butterfly/tree/master/packages/cocoon
 issue_tracker: https://github.com/redfieldchristabel/butterfly/issues
+documentation: https://docs.page/redfieldchristabel/butterfly/libraries/cocoon
 topics:
   - database
   - sqlite
