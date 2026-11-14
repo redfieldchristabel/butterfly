@@ -3,6 +3,10 @@ title: Task Queue Mixin
 description: Prevent setState-during-build and unmounted State crashes with scheduler-aware FIFO callback queueing.
 ---
 
+<Warning>
+  <Icon name="hourglass-half" /> **Coming soon to pub.dev.** `core_management` and `core_management_route_go_router` are not published yet: today only [Cocoon](/libraries/cocoon) ships. This page documents the current code in the repository, and its API may still change before release. To try it now, depend on it from git (see [Installation & Setup](/installation)).
+</Warning>
+
 `TaskQueueMixin<T>` (`package:core_management/mixins/task_queue.dart`) makes Flutter `StatefulWidget` states resilient against the two most common widget lifecycle crashes:
 1. **`setState() or markNeedsBuild() called during build`** (triggered when a callback fires synchronously while Flutter is building or laying out frames).
 2. **`setState() called after dispose()`** (triggered when an event or post-frame callback fires after the widget left the tree).

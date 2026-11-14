@@ -5,6 +5,10 @@ description: Ejectable Flutter architecture packages and Dart CLI generators for
 
 Butterfly is a **modular, ejectable toolkit of Flutter packages and a Dart CLI**, not a rigid lock-in framework. Every package removes repetitive plumbing while keeping your domain models and widgets clean—and every page in these docs shows both the **With Butterfly** setup and the **Without Butterfly (Raw Flutter)** equivalent so you can adopt or eject any piece at any time.
 
+<Success>
+  <Icon name="rocket" /> **Now on pub.dev: Cocoon.** The typed, Firestore-style local database is the first Butterfly package to ship: `dart pub add cocoon`, then follow [Getting Started](/libraries/cocoon/getting-started). Every other package on this site is **coming soon**: documented against the current repository, not yet published.
+</Success>
+
 <Info>
   <Icon name="shield-halved" /> **Zero Lock-In Guarantee:** If you ever outgrow a Butterfly package or want to drop the dependency, every feature maps directly to standard Flutter, `go_router`, `flutter_riverpod`, or database primitives. You just trade Butterfly's concise glue for the raw boilerplate shown in the second tab of each guide.
 </Info>
@@ -12,26 +16,29 @@ Butterfly is a **modular, ejectable toolkit of Flutter packages and a Dart CLI**
 ## Explore the ecosystem
 
 <CardGroup cols={2}>
+  <Card title="Cocoon Local Database (on pub.dev)" icon="database" href="/libraries/cocoon">
+    A typed, disk-backed, Firestore-style local database on SQLite: collections, indexed queries, watches and on-device migrations, standalone. Benchmarked against drift, Isar, ObjectBox, Hive CE and sembast up to 1M records: see [Performance](/libraries/cocoon/performance).
+  </Card>
   <Card title="Installation & Quickstart" icon="download" href="/installation">
-    Activate the CLI globally from GitHub, add Git package dependencies to your `pubspec.yaml`, and configure your workspace.
+    Add Cocoon from pub.dev, or try the coming-soon packages and the CLI from git.
   </Card>
-  <Card title="Riverpod Auto-Sync" icon="bolt" href="/libraries/auth/features/riverpod">
-    Publish and clear your signed-in `AppUser` automatically across your widget tree with one `initialize(ref)` call.
-  </Card>
-  <Card title="Core & Theme Services" icon="layer-group" href="/libraries/core">
+  <Card title="Core & Theme Services (coming soon)" icon="layer-group" href="/libraries/core">
     Centralize Flutter/platform error handling, Material 3 seeded themes, typography, and app-wide loading overlays.
   </Card>
-  <Card title="Task Queue Mixin (Error-Proof State)" icon="list-check" href="/libraries/core/features/enqueue">
-    Prevent *"setState() called during build"* and *"called after dispose()"* crashes with `TaskQueueMixin` and `enqueue()`.
-  </Card>
-  <Card title="GoRouter & Auth Guards" icon="signs-post" href="/libraries/core/features/route_service">
+  <Card title="GoRouter & Auth Guards (coming soon)" icon="signs-post" href="/libraries/core/features/route_service">
     Protect routes, allow public paths, and preserve deep-linked destinations across sign-in and sign-up flows.
   </Card>
-  <Card title="Authentication & Storage" icon="key" href="/libraries/auth">
+  <Card title="Task Queue Mixin (coming soon)" icon="list-check" href="/libraries/core/features/enqueue">
+    Prevent *"setState() called during build"* and *"called after dispose()"* crashes with `TaskQueueMixin` and `enqueue()`.
+  </Card>
+  <Card title="Authentication & Storage (coming soon)" icon="key" href="/libraries/auth">
     Decouple external identity (Firebase, Google, OAuth2) from your app user model and local cache (Sembast, Hive, Isar).
   </Card>
-  <Card title="Cocoon Local Database" icon="database" href="/libraries/cocoon">
-    A typed, disk-backed, Firestore-style local database on SQLite — collections, indexed queries, watches and on-device migrations, standalone.
+  <Card title="Riverpod Auto-Sync (coming soon)" icon="bolt" href="/libraries/auth/features/riverpod">
+    Publish and clear your signed-in `AppUser` automatically across your widget tree with one `initialize(ref)` call.
+  </Card>
+  <Card title="CLI & MCP (coming soon)" icon="terminal" href="/features">
+    Scaffold models (including Cocoon `@Collection` classes), stamp versions and expose an MCP server for coding agents.
   </Card>
 </CardGroup>
 
@@ -61,21 +68,21 @@ Butterfly separates your app into clean, replaceable layers so your UI never tal
 
 ## Package catalog
 
-| Package | Role | Key Exports |
-| --- | --- | --- |
-| `butterfly_cli` | CLI & Mason scaffolding | `butterfly` executable (`init`, `generate`, `commit`, `mcp-server`) |
-| `core_management` | Core services & runtime utilities | `BaseCoreService`, `BaseThemeService`, `CoreLockService`, `TaskQueueMixin`, `HexColor` |
-| `core_management_route_go_router` | GoRouter integration | `GoRouterService`, `GoRouterAuthRoute<T>`, `GoRouterServiceMixin` |
-| `auth_management` | Auth contracts & base lifecycle | `AuthServiceRepository<T>`, `IdentityAuthRepository<I, T>`, `AuthServiceProviderRepository<T>` |
-| `auth_management_provider_riverpod` | Riverpod state bridge | `RiverpodUser`, `AuthManagementRiverpodRepository<T>`, `riverpodUserStateProvider` |
-| `auth_management_database_sembast` | Sembast JSON user cache | `AuthManagementDatabaseSembast<T>` |
-| `auth_management_database_hive_ce` | Hive CE box user cache | `AuthManagementDatabaseHiveCe<T>`, `BaseUser` |
-| `auth_management_database_isar_community` | Isar Community user cache | `AuthManagementIsarRepository<T>`, `BaseUser` |
-| `auth_management_firebase` | Firebase Auth identity adapter | `FirebaseAuthManagementRepository<T>`, `FirebaseUser`, `SignInWithGoogleWebMixin` |
-| `auth_management_firebase_google` | Native Google Sign-In for Firebase | `SignInWithGoogleFirebase` |
-| `auth_management_oauth2` | OAuth2 client & grant mixins | `BaseOauth2AuthManagement<T>`, `AuthorizationCodeGrantMixin`, `ClientCredential` |
-| `cocoon` | Typed Firestore-style local database on SQLite | `Cocoon`, `CocoonOptions`, `DocRef<T>`, `CollectionRef<T>`, `CocoonQuery<T>`, `QueryPage<T>` |
-| `cocoon_generator` | build_runner codegen for Cocoon | `@Collection` adapters, `Txn$.bookedOn` handles, `cocoonSchemaVersion`, `migrate` CLI |
+| Package | Status | Role | Key Exports |
+| --- | --- | --- | --- |
+| `cocoon` | [pub.dev](https://pub.dev/packages/cocoon) | Typed Firestore-style local database on SQLite | `Cocoon`, `CocoonOptions`, `DocRef<T>`, `CollectionRef<T>`, `CocoonQuery<T>`, `QueryPage<T>` |
+| `cocoon_generator` | [pub.dev](https://pub.dev/packages/cocoon_generator) | build_runner codegen for Cocoon | `@Collection` adapters, `Txn$.bookedOn` handles, `cocoonSchemaVersion`, `migrate` CLI |
+| `butterfly_cli` | Coming soon | CLI & Mason scaffolding | `butterfly` executable (`init`, `generate`, `commit`, `mcp-server`) |
+| `core_management` | Coming soon | Core services & runtime utilities | `BaseCoreService`, `BaseThemeService`, `CoreLockService`, `TaskQueueMixin`, `HexColor` |
+| `core_management_route_go_router` | Coming soon | GoRouter integration | `GoRouterService`, `GoRouterAuthRoute<T>`, `GoRouterServiceMixin` |
+| `auth_management` | Coming soon | Auth contracts & base lifecycle | `AuthServiceRepository<T>`, `IdentityAuthRepository<I, T>`, `AuthServiceProviderRepository<T>` |
+| `auth_management_provider_riverpod` | Coming soon | Riverpod state bridge | `RiverpodUser`, `AuthManagementRiverpodRepository<T>`, `riverpodUserStateProvider` |
+| `auth_management_database_sembast` | Coming soon | Sembast JSON user cache | `AuthManagementDatabaseSembast<T>` |
+| `auth_management_database_hive_ce` | Coming soon | Hive CE box user cache | `AuthManagementDatabaseHiveCe<T>`, `BaseUser` |
+| `auth_management_database_isar_community` | Coming soon | Isar Community user cache | `AuthManagementIsarRepository<T>`, `BaseUser` |
+| `auth_management_firebase` | Coming soon | Firebase Auth identity adapter | `FirebaseAuthManagementRepository<T>`, `FirebaseUser`, `SignInWithGoogleWebMixin` |
+| `auth_management_firebase_google` | Coming soon | Native Google Sign-In for Firebase | `SignInWithGoogleFirebase` |
+| `auth_management_oauth2` | Coming soon | OAuth2 client & grant mixins | `BaseOauth2AuthManagement<T>`, `AuthorizationCodeGrantMixin`, `ClientCredential` |
 
 ## Design principles & adoption rules
 

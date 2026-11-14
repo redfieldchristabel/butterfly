@@ -3,6 +3,10 @@ title: Loading Overlay
 description: Display an app-wide loading barrier driven by your CoreService controller, with a side-by-side raw Flutter escape hatch.
 ---
 
+<Warning>
+  <Icon name="hourglass-half" /> **Coming soon to pub.dev.** `core_management` and `core_management_route_go_router` are not published yet: today only [Cocoon](/libraries/cocoon) ships. This page documents the current code in the repository, and its API may still change before release. To try it now, depend on it from git (see [Installation & Setup](/installation)).
+</Warning>
+
 `LoadingOverlay` (`package:core_management/widgets/loading_overlay.dart`) wraps your app and inserts a Flutter `OverlayEntry` whenever `coreService.loadingService.controller.state` transitions to `ButterflyLoadingState.loading`.
 
 ## Usage: Butterfly vs. Raw Flutter

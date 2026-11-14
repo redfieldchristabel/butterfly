@@ -3,7 +3,26 @@ title: Installation & Setup
 description: Activate the Butterfly CLI from GitHub, add modular Flutter packages via Git, and understand scaffolding behavior.
 ---
 
-You can adopt Butterfly in two ways: activate the `butterfly` CLI globally to scaffold models and project files, or add individual Flutter packages directly to your `pubspec.yaml`.
+## Cocoon: install from pub.dev
+
+Cocoon is the first Butterfly package on pub.dev, and it is standalone: it needs no other Butterfly package and no Flutter dependency.
+
+```sh
+dart pub add cocoon
+dart pub add --dev cocoon_generator build_runner
+```
+
+Nothing else to add, in Flutter apps too: `package:sqlite3` bundles the native SQLite automatically through its build hook. Continue with [Cocoon: Getting Started](/libraries/cocoon/getting-started).
+
+---
+
+## Everything else: coming soon
+
+<Warning>
+  <Icon name="hourglass-half" /> **Coming soon to pub.dev.** The `butterfly` CLI, `core_management*` and `auth_management*` are not published yet. The steps below install them from git so you can try them today; their APIs may still change before release.
+</Warning>
+
+You can adopt the rest of Butterfly in two ways: activate the `butterfly` CLI globally to scaffold models and project files, or add individual Flutter packages directly to your `pubspec.yaml`.
 
 ## Prerequisites
 
@@ -113,26 +132,18 @@ Every library lives under `packages/<package_name>` in the monorepo. Add only th
     ```
   </TabItem>
   <TabItem label="Cocoon (local database)" value="cocoon-deps">
-    Add the Cocoon database plus its code generator. Cocoon is standalone pure Dart — no other Butterfly package and no Flutter dependency:
+    Cocoon is on pub.dev; add the database plus its code generator. It is standalone pure Dart: no other Butterfly package and no Flutter dependency.
 
     ```yaml title="pubspec.yaml"
     dependencies:
-      cocoon:
-        git:
-          url: https://github.com/redfieldchristabel/butterfly.git
-          ref: master
-          path: packages/cocoon
+      cocoon: ^0.1.0
 
     dev_dependencies:
       build_runner: ^2.4.13
-      cocoon_generator:
-        git:
-          url: https://github.com/redfieldchristabel/butterfly.git
-          ref: master
-          path: packages/cocoon_generator
+      cocoon_generator: ^0.1.0
     ```
 
-    Nothing else to add, in Flutter apps too: `package:sqlite3` bundles the native SQLite automatically through its build hook. Don't add `sqlite3_flutter_libs`; see [Cocoon: Overview & Why Cocoon](/libraries/cocoon).
+    Nothing else to add, in Flutter apps too: `package:sqlite3` bundles the native SQLite automatically through its build hook. Don't add `sqlite3_flutter_libs`; see [Cocoon: Getting Started](/libraries/cocoon/getting-started).
   </TabItem>
 </Tabs>
 

@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.page/schema.json",
   "name": "Butterfly",
-  "description": "Dart CLI generators and modular Flutter packages for core services, GoRouter auth guards, and identity management.",
+  "description": "Cocoon, a typed Firestore-style local database for Dart and Flutter on SQLite (on pub.dev), plus the coming-soon Butterfly packages: core services, GoRouter auth guards, identity management and the CLI.",
   "theme": {
     "primary": "#0D9488",
     "primaryLight": "#0F766E",
@@ -11,8 +11,8 @@
     "showName": true,
     "links": [
       {
-        "title": "Quickstart",
-        "href": "/installation",
+        "title": "Get Cocoon",
+        "href": "/libraries/cocoon/getting-started",
         "cta": true
       }
     ]
@@ -33,12 +33,12 @@
     },
     {
       "id": "core",
-      "title": "Core & Routing",
+      "title": "Core & Routing (soon)",
       "href": "/libraries/core"
     },
     {
       "id": "auth",
-      "title": "Authentication",
+      "title": "Authentication (soon)",
       "href": "/libraries/auth"
     },
     {
@@ -48,7 +48,7 @@
     },
     {
       "id": "cli",
-      "title": "CLI & Tooling",
+      "title": "CLI & Tooling (soon)",
       "href": "/features"
     }
   ],
@@ -59,9 +59,14 @@
       "icon": "github"
     },
     {
-      "title": "Riverpod Auto-Sync",
-      "href": "/libraries/auth/features/riverpod",
-      "icon": "bolt"
+      "title": "Cocoon on pub.dev",
+      "href": "https://pub.dev/packages/cocoon",
+      "icon": "box"
+    },
+    {
+      "title": "Cocoon Benchmarks",
+      "href": "/libraries/cocoon/performance",
+      "icon": "chart-line"
     }
   ],
   "sidebar": [
@@ -72,11 +77,11 @@
       "pages": [
         { "title": "Overview & Architecture", "href": "/", "icon": "house" },
         { "title": "Installation & Setup", "href": "/installation", "icon": "download" },
-        { "title": "CLI & MCP Reference", "href": "/features", "icon": "terminal" }
+        { "title": "CLI & MCP Reference (coming soon)", "href": "/features", "icon": "terminal" }
       ]
     },
     {
-      "group": "Core Foundation",
+      "group": "Core Foundation (coming soon)",
       "tab": "core",
       "icon": "cubes",
       "pages": [
@@ -86,7 +91,7 @@
       ]
     },
     {
-      "group": "Navigation",
+      "group": "Navigation (coming soon)",
       "tab": "core",
       "icon": "route",
       "pages": [
@@ -94,7 +99,7 @@
       ]
     },
     {
-      "group": "Runtime Utilities",
+      "group": "Runtime Utilities (coming soon)",
       "tab": "core",
       "icon": "screwdriver-wrench",
       "pages": [
@@ -105,7 +110,7 @@
       ]
     },
     {
-      "group": "Auth Architecture",
+      "group": "Auth Architecture (coming soon)",
       "tab": "auth",
       "icon": "shield-halved",
       "pages": [
@@ -114,7 +119,7 @@
       ]
     },
     {
-      "group": "Adapters & Providers",
+      "group": "Adapters & Providers (coming soon)",
       "tab": "auth",
       "icon": "plug",
       "pages": [
@@ -144,7 +149,7 @@
       ]
     },
     {
-      "group": "CLI & Code Generation",
+      "group": "CLI & Code Generation (coming soon)",
       "tab": "cli",
       "icon": "terminal",
       "pages": [

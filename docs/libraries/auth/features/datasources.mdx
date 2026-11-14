@@ -3,6 +3,10 @@ title: User Storage Repositories
 description: Persist your signed-in AppUser locally with Sembast, Hive CE, Isar Community, or raw database code.
 ---
 
+<Warning>
+  <Icon name="hourglass-half" /> **Coming soon to pub.dev.** The `auth_management` packages are not published yet: today only [Cocoon](/libraries/cocoon) ships. This page documents the current code in the repository, and its API may still change before release. To try it now, depend on it from git (see [Installation & Setup](/installation)).
+</Warning>
+
 Every `AuthServiceRepository<T>` requires a `dbRepo` implementing `AuthManagementDatabaseRepository<T>` (`package:auth_management/auth_management.dart`). This repository caches your resolved `AppUser` locally—it does **not** perform password verification or network sign-in.
 
 ## Compare storage adapters

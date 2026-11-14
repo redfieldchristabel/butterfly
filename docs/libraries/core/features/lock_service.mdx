@@ -3,6 +3,10 @@ title: Lock Service
 description: Guard duplicate in-isolate actions with synchronous acquire/release locks and expiring keys.
 ---
 
+<Warning>
+  <Icon name="hourglass-half" /> **Coming soon to pub.dev.** `core_management` and `core_management_route_go_router` are not published yet: today only [Cocoon](/libraries/cocoon) ships. This page documents the current code in the repository, and its API may still change before release. To try it now, depend on it from git (see [Installation & Setup](/installation)).
+</Warning>
+
 `CoreLockService` (`package:core_management/services/core_lock.dart`) provides synchronous, key-based in-memory locks with automatic expiration—ideal for preventing double-taps or concurrent triggers of the same client-side action within a single Dart isolate.
 
 ## Usage: Butterfly vs. Raw Dart

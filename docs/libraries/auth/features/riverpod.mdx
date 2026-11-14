@@ -3,6 +3,10 @@ title: Riverpod Auto-Sync
 description: Publish the signed-in user to Riverpod automatically with one initialize(ref) call and a typed userProvider.
 ---
 
+<Warning>
+  <Icon name="hourglass-half" /> **Coming soon to pub.dev.** The `auth_management` packages are not published yet: today only [Cocoon](/libraries/cocoon) ships. This page documents the current code in the repository, and its API may still change before release. To try it now, depend on it from git (see [Installation & Setup](/installation)).
+</Warning>
+
 `auth_management_provider_riverpod` connects your `AuthService` to Riverpod with **zero manual publish/clear boilerplate**. Once wired, signing in, restoring a cached session, or calling `signOut()` updates your widgets automatically.
 
 ## Setup: Butterfly vs. Raw Riverpod

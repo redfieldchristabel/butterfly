@@ -3,6 +3,10 @@ title: Auth Architecture & Lifecycle
 description: Decouple your application user model, external identity provider, local cache, and state-management bridge.
 ---
 
+<Warning>
+  <Icon name="hourglass-half" /> **Coming soon to pub.dev.** The `auth_management` packages are not published yet: today only [Cocoon](/libraries/cocoon) ships. This page documents the current code in the repository, and its API may still change before release. To try it now, depend on it from git (see [Installation & Setup](/installation)).
+</Warning>
+
 `auth_management` separates authentication into four distinct concerns so your UI and domain logic never depend on a specific database or identity SDK:
 
 <CardGroup cols={2}>
