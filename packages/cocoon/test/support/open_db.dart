@@ -37,6 +37,7 @@ Future<Cocoon> openCocoon(
   List<CocoonMigration> migrations = const [],
   void Function(int done, int total)? onMigrationProgress,
   SchemaLock? schemaLock,
+  bool preloadPrefs = false,
 }) {
   final mode = testIsolateMode;
   final effective = mode == CocoonIsolate.caller
@@ -63,6 +64,7 @@ Future<Cocoon> openCocoon(
     migrations: migrations,
     onMigrationProgress: onMigrationProgress,
     schemaLock: schemaLock,
+    preloadPrefs: preloadPrefs,
   );
 }
 

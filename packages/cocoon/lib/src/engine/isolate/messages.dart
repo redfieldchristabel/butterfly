@@ -9,6 +9,7 @@
 library;
 
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import '../../migration.dart';
 import '../../path.dart';
@@ -570,11 +571,16 @@ final class TxEndRequest extends WorkerRequest {
 
 /// Commits a `WriteBatch`'s queued ops as one transaction.
 final class BatchCommitRequest extends WorkerRequest {
-  /// Builds the request.
-  const BatchCommitRequest(super.id, this.ops);
+  /// Builds the request ([prefOps] carries the batch's queued pref
+  /// mutations, committed after the document ops in the same transaction).
+  const BatchCommitRequest(super.id, this.ops, {this.prefOps = const []});
 
   /// The queued operations, in call order.
   final List<WireOp> ops;
+
+  /// The queued pref mutations, after the document ops: one
+  /// `(key, kind, bytes)` per position, a null `bytes` for a removal.
+  final List<(String, int, Uint8List?)> prefOps;
 }
 
 /// One queued write crossing the isolate boundary (a batch or bulk-writer
@@ -675,6 +681,96 @@ final class PruneChangesRequest extends WorkerRequest {
 
   /// The seq floor to delete through.
   final int upToSeq;
+}
+
+/// `db.prefs.get*` (a raw row read; the facade validates the kind).
+final class PrefsGetRequest extends WorkerRequest {
+  /// Builds the request.
+  const PrefsGetRequest(super.id, this.key);
+
+  /// The pref key.
+  final String key;
+}
+
+/// `db.prefs.set*` (a raw row upsert).
+final class PrefsPutRequest extends WorkerRequest {
+  /// Builds the request.
+  const PrefsPutRequest(super.id, this.key, this.kind, this.bytes);
+
+  /// The pref key.
+  final String key;
+
+  /// The row's kind.
+  final int kind;
+
+  /// The row's wire value.
+  final Uint8List bytes;
+}
+
+/// `db.prefs.remove(key)`.
+final class PrefsRemoveRequest extends WorkerRequest {
+  /// Builds the request.
+  const PrefsRemoveRequest(super.id, this.key);
+
+  /// The pref key.
+  final String key;
+}
+
+/// `db.prefs.keys()`.
+final class PrefsKeysRequest extends WorkerRequest {
+  /// Builds the request.
+  const PrefsKeysRequest(super.id);
+}
+
+/// `db.prefs.clear()`.
+final class PrefsClearRequest extends WorkerRequest {
+  /// Builds the request.
+  const PrefsClearRequest(super.id);
+}
+
+/// `db.prefs.preload()` (the bulk read that fills the caller's map).
+final class PrefsLoadAllRequest extends WorkerRequest {
+  /// Builds the request.
+  const PrefsLoadAllRequest(super.id);
+}
+
+/// `tx.prefs.get*`.
+final class TxPrefsGetRequest extends TxOpRequest {
+  /// Builds the request.
+  const TxPrefsGetRequest(super.id, super.txId, this.key);
+
+  /// The pref key.
+  final String key;
+}
+
+/// `tx.prefs.set*` (a raw row upsert inside the transaction).
+final class TxPrefsPutRequest extends TxOpRequest {
+  /// Builds the request.
+  const TxPrefsPutRequest(
+    super.id,
+    super.txId,
+    this.key,
+    this.kind,
+    this.bytes,
+  );
+
+  /// The pref key.
+  final String key;
+
+  /// The row's kind.
+  final int kind;
+
+  /// The row's wire value.
+  final Uint8List bytes;
+}
+
+/// `tx.prefs.remove(key)`.
+final class TxPrefsRemoveRequest extends TxOpRequest {
+  /// Builds the request.
+  const TxPrefsRemoveRequest(super.id, super.txId, this.key);
+
+  /// The pref key.
+  final String key;
 }
 
 /// `db.backupTo(path, overwrite)`.

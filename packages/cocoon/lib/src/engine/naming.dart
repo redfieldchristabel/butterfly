@@ -20,6 +20,12 @@ const String changesTableName = '_cocoon_changes';
 /// recovery both read it; an empty or absent table means nothing is deferred.
 const String bulkTableName = '_cocoon_bulk';
 
+/// Name of the internal key-value table behind `db.prefs` and `db.single`:
+/// device-local state that is never synced, never indexed and never part of
+/// a collection's document tree. Reserved: [tableNameFor] rejects any model
+/// mapping to a `_cocoon` prefix, so no collection can take it.
+const String prefsTableName = '_cocoon_prefs';
+
 /// Key under which `_cocoon_meta` stores the database's schema version: the
 /// lock version the running app last migrated the file to.
 const String schemaVersionMetaKey = 'schema_version';

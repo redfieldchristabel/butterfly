@@ -12,6 +12,10 @@ built on SQLite.
 
 - **Firestore-style API**: collections, documents and subcollections
   (`accounts/{accountId}/txns`).
+- **Prefs & single models**: `db.prefs`, a key-value store for primitives in
+  the same file, `db.single` for one typed model such as the current user,
+  and `preload()` for synchronous reads — no collection, no index
+  ([Prefs & Single Models](https://docs.page/redfieldchristabel/butterfly/libraries/cocoon/prefs)).
 - **Typed**: your model class is the schema. No `Map<String, Object?>`.
 - **On disk**: data never loads into RAM wholesale; only a bounded cache of
   hot documents stays in memory.

@@ -458,6 +458,32 @@ on the docs site under **Cocoon**:
     replaced saved; returning encoded bytes as `TransferableTypedData`
     (decoded lazily on access) is the identified next step within this
     protocol.
+- **Prefs & single models are device-local state, not documents.** One
+  reserved internal table (`_cocoon_prefs`: `key` TEXT PK, `kind` INTEGER,
+  `value` BLOB, `WITHOUT ROWID` — the primary key is the table's one
+  B-tree, and it measured no worse than the rowid-plus-index alternative)
+  holds primitives and one-model rows alike, values in canonical wire
+  format with the kind pinned per row. Single-model rows carry a biased
+  fingerprint of the adapter's table identity in `kind`, so a wrong-adapter
+  read throws `PrefsTypeException` instead of decoding garbage while the
+  row stays self-contained (the stored bytes are exactly the adapter's
+  `encode` bytes, so model evolution behaves like a collection document).
+  The table is created with `CREATE TABLE IF NOT EXISTS` at every open —
+  no storage-format bump: a file predating it gains the table on its first
+  newer open, and an older Cocoon opening a newer file reconciles its
+  collection tables exactly as before and leaves the device-local rows
+  alone (its `StorageFormatTooNewException` rule is untouched). Prefs
+  never enter `_cocoon_changes`, get no indexes (MissingIndexMode never
+  applies), join transactions and batches through the transaction's own
+  SQL surface, and reach the preload map and watch streams only after the
+  commit succeeds, in commit order — a rollback leaves both untouched. The
+  map lives on the caller isolate in every isolate mode; prefs never route
+  to a worker or the auto helper (single-key and tiny). `preload()` (or
+  `preloadPrefs: true` on open) makes the sync getters memory-speed.
+  `@Index`/`@Mirrored` fields on a single model are ignored. Not encrypted
+  (the file is plain SQLite): secrets belong in the platform keystore; an
+  encrypted variant with an app-supplied key is parked for after this
+  release — the `kind` column leaves room for a sealed kind later.
 
 ## Money
 
@@ -521,6 +547,7 @@ executor, so it is deferred.
 | Transactions guard: database calls inside a `runTransaction` body (`DocRef`/`CollectionRef`/query/aggregate/getAll/batch commit/BulkWriter/nested `runTransaction`/`backupTo`) throw `TransactionMisuseError` immediately with the operation and a `Fix:` hint — write lock, stale reads, always on; a second `Cocoon` and `watch()` stay allowed inside a body | done |
 | Isolate modes: `CocoonIsolate.caller` (default, unchanged) / `background` (one worker isolate per database: the whole engine there, a spec-based proxy on the caller, typed results and errors crossing, worker-side watch/tx/bulk sessions, caller-death rollback, worker-crash `CocoonIsolateException`s) / `auto` (engine home on the caller, one read-only helper isolate for heavy reads and bulk encodes, deterministic `AutoRouter` thresholds, `db.isolateStats`, crash-degrades-to-inline); whole suite green in all three modes; measured stall/wall/RSS table in the isolates docs page | done |
 | Non-blocking auto open: the helper spawns in the background (open returns with everything inline until it attaches; a 30 s named give-up timeout that never blocks a caller; close-while-pending shuts the late helper down cleanly; in-flight requests finish exactly once) and `db.isolateStats` reports the helper state (`starting`/`ready`/`failed`/`closed`) + spawn duration, in the DevTools inspector too | done |
+| Prefs & single models: `db.prefs` (primitives under keys) and `db.single(adapter, key:)` (one generated model under one key, adapter codecs reused, no registration and no table) in one reserved internal `_cocoon_prefs` table (`key` TEXT PK, `kind` INTEGER, `value` BLOB, `WITHOUT ROWID`); wrong-kind and wrong-adapter reads throw `PrefsTypeException` naming key, stored kind and requested kind; `tx.prefs`/`tx.single` and `batch.prefs` commit atomically with collection writes (rolled-back transactions never touch the preload map or the watches); `preload()` and `preloadPrefs: true` with write-through sync getters in every isolate mode; included in backups, never in the change log; no storage-format bump | done |
 | `tx.query(...)` (read through the write connection, seeing the transaction's own writes — the fix for the stale-read rule's workaround) | planned |
 | Publishing to pub.dev (maintainer: push, then `dart pub publish` in cocoon, then cocoon_generator) | planned |
 | Export/import streams (documents through the public API, NDJSON-shaped) | planned |

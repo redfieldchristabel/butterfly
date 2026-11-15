@@ -1,6 +1,9 @@
+import 'dart:typed_data';
+
 import 'package:meta/meta.dart';
 
 import 'cocoon.dart';
+import 'prefs_store.dart';
 import 'refs.dart';
 import 'transaction_guard.dart';
 import 'write_buffer.dart' show writeFlushThreshold;
@@ -32,6 +35,44 @@ final class BatchOp {
 
   /// The value to store, for [BatchOpKind.set] and [BatchOpKind.update].
   final Object? value;
+}
+
+/// A [WriteBatch]'s prefs view, accessed as `batch.prefs`: queue pref
+/// mutations synchronously and they commit with the batch's documents in
+/// the same transaction.
+///
+/// Queueing is synchronous and touches nothing on disk, exactly like
+/// [WriteBatch.set]; the mutations land after the batch's document ops and
+/// reach the prefs preload map and watches once the commit succeeds.
+final class BatchPrefs {
+  /// Builds the view; applications get one from `batch.prefs`.
+  @internal
+  BatchPrefs(this._queue);
+
+  final void Function(String key, PrefRow? row) _queue;
+
+  /// Queues an upsert of a string pref.
+  void setString(String key, String value) =>
+      _queue(key, (kind: prefsKindString, bytes: encodePrefString(value)));
+
+  /// Queues an upsert of an int pref.
+  void setInt(String key, int value) =>
+      _queue(key, (kind: prefsKindInt, bytes: encodePrefInt(value)));
+
+  /// Queues an upsert of a bool pref.
+  void setBool(String key, bool value) =>
+      _queue(key, (kind: prefsKindBool, bytes: encodePrefBool(value)));
+
+  /// Queues an upsert of a double pref.
+  void setDouble(String key, double value) =>
+      _queue(key, (kind: prefsKindDouble, bytes: encodePrefDouble(value)));
+
+  /// Queues an upsert of a bytes pref.
+  void setBytes(String key, Uint8List value) =>
+      _queue(key, (kind: prefsKindBytes, bytes: encodePrefBytes(value)));
+
+  /// Queues a removal of a pref.
+  void remove(String key) => _queue(key, null);
 }
 
 /// A Firestore-style batch of document writes committed as one transaction.
@@ -82,6 +123,11 @@ abstract interface class WriteBatch {
   /// Throws an [ArgumentError] at queue time for an unregistered adapter.
   void delete(DocRef<Object> ref);
 
+  /// The batch's prefs view: queue pref mutations synchronously and they
+  /// commit with the batch's documents in the same transaction. See
+  /// [BatchPrefs].
+  BatchPrefs get prefs;
+
   /// Every queued operation, in call order. Reading it never commits.
   List<BatchOp> get ops;
 
@@ -109,6 +155,7 @@ final class LocalWriteBatch implements WriteBatch {
 
   final Cocoon _db;
   final List<BatchOp> _ops = [];
+  final List<PrefWriteOp> _prefOps = [];
   var _committed = false;
 
   @override
@@ -129,6 +176,15 @@ final class LocalWriteBatch implements WriteBatch {
   }
 
   @override
+  BatchPrefs get prefs => _prefsView ??= BatchPrefs((key, row) {
+    _checkUsable();
+    checkPrefKey(key);
+    _prefOps.add((key: key, row: row));
+  });
+
+  BatchPrefs? _prefsView;
+
+  @override
   List<BatchOp> get ops => List.unmodifiable(_ops);
 
   @override
@@ -136,10 +192,13 @@ final class LocalWriteBatch implements WriteBatch {
     _checkUsable();
     checkNotInTransaction(_db, 'WriteBatch.commit', read: false);
     _committed = true;
-    if (_ops.isEmpty) {
+    if (_ops.isEmpty && _prefOps.isEmpty) {
       return;
     }
-    await _db.runtime.commitBatchOps(_ops);
+    await _db.runtime.commitBatchOps(_ops, _prefOps);
+    // The commit succeeded: write the batch's pref mutations through the
+    // preload map (commit order) and wake the prefs watches.
+    _db.prefsStore.applyCommitted(_prefOps);
   }
 
   void _queue<T extends Object>(DocRef<T> ref, T value, BatchOpKind kind) {

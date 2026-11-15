@@ -29,6 +29,7 @@ import '../bulk_writer.dart';
 import '../changes.dart';
 import '../cocoon.dart';
 import '../executor.dart';
+import '../prefs_store.dart' show PrefRow, PrefWriteOp;
 import '../query.dart';
 import '../refs.dart';
 import '../runtime.dart';
@@ -56,6 +57,7 @@ abstract final class CocoonIsolateHost {
     List<CocoonMigration> migrations = const [],
     void Function(int done, int total)? onMigrationProgress,
     SchemaLock? schemaLock,
+    bool preloadPrefs = false,
   }) async {
     switch (options.isolate) {
       case CocoonIsolate.caller || CocoonIsolate.auto:
@@ -93,6 +95,11 @@ abstract final class CocoonIsolateHost {
     // The worker's local open attaches the inspector in the worker isolate
     // (see worker.dart's library doc), and the DevTools extension discovers
     // isolates that answer `ext.cocoon.listDatabases`.
+    if (preloadPrefs) {
+      // One bulk read fills the caller's map; prefs reads and writes are
+      // messages in this mode, but the map and the sync getters stay here.
+      await db.prefs.preload();
+    }
     return db;
   }
 }
@@ -688,13 +695,58 @@ final class BackgroundCocoonRuntime implements CocoonRuntime {
     (id) => DeleteDocRequest(id, ref.adapter, ref.path),
   );
 
+  // -- Prefs (storage via messages; the facade's map stays on the caller) ----
+
   @override
-  Future<void> commitBatchOps(List<BatchOp> ops) => _link.request<Object?>(
-    (id) => BatchCommitRequest(id, [
-      for (final op in ops)
-        WireOp(op.kind, op.ref.adapter, op.ref.path, op.value),
-    ]),
+  Future<PrefRow?> prefsGet(String key) async {
+    final row = await _link.request<(int, Uint8List)?>(
+      (id) => PrefsGetRequest(id, key),
+    );
+    return row == null ? null : (kind: row.$1, bytes: row.$2);
+  }
+
+  @override
+  Future<void> prefsPut(String key, PrefRow row) => _link.request<Object?>(
+    (id) => PrefsPutRequest(id, key, row.kind, row.bytes),
   );
+
+  @override
+  Future<bool> prefsRemove(String key) =>
+      _link.request<bool>((id) => PrefsRemoveRequest(id, key));
+
+  @override
+  Future<List<String>> prefsKeys() =>
+      _link.request<List<String>>((id) => PrefsKeysRequest(id));
+
+  @override
+  Future<List<String>> prefsClear() =>
+      _link.request<List<String>>((id) => PrefsClearRequest(id));
+
+  @override
+  Future<Map<String, PrefRow>> prefsLoadAll() async {
+    final rows = await _link.request<List<(String, int, Uint8List)>>(
+      (id) => PrefsLoadAllRequest(id),
+    );
+    return {
+      for (final (key, kind, bytes) in rows) key: (kind: kind, bytes: bytes),
+    };
+  }
+
+  @override
+  Future<void> commitBatchOps(List<BatchOp> ops, List<PrefWriteOp> prefOps) =>
+      _link.request<Object?>(
+        (id) => BatchCommitRequest(
+          id,
+          [
+            for (final op in ops)
+              WireOp(op.kind, op.ref.adapter, op.ref.path, op.value),
+          ],
+          prefOps: [
+            for (final (key: key, row: row) in prefOps)
+              (key, row?.kind ?? 0, row?.bytes),
+          ],
+        ),
+      );
 
   @override
   Future<R> writeTx<R>(
@@ -1103,6 +1155,14 @@ final class _ProxyWriteTx implements CocoonWriteTx {
     (id) => TxDeleteRequest(id, _txId, ref.adapter, ref.path),
   );
 
+  /// The raw prefs surface of this transaction, as messages tagged with the
+  /// transaction id: the worker executes them on its open transaction
+  /// (read-your-writes inside it).
+  @override
+  CocoonTxPrefs get prefs => _prefs ??= _ProxyTxPrefs._(_link, _txId);
+
+  _ProxyTxPrefs? _prefs;
+
   /// Queues a write with pre-built statement arguments; the background
   /// proxy's transaction surface has none (writes are messages).
   @override
@@ -1123,6 +1183,32 @@ final class _ProxyWriteTx implements CocoonWriteTx {
     'A background-mode transaction has no caller-side SQL transaction: its '
     'operations are messages to the worker isolate',
   );
+}
+
+/// The transaction's raw prefs surface in background mode: every op is one
+/// message tagged with the transaction id.
+final class _ProxyTxPrefs implements CocoonTxPrefs {
+  _ProxyTxPrefs._(this._link, this._txId);
+
+  final _WorkerLink _link;
+  final int _txId;
+
+  @override
+  Future<PrefRow?> get(String key) async {
+    final row = await _link.request<(int, Uint8List)?>(
+      (id) => TxPrefsGetRequest(id, _txId, key),
+    );
+    return row == null ? null : (kind: row.$1, bytes: row.$2);
+  }
+
+  @override
+  Future<void> put(String key, PrefRow row) => _link.request<Object?>(
+    (id) => TxPrefsPutRequest(id, _txId, key, row.kind, row.bytes),
+  );
+
+  @override
+  Future<bool> remove(String key) =>
+      _link.request<bool>((id) => TxPrefsRemoveRequest(id, _txId, key));
 }
 
 /// The background mode's bulk writer: operations queue on the caller and

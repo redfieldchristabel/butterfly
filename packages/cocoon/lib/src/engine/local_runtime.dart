@@ -22,6 +22,7 @@ import 'format_migration.dart';
 import 'isolate/isolate_options.dart' show CocoonIsolateStats;
 import 'migrate.dart';
 import 'naming.dart';
+import 'prefs_store.dart';
 import 'query.dart';
 import 'refs.dart';
 import 'runtime.dart';
@@ -130,6 +131,7 @@ final class LocalCocoonRuntime implements CocoonRuntime {
     final instanceId = await executor.writeTransaction((tx) async {
       await Cocoon.createMetaTableIfMissing(tx);
       await Cocoon.createChangesTableIfMissing(tx);
+      await Cocoon.createPrefsTableIfMissing(tx);
       final instanceId = await _ensureInstanceId(tx);
       // The file's storage layout is brought up to the engine's before the
       // schema versions run: the format rebuild is shape-preserving, and
@@ -255,20 +257,54 @@ final class LocalCocoonRuntime implements CocoonRuntime {
       );
 
   /// The engine path behind `WriteBatch.commit`: every queued op, in call
-  /// order, inside one write transaction.
+  /// order, inside one write transaction — document ops first, then the
+  /// batch's queued pref mutations in the same transaction.
   @override
-  Future<void> commitBatchOps(List<BatchOp> ops) => writeTx<void>((wtx) async {
-    for (final op in ops) {
-      switch (op.kind) {
-        case BatchOpKind.set:
-          await wtx.put(op.ref, op.value!);
-        case BatchOpKind.update:
-          await wtx.put(op.ref, op.value!, update: true);
-        case BatchOpKind.delete:
-          await wtx.delete(op.ref);
-      }
-    }
-  });
+  Future<void> commitBatchOps(List<BatchOp> ops, List<PrefWriteOp> prefOps) =>
+      writeTx<void>((wtx) async {
+        for (final op in ops) {
+          switch (op.kind) {
+            case BatchOpKind.set:
+              await wtx.put(op.ref, op.value!);
+            case BatchOpKind.update:
+              await wtx.put(op.ref, op.value!, update: true);
+            case BatchOpKind.delete:
+              await wtx.delete(op.ref);
+          }
+        }
+        for (final (key: key, row: row) in prefOps) {
+          if (row == null) {
+            await wtx.prefs.remove(key);
+          } else {
+            await wtx.prefs.put(key, row);
+          }
+        }
+      });
+
+  // -- Prefs (storage only; the facade's controller owns the preload map) ----
+
+  @override
+  Future<PrefRow?> prefsGet(String key) => readPref(executor, key);
+
+  @override
+  Future<void> prefsPut(String key, PrefRow row) =>
+      executor.execute(prefUpsertSql, [key, row.kind, row.bytes]);
+
+  @override
+  Future<bool> prefsRemove(String key) =>
+      executor.writeTransaction((tx) => deletePref(tx, key));
+
+  @override
+  Future<List<String>> prefsKeys() async {
+    final rows = await executor.getAll('SELECT key FROM $prefsTableName');
+    return [for (final row in rows) row['key']! as String]..sort();
+  }
+
+  @override
+  Future<List<String>> prefsClear() => executor.writeTransaction(clearPrefs);
+
+  @override
+  Future<Map<String, PrefRow>> prefsLoadAll() => readAllPrefs(executor);
 
   // -- Engine internals -----------------------------------------------------
 
@@ -970,17 +1006,10 @@ final class LocalCocoonRuntime implements CocoonRuntime {
     }
     for (final entry in byTable.keys) {
       final docs = byTable[entry]!;
-      for (final chunk in buildGetAllChunks(
-        entry,
-        [
-          for (final doc in docs)
-            (
-              path: doc.path,
-              paramValues: doc.key.paramValues,
-              id: doc.key.id,
-            ),
-        ],
-      )) {
+      for (final chunk in buildGetAllChunks(entry, [
+        for (final doc in docs)
+          (path: doc.path, paramValues: doc.key.paramValues, id: doc.key.id),
+      ])) {
         final rows = await reader.getAll(chunk.sql, chunk.args);
         final rowOfPath = {
           for (final row in rows) entry.pathOfKeyRow(row): row,
@@ -1080,9 +1109,7 @@ final class LocalCocoonRuntime implements CocoonRuntime {
   /// [onCompactionFailed] — a full disk (VACUUM needs about the file size in
   /// free space) must not fail the open; the file stays as the upgrade made
   /// it and the next `backupTo` compacts instead.
-  Future<void> _compactAfterFormatUpgrade(
-    CocoonExecutor executor,
-  ) async {
+  Future<void> _compactAfterFormatUpgrade(CocoonExecutor executor) async {
     // The freelist share above which the post-upgrade compaction runs: the
     // check is `freelist * denominator > pages`, so the default (5) compacts
     // when MORE than a fifth of the file is reclaimable.
@@ -1412,11 +1439,7 @@ final class _PendingDoc {
 
 /// One pending document in the shared `getAll` chunk plan: its path and its
 /// scope-key values.
-typedef GetAllPendingDoc = ({
-  String path,
-  List<String> paramValues,
-  String id,
-});
+typedef GetAllPendingDoc = ({String path, List<String> paramValues, String id});
 
 /// One chunk of a `getAll` plan: the statement, its bound arguments and the
 /// document paths the chunk answers (in chunk order). Built once and shared

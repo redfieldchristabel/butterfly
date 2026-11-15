@@ -13,6 +13,10 @@ final a1 = db.collection(accounts).doc('a1'); // DocRef<Account>
 final txnsRef = a1.collection(txns); // CollectionRef<Txn> under accounts/a1
 ```
 
+Need exactly one of something (the current signed-in user, the chosen
+theme)? See [Prefs & Single Models](/libraries/cocoon/prefs) — no one-row
+collection, no hardcoded id.
+
 `db.collection(adapter)` only accepts top-level adapters — for a
 subcollection you go through `doc(...).collection(adapter)`, and that call is
 checked at the type level of the pattern: it throws an `ArgumentError`

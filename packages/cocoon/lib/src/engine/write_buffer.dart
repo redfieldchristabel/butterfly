@@ -9,6 +9,7 @@ import 'naming.dart';
 import 'refs.dart';
 import 'runtime.dart';
 import 'schema_sql.dart';
+import 'prefs_store.dart';
 
 /// How many buffered rows one write transaction accumulates before it
 /// flushes them to SQLite as batched statements. Bounds the buffer's memory
@@ -222,6 +223,16 @@ final class WriteTx implements CocoonWriteTx {
     stage.evictSubtree(ref.path.path);
   }
 
+  /// The raw prefs surface of this transaction: plain statements on the
+  /// SQL transaction, executing immediately — read-your-writes is
+  /// automatic (SQLite sees its own writes), and the statements never
+  /// touch the facade's preload map (that happens only after the commit
+  /// succeeds, by the facade's staging).
+  @override
+  CocoonTxPrefs get prefs => _prefsView ??= _WriteTxPrefs._(tx);
+
+  _WriteTxPrefs? _prefsView;
+
   /// Writes every queued statement, in order: consecutive writes of the same
   /// kind on the same table as one `executeBatch`, then all pending
   /// change-log rows as one `executeBatch`.
@@ -329,4 +340,21 @@ final class WriteTx implements CocoonWriteTx {
   /// Bound placeholder budget per existence-check `SELECT`; SQLite's
   /// variable limit is far higher, this only bounds the statement size.
   static const int _existenceVarBudget = 500;
+}
+
+/// The buffered transaction's raw prefs surface: plain statements on the
+/// transaction's SQL handle.
+final class _WriteTxPrefs implements CocoonTxPrefs {
+  _WriteTxPrefs._(this._tx);
+
+  final CocoonTx _tx;
+
+  @override
+  Future<PrefRow?> get(String key) => readPref(_tx, key);
+
+  @override
+  Future<void> put(String key, PrefRow row) => writePref(_tx, key, row);
+
+  @override
+  Future<bool> remove(String key) => deletePref(_tx, key);
 }

@@ -174,7 +174,9 @@ wire encoding (`DateTime` as UTC microseconds, enums by name).
 
 ## Internal tables
 
-Cocoon keeps three internal tables (all reserved-name prefixed):
+Cocoon keeps four internal tables (all reserved-name prefixed — the
+`sqlite_` and `_cocoon` prefixes are refused for collections, so no model
+can take these names):
 
 ```sql
 -- key/value metadata: schema_version, per-table shape hashes
@@ -191,7 +193,23 @@ CREATE TABLE _cocoon_changes (
 
 -- deferred bulk-load indexes: one row per secondary index a running
 -- BulkWriter has dropped, with the DDL that recreates it
-CREATE TABLE _cocoon_bulk (tbl TEXT NOT NULL, index_name TEXT NOT NULL, sql TEXT NOT NULL)
+CREATE TABLE _cocoon_bulk (tbl TEXT NOT NULL, index_name TEXT NOT NULL, sql TEXT NOT NULL);
+
+-- device-local state behind db.prefs and db.single: one row per key,
+-- values in canonical wire format with the kind pinned per row (1 string,
+-- 2 int, 3 bool, 4 double, 5 bytes; a biased fingerprint of the writing
+-- adapter's identity behind every single-model row). No entry beyond the
+-- text primary key, no change-log rows; WITHOUT ROWID stores the table as
+-- the one B-tree the primary key already is. Created with CREATE TABLE IF
+-- NOT EXISTS at every open, so a file predating it gains the table on its
+-- first newer open and no storage-format bump is needed: an older Cocoon
+-- opening a newer file reconciles its collection tables exactly as before
+-- and leaves the device-local rows alone.
+CREATE TABLE _cocoon_prefs (
+  key TEXT PRIMARY KEY NOT NULL,
+  kind INTEGER NOT NULL,
+  value BLOB NOT NULL
+) WITHOUT ROWID
 ```
 
 ### How bulk-index deferral works

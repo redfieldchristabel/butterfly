@@ -15,7 +15,8 @@ export 'src/engine/backup.dart'
         NotCocoonBackupException,
         backupFormatVersion,
         cocoonLibraryVersion;
-export 'src/engine/batch.dart' show BatchOp, BatchOpKind, WriteBatch;
+export 'src/engine/batch.dart'
+    show BatchOp, BatchOpKind, BatchPrefs, WriteBatch;
 export 'src/engine/bulk_writer.dart' show BulkWriter, BulkWriterOptions;
 export 'src/engine/isolate/isolate_options.dart'
     show
@@ -28,6 +29,8 @@ export 'src/engine/naming.dart' show snakeCase, tableNameFor, validNamePattern;
 export 'src/engine/changes.dart' show Change, ChangeOp, ChangesPrunedException;
 export 'src/engine/cocoon.dart';
 export 'src/engine/format_migration.dart' show StorageFormatTooNewException;
+export 'src/engine/prefs.dart' show CocoonPrefs, Single, TxPrefs, TxSingle;
+export 'src/engine/prefs_store.dart' show PrefsTypeException;
 export 'src/engine/query.dart'
     show
         AggregateGroupQuery,

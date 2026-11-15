@@ -12,7 +12,9 @@ database for Dart and Flutter, built on SQLite. Collections, documents and
 subcollections (`accounts/{accountId}/txns`), indexed queries with keyset
 pagination, SQLite-computed aggregates and group-by, bulk loads and batch
 reads by id, realtime watches backed by a durable change log, and whole-file
-backups — with your model classes as the schema.
+backups — with your model classes as the schema. A key-value store for
+one-of-a-kind values (`db.prefs`, `db.single`) lives in the same file too —
+see [Prefs & Single Models](/libraries/cocoon/prefs).
 
 <Info>
   <Icon name="plug" /> **Standalone:** Cocoon depends on no other Butterfly
@@ -109,6 +111,9 @@ compiling SQLite yourself or switching to SQLCipher).
   </Card>
   <Card title="Collections & Documents" icon="folder-tree" href="/libraries/cocoon/collections">
     Refs, subcollections, cascade deletes and transactions.
+  </Card>
+  <Card title="Prefs & Single Models" icon="sliders" href="/libraries/cocoon/prefs">
+    A key-value store and one-model helpers in the same file, with synchronous reads after a preload.
   </Card>
   <Card title="Queries & Indexes" icon="magnifying-glass" href="/libraries/cocoon/queries">
     Filters, ordering, the index rule and keyset pagination.

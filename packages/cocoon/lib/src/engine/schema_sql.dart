@@ -207,6 +207,19 @@ String createBulkTableSql() =>
     'CREATE TABLE IF NOT EXISTS $bulkTableName '
     '(tbl TEXT NOT NULL, index_name TEXT NOT NULL, sql TEXT NOT NULL)';
 
+/// The `CREATE TABLE` statement for the internal key-value table behind
+/// `db.prefs` and `db.single`: one row per pref, values in protobuf wire
+/// format with the kind pinned per row. No index beyond the text primary
+/// key; `WITHOUT ROWID` stores the table as the one B-tree the primary key
+/// already is (point lookups and the primary-key-ordered scan ride it, and
+/// no secondary index can exist on this table).
+String createPrefsTableSql() =>
+    'CREATE TABLE IF NOT EXISTS $prefsTableName (\n'
+    '  key TEXT PRIMARY KEY NOT NULL,\n'
+    '  kind INTEGER NOT NULL,\n'
+    '  value BLOB NOT NULL\n'
+    ') WITHOUT ROWID';
+
 /// A stable fingerprint of one table's physical shape (params, columns,
 /// declared indexes). Stored in `_cocoon_meta`; when it matches on open, the
 /// reconciler does no DDL at all.

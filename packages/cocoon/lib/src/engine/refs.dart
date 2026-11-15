@@ -4,6 +4,7 @@ import '../path.dart';
 import 'adapter.dart';
 import 'aggregate.dart';
 import 'cocoon.dart';
+import 'prefs.dart';
 import 'query.dart';
 import 'runtime.dart';
 import 'transaction_guard.dart';
@@ -272,6 +273,11 @@ final class CollectionGroupRef<T extends Object> {
 /// the commit (and before any read or delete in the same transaction), so
 /// large transactions cost batched round trips instead of one per document.
 ///
+/// Pref mutations (`tx.prefs`, `tx.single`) are atomic with the collection
+/// writes: they reach SQLite inside the same SQL transaction, and reach the
+/// prefs preload map and watches only after the commit succeeds, in commit
+/// order — a rollback leaves both untouched.
+///
 /// ```dart
 /// await db.runTransaction((tx) async {
 ///   final snap = await tx.get(txRef);
@@ -280,9 +286,25 @@ final class CollectionGroupRef<T extends Object> {
 /// ```
 final class CocoonTransaction {
   @internal
-  const CocoonTransaction(this._wtx);
+  CocoonTransaction(this._wtx, this._prefsStage);
 
   final CocoonWriteTx _wtx;
+  final PrefTxStage _prefsStage;
+
+  /// The transaction's prefs view: `get*`, `set*` and `remove` with
+  /// read-your-writes inside the transaction, atomic with the collection
+  /// writes. See [TxPrefs].
+  TxPrefs get prefs => _prefsView ??= TxPrefs(_wtx.prefs, _prefsStage);
+
+  TxPrefs? _prefsView;
+
+  /// The transaction's typed single-model view for [adapter] under [key] —
+  /// the transaction's counterpart of `db.single(adapter, key:)`. See
+  /// [TxSingle].
+  TxSingle<T> single<T extends Object>(
+    CollectionAdapter<T> adapter, {
+    required String key,
+  }) => TxSingle<T>(_wtx.prefs, adapter, key, _prefsStage);
 
   /// Reads a document inside the transaction, seeing its own writes.
   Future<DocSnapshot<T>?> get<T extends Object>(DocRef<T> ref) =>

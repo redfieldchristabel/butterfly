@@ -1,0 +1,288 @@
+---
+title: Prefs & Single Models
+description: A key-value store and one-model-under-one-key helper that live in the same Cocoon file, with no collection, no index and synchronous reads after a preload.
+---
+
+Some apps hold exactly one of something: the current signed-in user, the
+chosen theme, the last opened tab, an onboarding flag, a feature toggle. A
+document database makes you model that as a collection: declare a model,
+register a collection, pick a hardcoded id (`'1'`, `'me'`) and carry a
+one-row table for the rest of the app's life. Every read then looks like
+`db.collection(users).doc('1').get()`, which reads like a bug and invites a
+second row nobody wants. The only comfortable tool for this today is a
+platform key-value plugin such as Flutter's `shared_preferences` — which
+means a second storage system: it is not in the Cocoon file, so it is not in
+Cocoon backups, cannot join a Cocoon transaction ("set the current user and
+create their first account, or neither"), and cannot be watched with the
+same streams.
+
+Cocoon adds two small pieces that live in the same database file, with no
+collection and no index:
+
+- `db.prefs` — a key-value store for primitives (strings, ints, bools,
+  doubles, bytes).
+- `db.single(adapter, key:)` — one typed model under one key, for "the
+  current signed-in user" style data.
+
+Both are device-local state: never synced, never in the change log, always
+in every backup, and readable synchronously after one preload.
+
+## Quick start
+
+A pref:
+
+```dart
+final prefs = db.prefs;
+
+await prefs.setString('theme', 'dark');
+await prefs.setInt('launchCount', 3);
+await prefs.setBool('onboarded', true);
+
+final theme = await prefs.getString('theme'); // String?, null when absent
+final launchCount = await prefs.getInt('launchCount'); // int?
+final onboarded = db.prefs.getBoolSync('onboarded'); // after preload
+```
+
+A current-user single:
+
+```dart
+final currentUser = db.single(userAdapter, key: 'currentUser'); // Single<User>
+
+await currentUser.set(user);
+final u = await currentUser.get(); // User?, null when absent
+await currentUser.clear();
+```
+
+Preload at startup, feeding a router redirect with no loading frame:
+
+```dart
+final db = await Cocoon.open(
+  file,
+  collections: [accounts, txns],
+  preloadPrefs: true, // the prefs table loads as part of the open
+);
+
+// Splash / router redirect: is anyone signed in?
+final signedIn = db.single(userAdapter, key: 'currentUser').getSync() != null;
+if (!signedIn) {
+  router.go('/sign-in');
+}
+```
+
+## Prefs
+
+`db.prefs` is a key-value store for the five primitive kinds: `String`,
+`int`, `bool`, `double` and `Uint8List`. Values are stored in the same
+canonical protobuf wire format documents use, with the kind pinned per row.
+
+```dart
+final prefs = db.prefs;
+
+await prefs.setString('theme', 'dark');
+await prefs.setInt('launchCount', 3);
+await prefs.setBool('onboarded', true);
+await prefs.setDouble('textScale', 1.2);
+await prefs.setBytes('blob', bytes);
+
+final theme = await prefs.getString('theme'); // String?, null when absent
+final n = await prefs.getInt('launchCount'); // int?
+
+await prefs.remove('theme');
+await prefs.containsKey('theme'); // Future<bool>
+await prefs.keys(); // Future<List<String>>, sorted
+await prefs.clear(); // removes every pref (collections are untouched)
+```
+
+- **Absent keys read `null`.** There are no `getStringOr(...)` defaults —
+  keep the surface small and use `??`.
+- **Overwriting changes the kind with the value.** A key holds one row; a
+  `setDouble` over an old string value replaces the row, kind included.
+- **Reading a key as the wrong kind throws** a `PrefsTypeException` naming
+  the key, the stored kind and the requested kind. Cocoon never returns
+  garbage for a wrong-kind read.
+
+```dart
+await prefs.setString('theme', 'dark');
+await prefs.getInt('theme'); // throws PrefsTypeException
+```
+
+- **Keys** are non-empty and at most 256 UTF-8 bytes; anything else throws
+  an `ArgumentError`. **Values** have no size limit beyond SQLite itself,
+  but prefs are for small values — see the preload note below.
+- **`watch<T>(key)`** emits the current value first (the value at listen),
+  then every committed change of that key in commit order: a set emits the
+  new value, a remove or a covering `clear` emits `null`, and other keys
+  never emit. The type parameter must fit the stored row; a wrong-kind read
+  is delivered as a `PrefsTypeException` error event.
+
+```dart
+prefs.watch<String>('theme').listen((theme) {
+  // the current value first, then every change
+});
+```
+
+## Single models
+
+`db.single(adapter, key:)` gives one typed model under one key — the
+one-of-a-kind counterpart of a collection:
+
+```dart
+final currentUser = db.single(userAdapter, key: 'currentUser');
+
+await currentUser.set(user); // upsert
+final u = await currentUser.get(); // User?, null when absent
+await currentUser.clear(); // remove; absent is a no-op
+currentUser.watch(); // Stream<User?>: current value first, then changes
+```
+
+- The model class is a normal generated Cocoon model. The single reuses the
+  adapter's `encode`/`decode` codecs as-is, and the stored bytes are exactly
+  the bytes the adapter returns — so model evolution (field moves, new
+  optional fields, older encoder versions) behaves exactly like a collection
+  document. There is nothing else to learn.
+- It does **not** need to be in `Cocoon.open(collections: [...])` and it
+  creates no table. Annotate the class as usual so codegen writes the
+  adapter, then hand the adapter to `db.single` — no registration, no
+  collection path, no hardcoded document id.
+- `@Index` and `@Mirrored` fields on a single model are ignored: there is
+  nothing to index and nothing to aggregate — only the one value exists.
+- **Two `single` handles with the same key but different adapters detect the
+  mismatch**: each row records a fingerprint of the writing adapter's
+  identity, and reading a key through another adapter throws a
+  `PrefsTypeException` (key, stored fingerprint, requested model). The key
+  is otherwise typed by convention — pick one key per piece of state and
+  stick to it.
+
+```dart
+final me = db.single(userAdapter, key: 'me');
+await me.set(user);
+
+// A different adapter under the same key refuses to read it:
+db.single(txnAdapter, key: 'me').get(); // throws PrefsTypeException
+```
+
+## Preload and synchronous reads
+
+`shared_preferences` reads synchronously after one load, and apps need that
+for splash screens and router redirects ("is anyone signed in?") without a
+loading frame. Cocoon's prefs do the same: one `preload()` loads every pref
+into a small in-memory map, and the sync getters read from it at memory
+speed.
+
+```dart
+await db.prefs.preload(); // loads every pref, returns the key count
+db.prefs.getStringSync('theme'); // String?, memory-speed
+db.prefs.getIntSync('launchCount');
+db.prefs.getBoolSync('onboarded');
+db.prefs.getDoubleSync('textScale');
+db.prefs.getBytesSync('blob');
+db.prefs.containsKeySync('theme');
+db.prefs.keysSync(); // List<String>, sorted
+db.single(userAdapter, key: 'currentUser').getSync(); // User?
+```
+
+- Before `preload()` runs (and after `close()`) the sync getters throw a
+  `StateError` — the async getters keep working either way.
+- **Pass `preloadPrefs: true` to `Cocoon.open`** to preload as part of the
+  open, so synchronous reads work from the first frame:
+
+```dart
+final db = await Cocoon.open(file, collections: [...], preloadPrefs: true);
+```
+
+- `preload()` is idempotent and cheap to call twice; writes made before it
+  are not lost (they are read from SQLite).
+- **Write-through:** every set and remove — including inside committed
+  transactions and `clear()` — updates the map when the awaited call
+  returns, in commit order. A rolled-back transaction never touches the
+  map. The `watch` streams and the sync getters can never disagree.
+- `Single.getSync()` decodes lazily and caches the decoded model; an
+  overwrite invalidates the cache.
+- **Memory:** the preload map holds the whole prefs table, so keep prefs
+  small — hundreds of keys and kilobyte-sized values, not documents. There
+  is no eviction and no limit; prefs are for small values by design.
+
+## Transactions: why this is not shared_preferences
+
+Prefs live in the same SQLite file as the collections, so a pref write and
+a collection write in one `runTransaction` commit or roll back **together**.
+A second storage system cannot do that.
+
+```dart
+await db.runTransaction((tx) async {
+  // The first sign-in, atomically: the current user, the onboarding flag
+  // and the first account — all of it, or none of it.
+  await tx.single(userAdapter, key: 'currentUser').set(user);
+  await tx.prefs.setBool('onboarded', true);
+  await tx.set(db.collection(accounts).doc(accountId), firstAccount);
+});
+```
+
+- Inside the transaction body, `tx.prefs` and `tx.single(adapter, key:)`
+  give read-your-writes: reads through them see the transaction's own
+  uncommitted writes.
+- Calling the database surface instead (`db.prefs.setString(...)` inside the
+  body) throws a `TransactionMisuseError` — the same guard collection writes
+  have.
+- A thrown error rolls back the prefs and the documents together, and the
+  preload map and the watch streams show none of it.
+- Write batches queue prefs the same way: `batch.prefs.setString(...)`
+  and `batch.prefs.remove(...)` commit with the batch's documents in one
+  transaction.
+
+## Backup, restore, sync and isolates
+
+- **Prefs travel with backups.** `backupTo` copies the whole file, so the
+  prefs are in every backup — and **restoring a backup also restores the
+  saved current user and every other pref**: the restore replaces the
+  file's prefs with the backup's prefs and drops anything newer.
+- **Prefs are never in the change log.** They are device-local state;
+  `changesSince` never reports them and syncing them is out of scope.
+- **Prefs always run inline, in every isolate mode** (`caller`, `background`
+  and `auto`): single-key reads and writes are tiny, so they never route to
+  a worker or helper isolate. The preload map and the watch streams live on
+  the isolate that called `Cocoon.open`, in every mode — in `background`
+  mode the storage op still runs on the engine isolate, and the map is
+  written through when the awaited call returns.
+- After `close()`, every prefs call throws the same closed-database error as
+  the collection calls, and the watch streams complete.
+
+## What prefs are not
+
+**Prefs are not encrypted.** The Cocoon file is plain SQLite on disk, so
+tokens, passwords and API keys do NOT belong here — keep secrets in the
+platform keystore (for example `flutter_secure_storage`) for now.
+
+<Info>
+  **Roadmap:** an encrypted prefs variant with an app-supplied key is
+  planned after this release. It is deliberately not part of this release,
+  and no date is promised here.
+</Info>
+
+## When to use a collection instead
+
+Prefs and singles are for one-of-a-kind values. Use a collection when:
+
+- there can be more than one of the thing (accounts, transactions, tabs);
+- you need to query, filter or sort it;
+- anything needs an index.
+
+The moment a second row becomes conceivable, it is a collection.
+
+## API summary
+
+| Member | Signature | Notes |
+| --- | --- | --- |
+| set | `setString` / `setInt` / `setBool` / `setDouble` / `setBytes` | upsert; replaces the kind with the value |
+| get | `getString` / `getInt` / `getBool` / `getDouble` / `getBytes` | `null` when absent; wrong kind throws `PrefsTypeException` |
+| remove | `remove(key)` | absent key: no-op, no watch emission |
+| contains | `containsKey(key)` | `Future<bool>` |
+| keys | `keys()` | `Future<List<String>>`, sorted |
+| clear | `clear()` | every pref; collections untouched |
+| watch | `watch<T>(key)` | `Stream<T?>`, current value first, commit order |
+| preload | `preload()` | loads the table into memory, returns the key count |
+| sync getters | `getStringSync` and friends, `containsKeySync`, `keysSync()` | after preload; `StateError` before it |
+| single | `db.single(adapter, key: 'k')` | `Single<T>`: `get`, `set`, `clear`, `watch`, `getSync` |
+| in a transaction | `tx.prefs.*`, `tx.single(adapter, key:)` | read-your-writes; atomic with the collection writes |
+| in a batch | `batch.prefs.*` | commits with the batch's documents |
+| errors | `PrefsTypeException` | names the key, the stored kind and the requested kind |

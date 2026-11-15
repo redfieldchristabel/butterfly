@@ -36,6 +36,7 @@ import '../changes.dart';
 import '../cocoon.dart';
 import '../executor.dart';
 import '../local_runtime.dart';
+import '../prefs_store.dart' show PrefRow, PrefWriteOp;
 import '../query.dart';
 import '../refs.dart';
 import '../runtime.dart';
@@ -581,6 +582,44 @@ final class AutoCocoonRuntime implements CocoonRuntime {
     return _local.getDoc<T>(ref);
   }
 
+  // -- Prefs: single-key and tiny, always inline (never the helper) ----------
+
+  @override
+  Future<PrefRow?> prefsGet(String key) {
+    _stats.inlineCalls++;
+    return _local.prefsGet(key);
+  }
+
+  @override
+  Future<void> prefsPut(String key, PrefRow row) {
+    _stats.inlineCalls++;
+    return _local.prefsPut(key, row);
+  }
+
+  @override
+  Future<bool> prefsRemove(String key) {
+    _stats.inlineCalls++;
+    return _local.prefsRemove(key);
+  }
+
+  @override
+  Future<List<String>> prefsKeys() {
+    _stats.inlineCalls++;
+    return _local.prefsKeys();
+  }
+
+  @override
+  Future<List<String>> prefsClear() {
+    _stats.inlineCalls++;
+    return _local.prefsClear();
+  }
+
+  @override
+  Future<Map<String, PrefRow>> prefsLoadAll() {
+    _stats.inlineCalls++;
+    return _local.prefsLoadAll();
+  }
+
   @override
   Future<void> putDoc<T extends Object>(DocRef<T> ref, T value) {
     _stats.inlineCalls++;
@@ -743,12 +782,17 @@ final class AutoCocoonRuntime implements CocoonRuntime {
   // -- Routed writes --------------------------------------------------------
 
   @override
-  Future<void> commitBatchOps(List<BatchOp> ops) async {
+  Future<void> commitBatchOps(
+    List<BatchOp> ops,
+    List<PrefWriteOp> prefOps,
+  ) async {
     if (AutoRouter.batch(_thresholds, ops.length) == AutoRoute.inline ||
         _helper == null) {
       _stats.inlineCalls++;
-      return _local.commitBatchOps(ops);
+      return _local.commitBatchOps(ops, prefOps);
     }
+    // Big batches still prepare their document encodes in the helper; the
+    // pref mutations are tiny and run on the caller's single writer.
     final prepared = await _prepareChunk(ops);
     await _local.writeTx<void>((wtx) async {
       // The local runtime's transactions are always the buffered WriteTx;
@@ -782,6 +826,13 @@ final class AutoCocoonRuntime implements CocoonRuntime {
             }
           case BatchOpKind.delete:
             await buffered.delete(op.ref);
+        }
+      }
+      for (final (key: key, row: row) in prefOps) {
+        if (row == null) {
+          await wtx.prefs.remove(key);
+        } else {
+          await wtx.prefs.put(key, row);
         }
       }
     });

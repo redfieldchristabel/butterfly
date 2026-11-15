@@ -30,11 +30,29 @@ import 'changes.dart';
 import 'cocoon.dart';
 import 'executor.dart';
 import 'isolate/isolate_options.dart' show CocoonIsolateStats;
+import 'prefs_store.dart' show PrefRow, PrefWriteOp;
 import 'query.dart';
 import 'refs.dart';
 import 'schema_sql.dart';
 import 'transaction_guard.dart';
 import 'watch.dart';
+
+/// The raw prefs surface inside a write transaction: the transaction's
+/// counterpart of the facade's prefs ops, routing through the SQL
+/// transaction itself (local buffered transaction) or the isolate plumbing
+/// (background message session). Reads see the transaction's own writes.
+@internal
+abstract interface class CocoonTxPrefs {
+  /// Reads one raw pref row inside the transaction, or `null` when absent.
+  Future<PrefRow?> get(String key);
+
+  /// Upserts one raw pref row inside the transaction.
+  Future<void> put(String key, PrefRow row);
+
+  /// Deletes one raw pref row inside the transaction, returning whether a
+  /// row existed.
+  Future<bool> remove(String key);
+}
 
 /// The per-transaction write surface a [CocoonTransaction] wraps.
 ///
@@ -49,9 +67,7 @@ abstract interface class CocoonWriteTx {
   /// Reads many documents inside the transaction, seeing its own writes.
   /// Answers in [refs] order, `null` where a document does not exist;
   /// duplicates allowed.
-  Future<List<DocSnapshot<T>?>> getAll<T extends Object>(
-    List<DocRef<T>> refs,
-  );
+  Future<List<DocSnapshot<T>?>> getAll<T extends Object>(List<DocRef<T>> refs);
 
   /// Upserts [value] at [ref] (or, with [update], replaces an existing
   /// document and fails the transaction when it does not exist).
@@ -76,6 +92,12 @@ abstract interface class CocoonWriteTx {
 
   /// Deletes [ref] and its whole subtree.
   Future<void> delete(DocRef<Object> ref);
+
+  /// The raw prefs surface of this transaction: ops route through the SQL
+  /// transaction (read-your-writes inside it) and never touch the facade's
+  /// preload map — the map is written through only after the commit
+  /// succeeds, by the facade's staging.
+  CocoonTxPrefs get prefs;
 
   /// The raw SQL transaction the buffered writes run in: the deferral DDL
   /// and existence checks reach it directly. Only the local implementation
@@ -170,8 +192,11 @@ abstract interface class CocoonRuntime {
   List<String> paramValuesInOrder(RegistryEntry entry, CollectionPath path);
 
   /// Commits a `WriteBatch`'s queued [ops] as one write transaction (the
-  /// batch's engine path; existence checks and order preserved).
-  Future<void> commitBatchOps(List<BatchOp> ops);
+  /// batch's engine path; existence checks and order preserved). The
+  /// batch's queued pref mutations ([prefOps]) commit in the same
+  /// transaction, after the document ops; the facade writes them through
+  /// the preload map once this resolves.
+  Future<void> commitBatchOps(List<BatchOp> ops, List<PrefWriteOp> prefOps);
 
   // -- Reads ----------------------------------------------------------------
 
@@ -180,9 +205,7 @@ abstract interface class CocoonRuntime {
 
   /// Reads many documents by ref; answers in [refs] order, `null` for
   /// missing documents, duplicates allowed.
-  Future<List<DocSnapshot<T>?>> getAll<T extends Object>(
-    List<DocRef<T>> refs,
-  );
+  Future<List<DocSnapshot<T>?>> getAll<T extends Object>(List<DocRef<T>> refs);
 
   /// Runs one page of a query.
   Future<QueryPage<T>> runQuery<T extends Object>(CocoonQuery<T> query);
@@ -267,6 +290,29 @@ abstract interface class CocoonRuntime {
 
   /// Deletes every change row with `seq <= upToSeq`.
   Future<int> pruneChanges({required int upToSeq});
+
+  // -- Prefs (storage only; the facade's controller owns the preload map) ----
+
+  /// Reads one raw pref row, or `null` when absent. Served from SQLite
+  /// every time: the facade's async getters serve the preload map first
+  /// when one exists.
+  Future<PrefRow?> prefsGet(String key);
+
+  /// Upserts one raw pref row; its own implicit transaction.
+  Future<void> prefsPut(String key, PrefRow row);
+
+  /// Deletes one raw pref row, returning whether a row existed (watches on
+  /// absent keys never emit).
+  Future<bool> prefsRemove(String key);
+
+  /// Every pref key, sorted.
+  Future<List<String>> prefsKeys();
+
+  /// Deletes every pref row, returning the keys that existed.
+  Future<List<String>> prefsClear();
+
+  /// Every raw pref row (the preload bulk read).
+  Future<Map<String, PrefRow>> prefsLoadAll();
 
   // -- Files, lifecycle, diagnostics -----------------------------------------
 

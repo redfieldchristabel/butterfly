@@ -22,6 +22,7 @@ import 'isolate/isolate_options.dart';
 import 'local_runtime.dart';
 import 'naming.dart';
 import 'query.dart';
+import 'prefs.dart';
 import 'refs.dart';
 import 'runtime.dart';
 import 'schema_sql.dart';
@@ -308,6 +309,10 @@ final class Cocoon {
 
   final SchemaRegistry _registry;
 
+  /// The prefs store behind this facade: the preload map and the prefs
+  /// watches live here, on the caller isolate, in every isolate mode.
+  late final CocoonPrefs _prefs = CocoonPrefs(this);
+
   /// The file path the database was opened from, or `null` when it was
   /// opened over a custom executor via [openWith]. Surfaced by the DevTools
   /// inspector's database list.
@@ -365,6 +370,12 @@ final class Cocoon {
   /// or on the calling isolate with a helper for heavy work
   /// ([CocoonIsolate.auto]). The returned [Cocoon] has the same API in
   /// every mode.
+  ///
+  /// With `preloadPrefs: true` the prefs table is loaded into the small
+  /// in-memory map as part of the open, so `db.prefs.get*Sync` (and
+  /// `db.prefs.preload()`) work from the first frame — the splash and
+  /// router-redirect need ("is anyone signed in?") without a loading
+  /// frame. See [CocoonPrefs.preload].
   static Future<Cocoon> open(
     String path, {
     required List<CollectionAdapter<Object?>> collections,
@@ -373,6 +384,7 @@ final class Cocoon {
     List<CocoonMigration> migrations = const [],
     void Function(int done, int total)? onMigrationProgress,
     SchemaLock? schemaLock,
+    bool preloadPrefs = false,
   }) async {
     // Fail fast on an unusable retention policy or thresholds, before the
     // file is touched.
@@ -388,6 +400,7 @@ final class Cocoon {
         onMigrationProgress: onMigrationProgress,
         schemaLock: schemaLock,
         onCompactionFailed: options.onCompactionFailed,
+        preloadPrefs: preloadPrefs,
       );
     }
     if (options.isolate == CocoonIsolate.auto) {
@@ -399,6 +412,7 @@ final class Cocoon {
         migrations: migrations,
         onMigrationProgress: onMigrationProgress,
         schemaLock: schemaLock,
+        preloadPrefs: preloadPrefs,
       );
     }
     // background: the isolate plumbing owns the connections.
@@ -410,6 +424,7 @@ final class Cocoon {
       migrations: migrations,
       onMigrationProgress: onMigrationProgress,
       schemaLock: schemaLock,
+      preloadPrefs: preloadPrefs,
     );
   }
 
@@ -436,6 +451,7 @@ final class Cocoon {
     void Function(int done, int total)? onMigrationProgress,
     SchemaLock? schemaLock,
     String? databasePath,
+    bool preloadPrefs = false,
   }) async {
     options.changeRetention?.validate();
     options.autoThresholds.validate();
@@ -449,7 +465,7 @@ final class Cocoon {
             'CocoonIsolate.background and CocoonIsolate.auto.',
       );
     }
-    return _openOverExecutor(
+    final db = await _openOverExecutor(
       executor,
       collections: collections,
       options: options,
@@ -460,6 +476,10 @@ final class Cocoon {
       databasePath: databasePath,
       onCompactionFailed: options.onCompactionFailed,
     );
+    if (preloadPrefs) {
+      await db.prefs.preload();
+    }
+    return db;
   }
 
   /// The caller-mode local open: the executor, the local runtime, the open
@@ -474,11 +494,12 @@ final class Cocoon {
     void Function(int done, int total)? onMigrationProgress,
     SchemaLock? schemaLock,
     void Function(Object error)? onCompactionFailed,
+    bool preloadPrefs = false,
   }) async {
     final executor = _executorFor(path, options);
     final runtime = LocalCocoonRuntime(onCompactionFailed: onCompactionFailed);
     try {
-      return await _openWithRuntime(
+      final db = await _openWithRuntime(
         executor,
         runtime,
         collections: collections,
@@ -490,6 +511,10 @@ final class Cocoon {
         databasePath: path,
         isolateMode: options.isolate,
       );
+      if (preloadPrefs) {
+        await db.prefs.preload();
+      }
+      return db;
     } on Object {
       await executor.close();
       rethrow;
@@ -513,6 +538,7 @@ final class Cocoon {
     List<CocoonMigration> migrations = const [],
     void Function(int done, int total)? onMigrationProgress,
     SchemaLock? schemaLock,
+    bool preloadPrefs = false,
   }) async {
     final executor = _executorFor(path, options);
     final local = LocalCocoonRuntime(
@@ -535,6 +561,11 @@ final class Cocoon {
     } on Object {
       await executor.close();
       rethrow;
+    }
+    if (preloadPrefs) {
+      // The prefs store (preload map and watches) lives on this isolate in
+      // auto mode too; prefs never route to the helper.
+      await db.prefs.preload();
     }
     // The engine is committed; wrap it with the auto router and start the
     // helper spawn in the background. The caller gets the database NOW:
@@ -649,6 +680,7 @@ final class Cocoon {
     if (openPath != null) {
       _openDatabasePaths.remove(_absolutePath(openPath));
     }
+    _prefs.close();
     return _runtime.close();
   }
 
@@ -840,6 +872,26 @@ final class Cocoon {
     return CollectionGroupRef<V>(this, adapter);
   }
 
+  /// The key-value store in this database file: primitives under keys, no
+  /// collection, no index, no change-log entries. See [CocoonPrefs] and
+  /// [Single] (one typed model under one key, `db.single(adapter, key:)`).
+  CocoonPrefs get prefs => _prefs;
+
+  /// One typed model under one key — for "the current signed-in user" style
+  /// data. See [Single]: no collection to register, no table, no index; the
+  /// stored bytes are exactly the adapter's `encode` bytes.
+  ///
+  /// Inside a [runTransaction] body use `tx.single(adapter, key:)`.
+  Single<T> single<T extends Object>(
+    CollectionAdapter<T> adapter, {
+    required String key,
+  }) => Single<T>(_prefs, adapter, key);
+
+  /// The prefs store behind this facade; the batch implementations write
+  /// queued pref mutations through it after their commit resolves.
+  @internal
+  CocoonPrefs get prefsStore => _prefs;
+
   /// Runs [body] inside one write transaction: reads see the transaction's
   /// own writes, and an exception rolls everything back — including the
   /// hot-document cache, which is only updated after a successful commit.
@@ -847,8 +899,9 @@ final class Cocoon {
   /// Inside the body every database access goes through the
   /// [CocoonTransaction] object. A call on the database itself —
   /// `DocRef.set`/`get`/`delete`, `CollectionRef.add`, a query's
-  /// `get`/`count`, `getAll`, `batch().commit()`, a `BulkWriter`, a nested
-  /// [runTransaction] on this database — fails immediately with a
+  /// `get`/`count`, `getAll`, `batch().commit()`, a `BulkWriter`, a
+  /// `db.prefs`/`db.single` call, a nested [runTransaction] on this
+  /// database — fails immediately with a
   /// [TransactionMisuseError] instead of waiting forever for the write lock
   /// the body already holds (writes) or silently reading committed data
   /// without the transaction's own writes (reads). Calls on a DIFFERENT
@@ -861,18 +914,36 @@ final class Cocoon {
   /// is user code with captured state); the engine work behind each `tx`
   /// call follows the database's isolate mode. In every mode a body that
   /// throws rolls the transaction back and the error is rethrown here.
+  ///
+  /// The body's pref mutations (`tx.prefs`, `tx.single`) are atomic with
+  /// the collection writes: they reach SQLite inside the same SQL
+  /// transaction, and they are written through the prefs preload map and
+  /// woken on the prefs watches only after the commit succeeds, in commit
+  /// order — a thrown error rolls back both stores and leaves the map
+  /// untouched.
   Future<R> runTransaction<R>(Future<R> Function(CocoonTransaction tx) body) {
     if (currentScopeFor(this) != null) {
       return Future.error(TransactionMisuseError.nested());
     }
     final scope = TransactionScope(this);
-    return runInTransactionScope(
-      scope,
-      () => _runtime.runTransactionBody<R>(
-        (wtx) => body(CocoonTransaction(wtx)),
-        txScope: scope,
-      ),
-    );
+    final prefsStage = PrefTxStage();
+    return runInTransactionScope(scope, () async {
+      try {
+        final result = await _runtime.runTransactionBody<R>(
+          (wtx) => body(CocoonTransaction(wtx, prefsStage)),
+          txScope: scope,
+        );
+        // The commit succeeded: write the body's pref mutations through
+        // the preload map (commit order) and wake the prefs watches. A
+        // rollback never reaches here — neither the map nor the watches
+        // reflect any of it.
+        _prefs.applyCommitted(prefsStage.ops);
+        return result;
+      } on Object {
+        prefsStage.ops.clear();
+        rethrow;
+      }
+    });
   }
 
   /// Every database of [refs] in as few trips as possible: results come
@@ -1206,6 +1277,22 @@ final class Cocoon {
     );
     if (exists == null) {
       await tx.execute(createChangesTableSql());
+    }
+  }
+
+  /// Creates the `_cocoon_prefs` table when missing, inside the open
+  /// transaction. Created at open (one `sqlite_master` lookup, the same
+  /// pattern as the meta and change-log tables) so the table always exists:
+  /// prefs storage ops are plain statements, and a read-only helper isolate
+  /// could never create it lazily.
+  @internal
+  static Future<void> createPrefsTableIfMissing(CocoonTx tx) async {
+    final exists = await tx.getOptional(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      [prefsTableName],
+    );
+    if (exists == null) {
+      await tx.execute(createPrefsTableSql());
     }
   }
 

@@ -171,6 +171,10 @@ The API is identical; these are the guarantees the modes must keep:
 - **`watch()`** runs its reads where the engine is and pushes emissions;
   cancelling the subscription stops the watch; `close()` completes every
   stream, like today.
+- **Prefs always run inline.** Single-key reads and writes (`db.prefs.*`,
+  `db.single.*`) are tiny, so they never route to the worker or the auto
+  helper in any mode; the preload map and the watch streams live on the
+  isolate that called `Cocoon.open` in every mode.
 - **`runTransaction(body)`** always runs the body on the CALLER (it is user
   code with captured state). Each `tx.get/getAll/set/add/delete` is a
   message tagged with a transaction id (`background`); the worker holds the

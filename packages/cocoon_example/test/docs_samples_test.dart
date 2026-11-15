@@ -615,6 +615,144 @@ void main() {
     expect(stats.helperCalls, greaterThan(0)); // the uncapped groupBy moved
     await db.close();
   });
+
+  test(
+    'prefs: primitives, watch, keys, clear (the prefs.mdx shapes)',
+    () async {
+      final db = await Cocoon.open(
+        await tempDbPath(),
+        collections: [],
+        preloadPrefs: true,
+      );
+      final prefs = db.prefs;
+
+      await prefs.setString('theme', 'dark');
+      await prefs.setInt('launchCount', 3);
+      await prefs.setBool('onboarded', true);
+      await prefs.setDouble('textScale', 1.2);
+      await prefs.setBytes('blob', Uint8List.fromList([1, 2, 3, 255]));
+
+      expect(await prefs.getString('theme'), 'dark');
+      expect(await prefs.getInt('launchCount'), 3);
+      expect(db.prefs.getBoolSync('onboarded'), true); // memory-speed
+      expect(db.prefs.getDoubleSync('textScale'), 1.2);
+      expect(db.prefs.getBytesSync('blob'), Uint8List.fromList([1, 2, 3, 255]));
+
+      // Absent key is null; an overwrite changes the value; a wrong-kind read
+      // throws instead of returning garbage.
+      expect(await prefs.getString('absent'), isNull);
+      await prefs.setInt('theme', 2);
+      expect(await prefs.getInt('theme'), 2);
+      await expectLater(
+        prefs.getString('theme'),
+        throwsA(isA<PrefsTypeException>()),
+      );
+      expect(
+        () => prefs.getStringSync('theme'),
+        throwsA(isA<PrefsTypeException>()),
+      );
+
+      // Watch: the current value first, then every committed change.
+      final emissions = <int?>[];
+      final sub = prefs.watch<int>('theme').listen(emissions.add);
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      await prefs.setInt('theme', 3);
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      expect(emissions, [2, 3]);
+      await sub.cancel();
+
+      await prefs.remove('theme');
+      expect(await prefs.containsKey('theme'), isFalse);
+      await prefs.keys(); // sorted keys
+      await prefs.clear();
+      expect(db.prefs.keysSync(), isEmpty);
+
+      await db.close();
+    },
+  );
+
+  test(
+    'single: one generated model under one key (prefs.mdx shapes)',
+    () async {
+      // The current-user shape with the REAL generated adapter: Account is
+      // NOT in collections: here — a single needs no registration and creates
+      // no table.
+      final db = await Cocoon.open(
+        await tempDbPath(),
+        collections: [],
+        preloadPrefs: true,
+      );
+      final currentUser = db.single(
+        accounts,
+        key: 'currentUser',
+      ); // Single<Account>
+
+      expect(await currentUser.get(), isNull);
+      expect(currentUser.getSync(), isNull);
+      await currentUser.set(accountFixture(name: 'Ada'));
+      final u = await currentUser.get();
+      expect(u!.name, 'Ada');
+      expect(currentUser.getSync()!.name, 'Ada');
+
+      final first = await currentUser.watch().first;
+      expect(first!.name, 'Ada');
+
+      await currentUser.clear();
+      expect(await currentUser.get(), isNull);
+      expect(currentUser.getSync(), isNull);
+      await db.close();
+    },
+  );
+
+  test('prefs commit atomically with documents (tx and batch)', () async {
+    final db = await Cocoon.open(
+      await tempDbPath(),
+      collections: [accounts],
+      preloadPrefs: true,
+    );
+    final a1 = db.collection(accounts).doc('a1');
+
+    await db.runTransaction((tx) async {
+      await tx
+          .single(accounts, key: 'currentUser')
+          .set(accountFixture(name: 'Ada'));
+      await tx.prefs.setBool('onboarded', true);
+      await tx.set(a1, accountFixture(name: 'Acme'));
+    });
+    expect(db.prefs.getBoolSync('onboarded'), isTrue);
+    expect(db.single(accounts, key: 'currentUser').getSync()!.name, 'Ada');
+    expect((await a1.get())!.data.name, 'Acme');
+
+    // A thrown error rolls the prefs and the documents back together.
+    await expectLater(
+      db.runTransaction((tx) async {
+        await tx.prefs.setString('theme', 'never');
+        await tx.set(a1, accountFixture(name: 'Wrong'));
+        throw StateError('roll back');
+      }),
+      throwsA(isA<StateError>()),
+    );
+    expect(db.prefs.getStringSync('theme'), isNull);
+    expect((await a1.get())!.data.name, 'Acme');
+
+    // Batches queue prefs the same way; a failed batch rolls back too.
+    final wrongBatch = db.batch();
+    wrongBatch.prefs.setString('theme', 'never');
+    wrongBatch.update(
+      db.collection(accounts).doc('ghost'),
+      accountFixture(name: 'X'),
+    );
+    await expectLater(wrongBatch.commit(), throwsA(isA<ArgumentError>()));
+    expect(db.prefs.getStringSync('theme'), isNull);
+
+    final batch = db.batch();
+    batch.set(a1, accountFixture(name: 'Acme updated'));
+    batch.prefs.setString('theme', 'dark');
+    await batch.commit();
+    expect(db.prefs.getStringSync('theme'), 'dark');
+    expect((await a1.get())!.data.name, 'Acme updated');
+    await db.close();
+  });
 }
 
 void _ignore(Object error) {}

@@ -32,6 +32,10 @@ final info = await db.backupTo('/backups/cocoon-2026-11-10.db');
   also reclaims the freelist an in-place upgrade or backfill left behind.
 - **`keepChanges: false` databases back up too** — the copy's change log is
   simply empty, like the source's.
+- **Prefs travel with backups.** The key-value table behind `db.prefs` (and
+  every `db.single` row, such as the saved current user) is part of the
+  file, so it is in every backup — and a restore also restores the backup's
+  prefs, dropping anything newer the source file had gained.
 
 ## Reading one back: `inspectBackup`
 

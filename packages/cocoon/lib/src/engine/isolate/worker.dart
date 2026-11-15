@@ -54,35 +54,37 @@ void cocoonWorkerMain(WorkerInit init) {
     }
     unawaited(server.handle(message as WorkerRequest));
   });
-  unawaited(
-    () async {
-      try {
-        final db = await Cocoon.openLocalFile(
-          init.path,
-          collections: init.collections,
-          options: init.options,
-          schemaVersion: init.schemaVersion,
-          migrations: init.migrations,
-          onMigrationProgress: (done, total) {
-            events.send(MigrationProgressEvent(done, total));
-          },
-          schemaLock: init.schemaLock,
-          onCompactionFailed: init.reportCompactionFailures
-              ? (error) => events.send(CompactionFailedEvent(error))
-              : null,
-        );
-        events.send(WorkerReadyEvent(requestPort.sendPort, db.instanceId));
-        await server.serve(db);
-      } on Object catch (error, stackTrace) {
-        // The open failed: report it to the id the host awaits and exit.
-        events.send(
-          WorkerResponseEvent(workerOpenFailureId, null, envelopeFrom(error, stackTrace)),
-        );
-      } finally {
-        requestPort.close();
-      }
-    }(),
-  );
+  unawaited(() async {
+    try {
+      final db = await Cocoon.openLocalFile(
+        init.path,
+        collections: init.collections,
+        options: init.options,
+        schemaVersion: init.schemaVersion,
+        migrations: init.migrations,
+        onMigrationProgress: (done, total) {
+          events.send(MigrationProgressEvent(done, total));
+        },
+        schemaLock: init.schemaLock,
+        onCompactionFailed: init.reportCompactionFailures
+            ? (error) => events.send(CompactionFailedEvent(error))
+            : null,
+      );
+      events.send(WorkerReadyEvent(requestPort.sendPort, db.instanceId));
+      await server.serve(db);
+    } on Object catch (error, stackTrace) {
+      // The open failed: report it to the id the host awaits and exit.
+      events.send(
+        WorkerResponseEvent(
+          workerOpenFailureId,
+          null,
+          envelopeFrom(error, stackTrace),
+        ),
+      );
+    } finally {
+      requestPort.close();
+    }
+  }());
 }
 
 /// The worker's per-database state: the engine facade, open transactions,
@@ -163,12 +165,15 @@ final class _WorkerServer {
     switch (request) {
       case GetDocRequest(:final adapter, :final path):
         _requireOpen();
-        final snapshot = await db!.getDoc<Object>(_docRef<Object>(db, adapter, path));
+        final snapshot = await db!.getDoc<Object>(
+          _docRef<Object>(db, adapter, path),
+        );
         return snapshot == null ? (false, null) : (true, snapshot.data);
       case GetAllRequest(:final refs):
         _requireOpen();
         final snapshots = await db!.getAll<Object>([
-          for (final (adapter, path) in refs) _docRef<Object>(db, adapter, path),
+          for (final (adapter, path) in refs)
+            _docRef<Object>(db, adapter, path),
         ]);
         return [
           for (final snapshot in snapshots)
@@ -191,18 +196,26 @@ final class _WorkerServer {
         await db!.deleteDoc(_docRef<Object>(db, adapter, path));
         return null;
       case RunQueryRequest(
-          :final adapter,
-          :final scopePath,
-          :final filters,
-          :final orders,
-          :final limit,
-          :final startAfter,
-          :final fullScan,
-          :final withBytes,
-        ):
+        :final adapter,
+        :final scopePath,
+        :final filters,
+        :final orders,
+        :final limit,
+        :final startAfter,
+        :final fullScan,
+        :final withBytes,
+      ):
         _requireOpen();
-        final query = _queryOf(db!, adapter, scopePath, filters, orders, limit,
-            startAfter, fullScan);
+        final query = _queryOf(
+          db!,
+          adapter,
+          scopePath,
+          filters,
+          orders,
+          limit,
+          startAfter,
+          fullScan,
+        );
         if (withBytes) {
           final (page, bytes) = await db.runQueryWithBytes<Object>(query);
           return (
@@ -218,42 +231,59 @@ final class _WorkerServer {
           null,
         );
       case RunCountRequest(
-          :final adapter,
-          :final scopePath,
-          :final filters,
-          :final orders,
-          :final limit,
-          :final fullScan,
-        ):
+        :final adapter,
+        :final scopePath,
+        :final filters,
+        :final orders,
+        :final limit,
+        :final fullScan,
+      ):
         _requireOpen();
-        final query = _queryOf(db!, adapter, scopePath, filters, orders, limit,
-            null, fullScan);
+        final query = _queryOf(
+          db!,
+          adapter,
+          scopePath,
+          filters,
+          orders,
+          limit,
+          null,
+          fullScan,
+        );
         return db.runCount<Object>(query);
       case RunAggregateRequest(
-          :final adapter,
-          :final scopePath,
-          :final filters,
-          :final orders,
-          :final limit,
-          :final fullScan,
-          :final specs,
-        ):
+        :final adapter,
+        :final scopePath,
+        :final filters,
+        :final orders,
+        :final limit,
+        :final fullScan,
+        :final specs,
+      ):
         _requireOpen();
-        final query = _queryOf(db!, adapter, scopePath, filters, orders, limit,
-            null, fullScan);
-        final snapshot = await db
-            .runAggregate<Object>(AggregateQuery<Object>(query, specs));
+        final query = _queryOf(
+          db!,
+          adapter,
+          scopePath,
+          filters,
+          orders,
+          limit,
+          null,
+          fullScan,
+        );
+        final snapshot = await db.runAggregate<Object>(
+          AggregateQuery<Object>(query, specs),
+        );
         return (snapshot.values, snapshot.count);
       case RunGroupAggregateRequest(
-          :final adapter,
-          :final scopePath,
-          :final filters,
-          :final orders,
-          :final maxGroups,
-          :final fullScan,
-          :final keys,
-          :final specs,
-        ):
+        :final adapter,
+        :final scopePath,
+        :final filters,
+        :final orders,
+        :final maxGroups,
+        :final fullScan,
+        :final keys,
+        :final specs,
+      ):
         _requireOpen();
         final query = _queryOf(
           db!,
@@ -273,20 +303,20 @@ final class _WorkerServer {
             (group.keyValues, group.values, group.count),
         ];
       case WatchRequest(
-          :final watchId,
-          :final kind,
-          :final adapter,
-          :final scopePath,
-          :final filters,
-          :final orders,
-          :final limit,
-          :final startAfter,
-          :final fullScan,
-          :final specs,
-          :final keys,
-          :final maxGroups,
-          :final path,
-        ):
+        :final watchId,
+        :final kind,
+        :final adapter,
+        :final scopePath,
+        :final filters,
+        :final orders,
+        :final limit,
+        :final startAfter,
+        :final fullScan,
+        :final specs,
+        :final keys,
+        :final maxGroups,
+        :final path,
+      ):
         _requireOpen();
         _cancelledWatches.remove(watchId);
         final Stream<Object?> stream;
@@ -331,14 +361,21 @@ final class _WorkerServer {
               fullScan,
             );
             stream = db.watchGroupAggregate<Object>(
-              AggregateGroupQuery<Object>.rebuild(query, keys, maxGroups, specs),
+              AggregateGroupQuery<Object>.rebuild(
+                query,
+                keys,
+                maxGroups,
+                specs,
+              ),
             );
           default:
             throw ArgumentError.value(kind, 'kind', 'Unknown watch kind');
         }
         _watches[watchId] = stream.listen(
           (Object? emission) {
-            _events.send(WatchEmissionEvent(watchId, _emissionOf(kind, emission)));
+            _events.send(
+              WatchEmissionEvent(watchId, _emissionOf(kind, emission)),
+            );
           },
           onError: (Object error, StackTrace stackTrace) {
             if (_cancelledWatches.contains(watchId)) {
@@ -388,19 +425,20 @@ final class _WorkerServer {
       case TxGetAllRequest(:final txId, :final refs):
         final tx = _txOf(txId);
         final snapshots = await tx.getAll<Object>([
-          for (final (adapter, path) in refs) _docRef<Object>(_db!, adapter, path),
+          for (final (adapter, path) in refs)
+            _docRef<Object>(_db!, adapter, path),
         ]);
         return [
           for (final snapshot in snapshots)
             snapshot == null ? (false, null) : (true, snapshot.data),
         ];
       case TxPutRequest(
-          :final txId,
-          :final adapter,
-          :final path,
-          :final value,
-          :final update,
-        ):
+        :final txId,
+        :final adapter,
+        :final path,
+        :final value,
+        :final update,
+      ):
         final tx = _txOf(txId);
         await tx.put<Object>(
           _docRef<Object>(_db!, adapter, path),
@@ -408,7 +446,12 @@ final class _WorkerServer {
           update: update,
         );
         return null;
-      case TxAddRequest(:final txId, :final adapter, :final collectionPath, :final value):
+      case TxAddRequest(
+        :final txId,
+        :final adapter,
+        :final collectionPath,
+        :final value,
+      ):
         final tx = _txOf(txId);
         final ref = await tx.add<Object>(
           CollectionRef<Object>(
@@ -423,6 +466,19 @@ final class _WorkerServer {
         final tx = _txOf(txId);
         await tx.delete(_docRef<Object>(_db!, adapter, path));
         return null;
+      case TxPrefsGetRequest(:final txId, :final key):
+        final row = await _txOf(txId).prefs.get(key);
+        return row == null ? null : (row.kind, row.bytes);
+      case TxPrefsPutRequest(
+        :final txId,
+        :final key,
+        :final kind,
+        :final bytes,
+      ):
+        await _txOf(txId).prefs.put(key, (kind: kind, bytes: bytes));
+        return null;
+      case TxPrefsRemoveRequest(:final txId, :final key):
+        return _txOf(txId).prefs.remove(key);
       case TxEndRequest(:final txId, :final commit, :final result):
         final session = _txSessions.remove(txId);
         _openTxs.remove(txId);
@@ -439,16 +495,25 @@ final class _WorkerServer {
           await session.future.catchError((Object _) => null);
         }
         return null;
-      case BatchCommitRequest(:final ops):
+      case BatchCommitRequest(:final ops, :final prefOps):
         _requireOpen();
-        await db!.runtime.commitBatchOps([
-          for (final op in ops)
-            BatchOp(
-              op.kind,
-              _docRef<Object>(db, op.adapter, op.path),
-              op.value,
-            ),
-        ]);
+        await db!.runtime.commitBatchOps(
+          [
+            for (final op in ops)
+              BatchOp(
+                op.kind,
+                _docRef<Object>(db, op.adapter, op.path),
+                op.value,
+              ),
+          ],
+          [
+            for (final (key, kind, bytes) in prefOps)
+              (
+                key: key,
+                row: bytes == null ? null : (kind: kind, bytes: bytes),
+              ),
+          ],
+        );
         return null;
       case BulkOpenRequest(:final bulkId, :final options):
         _requireOpen();
@@ -495,6 +560,30 @@ final class _WorkerServer {
       case PruneChangesRequest(:final upToSeq):
         _requireOpen();
         return db!.pruneChanges(upToSeq: upToSeq);
+      case PrefsGetRequest(:final key):
+        _requireOpen();
+        final row = await db!.runtime.prefsGet(key);
+        return row == null ? null : (row.kind, row.bytes);
+      case PrefsPutRequest(:final key, :final kind, :final bytes):
+        _requireOpen();
+        await db!.runtime.prefsPut(key, (kind: kind, bytes: bytes));
+        return null;
+      case PrefsRemoveRequest(:final key):
+        _requireOpen();
+        return db!.runtime.prefsRemove(key);
+      case PrefsKeysRequest():
+        _requireOpen();
+        return db!.runtime.prefsKeys();
+      case PrefsClearRequest():
+        _requireOpen();
+        return db!.runtime.prefsClear();
+      case PrefsLoadAllRequest():
+        _requireOpen();
+        final rows = await db!.runtime.prefsLoadAll();
+        return [
+          for (final MapEntry(:key, value: row) in rows.entries)
+            (key, row.kind, row.bytes),
+        ];
       case BackupToRequest(:final path, :final overwrite):
         _requireOpen();
         return db!.backupTo(path, overwrite: overwrite);
