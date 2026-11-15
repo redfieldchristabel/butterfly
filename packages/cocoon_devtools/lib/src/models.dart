@@ -127,14 +127,23 @@ final class IsolateStatsInfo {
     required this.inlineCalls,
     required this.helperCalls,
     required this.helperBytesMoved,
+    this.helperState,
+    this.helperSpawnMs,
   });
 
-  /// Parses the `isolateStats` entry of one `listDatabases` result.
+  /// Parses the `isolateStats` entry of one `listDatabases` result. The
+  /// helper state and spawn duration are absent from older engines.
   factory IsolateStatsInfo.fromJson(Map<Object?, Object?> json) =>
       IsolateStatsInfo(
         inlineCalls: _intOf(json['inlineCalls'], 'inlineCalls'),
         helperCalls: _intOf(json['helperCalls'], 'helperCalls'),
         helperBytesMoved: _intOf(json['helperBytesMoved'], 'helperBytesMoved'),
+        helperState: json['helperState'] is String
+            ? json['helperState']! as String
+            : null,
+        helperSpawnMs: json['helperSpawnMs'] is int
+            ? json['helperSpawnMs']! as int
+            : null,
       );
 
   /// Operations that ran inline on the caller.
@@ -146,10 +155,19 @@ final class IsolateStatsInfo {
   /// Approximate payload bytes moved over the helper channel.
   final int helperBytesMoved;
 
+  /// The helper isolate's lifecycle (`starting`/`ready`/`failed`/`closed`),
+  /// or `null` from an older engine that does not report it.
+  final String? helperState;
+
+  /// How long the helper took to spawn (ms), once known; `null` until then.
+  final int? helperSpawnMs;
+
   /// A one-line summary for the inspector's database header.
   String get summary =>
       'auto: $inlineCalls inline, $helperCalls helper, '
-      '${(helperBytesMoved / 1024).toStringAsFixed(1)} KiB moved';
+      '${(helperBytesMoved / 1024).toStringAsFixed(1)} KiB moved'
+      '${helperState == null ? '' : ', helper $helperState'}'
+      '${helperSpawnMs == null ? '' : ' (${helperSpawnMs}ms)'}';
 }
 
 /// Prepends '(closed) ' to [text] while [open] is false, so tombstones read

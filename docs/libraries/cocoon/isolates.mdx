@@ -46,6 +46,23 @@ are unaffected. No web: native 64-bit int is assumed on every platform
   connection, and the CPU side of heavy writes (bulk-writer encodes) runs
   there too, with the caller's single writer executing the prepared rows.
 
+Opening an auto database never waits for the helper: `Cocoon.open` returns
+as soon as the engine on the caller is committed, while the helper isolate
+spawns in the background. Until the helper is ready — and forever, if it
+cannot start (a failed spawn, a crash) — every call runs inline on the
+caller, exactly as `caller` mode does; when the helper attaches, heavy reads
+and encodes start routing to it from then on. A request that was already
+routed inline finishes inline, exactly once; only new requests see the
+helper, and `close()` never waits for a still-spawning helper — the late
+helper is shut down when it arrives. `db.isolateStats` reports the helper's
+lifecycle as `helperState` (`starting`, `ready`, `failed`, `closed`) and,
+once known, how long the spawn took as `helperSpawnMs` (ms), so an app can
+tell whether heavy work currently runs inline or in the helper. The give-up
+timeout for a helper that never answers its handshake is 30 s, and it bounds
+only the background spawn — it can never block the open (before, a slow
+helper stalled `Cocoon.open` for up to 60 s, then degraded to inline
+anyway).
+
 ## The measured table
 
 `packages/cocoon_bench` ships the harness
@@ -176,7 +193,9 @@ The API is identical; these are the guarantees the modes must keep:
   database does today. A crashed `background` worker fails every pending
   and future call with `CocoonIsolateException`. A crashed `auto` helper
   degrades to inline execution with one logged warning — auto never bricks
-  the database.
+  the database. In `auto`, `close()` completes promptly even while the
+  helper spawn is still pending; the late helper is shut down cleanly when
+  it arrives.
 - **Static/file-level helpers** (`restoreBackup`, `inspectBackup`, the
   migration CLI) are unaffected.
 
@@ -199,9 +218,11 @@ database and never depends on timing:
 | `bulkWriter()` | never — the chunk's encodes always prepare in the helper | always |
 
 `db.isolateStats` (auto mode only) exposes the counters — inline vs helper
-calls and the approximate payload bytes the helper channel carried — and the
-DevTools inspector shows them on the database. The thresholds are a
-constructor argument; `0` sends that whole class of work to the helper.
+calls, the approximate payload bytes the helper channel carried — and the
+helper's lifecycle: `helperState` (`starting`, `ready`, `failed`, `closed`)
+and `helperSpawnMs`, the spawn duration in ms once known. The DevTools
+inspector shows them on the database. The thresholds are a constructor
+argument; `0` sends that whole class of work to the helper.
 
 ## Consistency
 

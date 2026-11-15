@@ -634,6 +634,8 @@ final class CocoonInspectorService {
         'inlineCalls': stats.inlineCalls,
         'helperCalls': stats.helperCalls,
         'helperBytesMoved': stats.helperBytesMoved,
+        'helperState': stats.helperState.name,
+        'helperSpawnMs': ?stats.helperSpawnMs,
       },
   };
 

@@ -12,9 +12,10 @@
 ///
 /// Routing is the deterministic [AutoRouter] rule set (thresholds from
 /// [CocoonAutoThresholds]); transactions, doc gets/sets/deletes and counts
-/// always run inline with zero round trips. A crashed helper degrades to
-/// inline execution with one logged warning — auto never bricks the
-/// database.
+/// always run inline with zero round trips. The helper spawns in the
+/// background: `Cocoon.open` returns before the helper exists, and a slow
+/// or failed helper degrades to inline execution with one logged warning —
+/// auto never blocks the caller and never bricks the database.
 library;
 
 import 'dart:async';
@@ -46,8 +47,28 @@ import '../write_buffer.dart';
 import 'error_envelope.dart';
 import 'isolate_options.dart';
 
+/// How long auto mode waits for the helper's ready handshake before giving
+/// up and staying inline. It never blocks a caller — `Cocoon.open` returns
+/// before the spawn settles — it only bounds how long the background spawn
+/// may keep trying to attach.
+@internal
+const Duration autoHelperGiveUpTimeout = Duration(seconds: 30);
+
+/// Testing hook: delays the helper's ready handshake, simulating a helper
+/// that is slow to open its read-only connection. Production code leaves it
+/// at [Duration.zero].
+@visibleForTesting
+Duration debugHelperSpawnDelay = Duration.zero;
+
+/// Testing hook: overrides [autoHelperGiveUpTimeout] so a test can exercise
+/// the give-up path without waiting the real 30 s. `null` in production.
+@visibleForTesting
+Duration? debugHelperGiveUpTimeout;
+
 /// Spawns the auto mode's helper isolate and returns its link, or `null`
 /// when the spawn failed (auto degrades to inline and logs why).
+///
+/// Runs in the background on the auto runtime — the open never awaits it.
 @internal
 Future<AutoHelperLink?> spawnAutoHelper(
   String path,
@@ -164,6 +185,18 @@ void cocoonAutoHelperMain(AutoHelperInit init) {
 Object? _columnSqlOf(FieldColumn<Object?, Object?> column, Object? value) {
   final dynamic dynamicColumn = column;
   return dynamicColumn.sqlOf(value) as Object?;
+}
+
+/// The ready handshake the spawn awaits: the helper's ready port, arriving
+/// no earlier than [debugHelperSpawnDelay] (the testing hook for a slow
+/// helper). The give-up timeout in [AutoHelperLink.spawn] covers the whole
+/// chain.
+Future<SendPort> _readyHandshake(Future<SendPort> ready) async {
+  final delay = debugHelperSpawnDelay;
+  if (delay > Duration.zero) {
+    await Future<void>.delayed(delay);
+  }
+  return ready;
 }
 
 /// The helper's init payload. Adapters travel as registry entry INDICES
@@ -288,7 +321,9 @@ final class AutoHelperLink {
       debugName: 'cocoon-auto-helper',
     );
     try {
-      final requests = await ready.future.timeout(const Duration(seconds: 60));
+      final requests = await _readyHandshake(
+        ready.future,
+      ).timeout(debugHelperGiveUpTimeout ?? autoHelperGiveUpTimeout);
       link = AutoHelperLink._(isolate, requests, events, subscription);
       return link;
     } on Object {
@@ -384,9 +419,9 @@ final class AutoHelperLink {
     // stuck behind a long decode) must not hang the close — the kill below
     // stays the backstop.
     try {
-      await request<Object?>((id) => _AutoShutdownRequest(id)).timeout(
-        const Duration(seconds: 10),
-      );
+      await request<Object?>(
+        (id) => _AutoShutdownRequest(id),
+      ).timeout(const Duration(seconds: 10));
     } on Object {
       // The kill below settles the helper either way.
     }
@@ -401,19 +436,91 @@ final class AutoHelperLink {
 
 /// The auto mode's runtime: the local engine for everything small (and for
 /// every write transaction), the helper for reads above the thresholds and
-/// for heavy encodes. All counters feed [isolateStats].
+/// for heavy encodes. The helper spawns in the background —
+/// [AutoCocoonRuntime.spawnHelperInBackground] starts it after the open
+/// returns — and until it attaches every call routes inline. All counters
+/// feed [isolateStats].
 @internal
 final class AutoCocoonRuntime implements CocoonRuntime {
-  /// Builds the runtime over the engine home [_local]; [helper] may be
-  /// `null` (the helper failed to spawn) — everything then runs inline.
-  AutoCocoonRuntime(this._local, this._thresholds, this._helper)
+  /// Builds the runtime over the engine home [_local]. The helper isolate
+  /// is spawned afterwards by [spawnHelperInBackground]; until it attaches
+  /// (or if it never does) everything runs inline.
+  AutoCocoonRuntime(this._local, this._thresholds)
     : _stats = CocoonIsolateStats();
 
   final LocalCocoonRuntime _local;
   final CocoonAutoThresholds _thresholds;
   AutoHelperLink? _helper;
 
+  /// Set by [close]; a helper that arrives after it is shut down instead
+  /// of attached.
+  bool _closed = false;
+
+  /// Resolves when the background helper spawn settles (attached, shut
+  /// down, or failed) — a testing hook for the race-free assertions.
+  final Completer<void> _spawnSettled = Completer<void>();
+
   final CocoonIsolateStats _stats;
+
+  /// Starts the helper isolate in the background and attaches it when its
+  /// ready handshake completes. Never blocks the caller: until the helper
+  /// attaches, every call routes inline.
+  ///
+  /// When the database was closed before the spawn settled, the late
+  /// helper is shut down cleanly (its read-only connection detaches before
+  /// the kill — the -wal handling — and no port or isolate leaks). When
+  /// the spawn fails or gives up, the runtime stays inline and
+  /// [spawnAutoHelper] logs the one warning.
+  void spawnHelperInBackground(
+    String path,
+    List<CollectionAdapter<Object?>> collections,
+  ) {
+    final watch = Stopwatch()..start();
+    unawaited(_spawnAndAttach(path, collections, watch));
+  }
+
+  Future<void> _spawnAndAttach(
+    String path,
+    List<CollectionAdapter<Object?>> collections,
+    Stopwatch watch,
+  ) async {
+    AutoHelperLink? link;
+    try {
+      link = await spawnAutoHelper(path, collections);
+    } on Object catch (error, stackTrace) {
+      // spawnAutoHelper already degrades and logs; this guard only keeps
+      // an unexpected throw from becoming an unhandled background error.
+      log(
+        'Cocoon auto mode: the helper spawn failed unexpectedly ($error); '
+        'every read and encode runs inline on the caller',
+        name: 'cocoon',
+        level: 900, // WARNING
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+    _stats.helperSpawnMs = watch.elapsedMilliseconds;
+    if (link == null) {
+      // A closed database stays `closed`; an open one reports the failure.
+      if (!_closed) {
+        _stats.helperState = CocoonHelperState.failed;
+      }
+    } else if (_closed) {
+      // The database closed while the spawn was in flight: shut the late
+      // helper down cleanly (no leaked isolate, no open ReceivePort, the
+      // read-only connection detaches before the kill).
+      await link.close();
+    } else {
+      _helper = link;
+      _stats.helperState = CocoonHelperState.ready;
+    }
+    _spawnSettled.complete();
+  }
+
+  /// The background spawn's settle point, for the tests: resolves once the
+  /// helper attached, was shut down, or failed.
+  @visibleForTesting
+  Future<void> get debugHelperSpawnSettled => _spawnSettled.future;
 
   /// Marks the helper dead after a crash and logs one warning.
   void _degradeHelper(Object error, StackTrace stackTrace) {
@@ -421,6 +528,7 @@ final class AutoCocoonRuntime implements CocoonRuntime {
       return;
     }
     _helper = null;
+    _stats.helperState = CocoonHelperState.failed;
     log(
       'Cocoon auto mode: the helper isolate failed ($error); every read and '
       'encode now runs inline on the caller',
@@ -898,13 +1006,17 @@ final class AutoCocoonRuntime implements CocoonRuntime {
 
   @override
   Future<void> close() async {
+    _closed = true;
     final helper = _helper;
     _helper = null;
+    _stats.helperState = CocoonHelperState.closed;
     // The helper goes first: its read-only connection must be detached
     // before the main connection closes, or SQLite keeps the -wal beside
     // the file (the last-close cleanup never runs) and the -wal replays its
     // un-checkpointed pages over whatever main file is later swapped in
-    // beside it — a restore's renamed-in book, for one.
+    // beside it — a restore's renamed-in book, for one. A helper still
+    // spawning is not closed here: close completes promptly, and the
+    // background spawn shuts the late helper down when it arrives.
     await helper?.close();
     await _local.close();
   }

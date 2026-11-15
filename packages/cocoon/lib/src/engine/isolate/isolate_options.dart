@@ -160,14 +160,51 @@ final class CocoonIsolateStats {
   /// prepared writes out).
   int helperBytesMoved = 0;
 
+  /// Where the helper isolate is in its lifecycle. The open returns before
+  /// the helper exists, so [CocoonHelperState.starting] is the state a
+  /// caller can observe: until the helper is [CocoonHelperState.ready] — or
+  /// forever, once it has [CocoonHelperState.failed] — every call runs
+  /// inline. [CocoonHelperState.closed] follows the database's close.
+  CocoonHelperState helperState = CocoonHelperState.starting;
+
+  /// Wall time from the helper spawn's start to its settle, in milliseconds
+  /// — how long the helper took to become ready, or (when it never did) how
+  /// long the give-up waited before degrading to inline. `null` until the
+  /// spawn settles.
+  int? helperSpawnMs;
+
   /// A frozen copy of the counters.
   CocoonIsolateStats snapshot() => CocoonIsolateStats()
     ..inlineCalls = inlineCalls
     ..helperCalls = helperCalls
-    ..helperBytesMoved = helperBytesMoved;
+    ..helperBytesMoved = helperBytesMoved
+    ..helperState = helperState
+    ..helperSpawnMs = helperSpawnMs;
 
   @override
   String toString() =>
       'CocoonIsolateStats(inline: $inlineCalls, helper: $helperCalls, '
-      'bytesMoved: $helperBytesMoved)';
+      'bytesMoved: $helperBytesMoved, helperState: $helperState'
+      '${helperSpawnMs == null ? '' : ', spawn: ${helperSpawnMs}ms'})';
+}
+
+/// The helper isolate's lifecycle in auto mode, reported by
+/// [CocoonIsolateStats.helperState].
+enum CocoonHelperState {
+  /// The helper isolate is being spawned; its ready handshake has not
+  /// completed. The open does not wait for it — every call runs inline
+  /// until the state changes.
+  starting,
+
+  /// The helper is attached and serves heavy reads and encodes.
+  ready,
+
+  /// The helper is gone without being closed: its spawn failed, it did not
+  /// answer the ready handshake within the give-up timeout, or it crashed.
+  /// Every call runs inline from then on (one warning is logged).
+  failed,
+
+  /// The database was closed; the helper (attached or still spawning) is
+  /// shut down or never attached.
+  closed,
 }

@@ -4,6 +4,7 @@
 /// Update it together with the docs.
 library;
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -589,6 +590,15 @@ void main() {
         ),
       ),
     );
+    // The helper attaches in the background (open never waits for it); the
+    // uncapped groupBy below must reach it.
+    final readyDeadline = DateTime.now().add(const Duration(seconds: 10));
+    while (db.isolateStats?.helperState != CocoonHelperState.ready) {
+      if (DateTime.now().isAfter(readyDeadline)) {
+        fail('the auto helper never became ready');
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
     final a1 = db.collection(saccounts).doc('a1');
     await a1.set(const SAccount(name: 'Acme')); // inline: doc ops never move
     await a1.collection(stxns).add(stxn());

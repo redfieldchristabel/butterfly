@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:cocoon/cocoon.dart';
+import 'package:cocoon/src/engine/isolate/auto.dart' show AutoCocoonRuntime;
 import 'package:test/test.dart';
 
 import 'support/models.dart';
@@ -24,41 +25,43 @@ void main() {
     CocoonIsolate.background,
     CocoonIsolate.auto,
   ]) {
-    test(
-      'close removes the -wal and -shm sidecars after a heavy read '
-      '(${mode.name})',
-      () async {
-        final dir = await Directory.systemTemp.createTemp('cocoon_wal_close');
-        addTearDown(() => dir.delete(recursive: true));
-        final adapter = AccountAdapter();
-        final db = await openCocoon(
-          '${dir.path}/t.db',
-          collections: [adapter],
-          options: CocoonOptions(isolate: mode),
-        );
-        for (var i = 0; i < 50; i++) {
-          await db.collection(adapter).doc('d$i').set(
-                Account(name: 'account-$i', active: true, note: 'x' * 200),
-              );
-        }
-        // A limit above the auto threshold: this read runs on the helper's
-        // read-only connection in auto mode.
-        final page = await db
+    test('close removes the -wal and -shm sidecars after a heavy read '
+        '(${mode.name})', () async {
+      final dir = await Directory.systemTemp.createTemp('cocoon_wal_close');
+      addTearDown(() => dir.delete(recursive: true));
+      final adapter = AccountAdapter();
+      final db = await openCocoon(
+        '${dir.path}/t.db',
+        collections: [adapter],
+        options: CocoonOptions(isolate: mode),
+      );
+      for (var i = 0; i < 50; i++) {
+        await db
             .collection(adapter)
-            .query()
-            .limit(1000)
-            .get();
-        expect(page.docs, hasLength(50));
+            .doc('d$i')
+            .set(Account(name: 'account-$i', active: true, note: 'x' * 200));
+      }
+      // A limit above the auto threshold: this read runs on the helper's
+      // read-only connection in auto mode.
+      final page = await db.collection(adapter).query().limit(1000).get();
+      expect(page.docs, hasLength(50));
 
-        await db.close();
+      await db.close();
 
-        final leftovers = dir
-            .listSync()
-            .map((e) => e.uri.pathSegments.last)
-            .where((name) => name.endsWith('-wal') || name.endsWith('-shm'))
-            .toList();
-        expect(leftovers, isEmpty, reason: 'sidecars left after close');
-      },
-    );
+      // In auto mode the helper may still be spawning when close returns
+      // (close never waits for it); the late helper's clean shutdown is
+      // what detaches its read-only connection, so wait for the spawn to
+      // settle before checking the directory.
+      if (db.runtime case final AutoCocoonRuntime auto) {
+        await auto.debugHelperSpawnSettled;
+      }
+
+      final leftovers = dir
+          .listSync()
+          .map((e) => e.uri.pathSegments.last)
+          .where((name) => name.endsWith('-wal') || name.endsWith('-shm'))
+          .toList();
+      expect(leftovers, isEmpty, reason: 'sidecars left after close');
+    });
   }
 }

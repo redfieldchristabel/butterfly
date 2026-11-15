@@ -1005,7 +1005,11 @@ final db = await Cocoon.open(
 - `auto`: the engine stays on the caller and a read-only helper isolate
   takes the heavy reads and the bulk encodes above the
   `CocoonAutoThresholds` (200 rows / 500 write ops). Transactions always run
-  inline, so they behave exactly like `caller` mode.
+  inline, so they behave exactly like `caller` mode. Opening never waits
+  for the helper: the open returns with every call running inline while the
+  helper spawns in the background, and `db.isolateStats.helperState`
+  (`starting`/`ready`/`failed`/`closed`, with the spawn duration in
+  `helperSpawnMs`) shows whether heavy work currently routes to it.
 
 See [Isolates](/libraries/cocoon/isolates) for the semantics, the measured
 stall/wall/RSS table and which mode a Flutter app should pick.

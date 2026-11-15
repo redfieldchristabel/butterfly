@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:cocoon/cocoon.dart';
+import 'package:test/test.dart';
 
 /// The isolate mode the test suite runs its file-backed opens in, from the
 /// `COCOON_TEST_ISOLATE` environment variable: `background` or `auto` move
@@ -61,5 +63,27 @@ Future<Cocoon> openCocoon(
     migrations: migrations,
     onMigrationProgress: onMigrationProgress,
     schemaLock: schemaLock,
+  );
+}
+
+/// Waits until [db]'s auto-mode helper isolate has attached, failing after
+/// [timeout]. Auto mode's open returns before the helper is ready (the
+/// spawn runs in the background), so tests that assert helper routing or
+/// the helper counters poll for [CocoonHelperState.ready] first.
+Future<void> waitHelperReady(
+  Cocoon db, {
+  Duration timeout = const Duration(seconds: 10),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(deadline)) {
+    final stats = db.isolateStats;
+    if (stats != null && stats.helperState == CocoonHelperState.ready) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+  fail(
+    'the auto helper never became ready '
+    '(state: ${db.isolateStats?.helperState})',
   );
 }

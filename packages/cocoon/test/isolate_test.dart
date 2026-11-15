@@ -10,6 +10,7 @@ import 'package:cocoon/src/engine/isolate/isolate_options.dart'
 import 'package:test/test.dart';
 
 import 'support/models.dart';
+import 'support/open_db.dart' show waitHelperReady;
 
 Account account(String name) => Account(name: name, active: true);
 
@@ -376,6 +377,7 @@ void main() {
       'an inline write is seen by a heavy helper query; stats move',
       () async {
         final db = await openAuto();
+        await waitHelperReady(db);
         final a1 = db.collection(accounts).doc('a1');
         await a1.set(account('Acme')); // doc set: always inline.
         await a1.collection(txns).doc('t1').set(txnOf(100, memo: 'one'));
@@ -394,6 +396,7 @@ void main() {
       'a heavy query during an open transaction sees pre-commit state',
       () async {
         final db = await openAuto();
+        await waitHelperReady(db);
         final a1 = db.collection(accounts).doc('a1');
         await a1.collection(txns).doc('t1').set(txnOf(1));
 
@@ -429,6 +432,7 @@ void main() {
 
     test('a watch over a heavy query re-runs it in the helper', () async {
       final db = await openAuto();
+      await waitHelperReady(db);
       final a1 = db.collection(accounts).doc('a1');
 
       final pages = <QueryPage<Txn>>[];
@@ -451,6 +455,7 @@ void main() {
       'close() stops the helper; a dead helper degrades to inline',
       () async {
         final db = await openAuto();
+        await waitHelperReady(db);
         final a1 = db.collection(accounts).doc('a1');
         await a1.set(account('Acme'));
 
@@ -472,6 +477,138 @@ void main() {
         await expectLater(a1.collection(txns).query().get(), throwsStateError);
       },
     );
+
+    test('open returns before the helper is ready; work runs inline until it '
+        'attaches', () async {
+      debugHelperSpawnDelay = const Duration(seconds: 5);
+      try {
+        final sw = Stopwatch()..start();
+        final db = await openAuto();
+        expect(
+          sw.elapsed,
+          lessThan(const Duration(seconds: 1)),
+          reason: 'open must not wait for the helper handshake',
+        );
+        expect(db.isolateStats!.helperState, CocoonHelperState.starting);
+
+        // Small work runs immediately, exactly as in caller mode.
+        final a1 = db.collection(accounts).doc('a1');
+        await a1.set(account('Acme'));
+        expect((await a1.get())!.data.name, 'Acme');
+        // A heavy read before the helper attaches: routed inline, correct.
+        final early = await a1.collection(txns).query().get();
+        expect(early.docs, isEmpty);
+
+        await waitHelperReady(db);
+        final stats = db.isolateStats!;
+        expect(stats.helperState, CocoonHelperState.ready);
+        expect(
+          stats.helperSpawnMs,
+          greaterThanOrEqualTo(4500),
+          reason: 'the spawn duration reflects the delayed handshake',
+        );
+
+        // Heavy reads route to the helper from then on.
+        await a1.collection(txns).doc('t1').set(txnOf(100, memo: 'one'));
+        final page = await a1.collection(txns).query().get();
+        expect(page.docs.single.data.memo, 'one');
+        expect(stats.helperCalls, greaterThan(0));
+      } finally {
+        debugHelperSpawnDelay = Duration.zero;
+      }
+    });
+
+    test('a helper that never becomes ready: open returns at once, everything '
+        'stays inline, the give-up degrades', () async {
+      // The handshake is held longer than the (overridden) give-up
+      // timeout, so the background spawn gives up while the test moves on.
+      debugHelperSpawnDelay = const Duration(seconds: 10);
+      debugHelperGiveUpTimeout = const Duration(milliseconds: 300);
+      try {
+        final sw = Stopwatch()..start();
+        final db = await openAuto();
+        expect(sw.elapsed, lessThan(const Duration(seconds: 1)));
+        expect(db.isolateStats!.helperState, CocoonHelperState.starting);
+
+        // Everything works inline while (and after) the spawn is stuck.
+        final a1 = db.collection(accounts).doc('a1');
+        await a1.set(account('Acme'));
+        await a1.collection(txns).doc('t1').set(txnOf(7, memo: 'inline'));
+        expect(
+          (await a1.collection(txns).query().get()).docs.single.data.memo,
+          'inline',
+        );
+
+        // The give-up timeout settles the spawn: the state reports the
+        // failure, nothing was ever served by a helper, and the spawn
+        // duration reports how long the give-up waited.
+        await (db.runtime as AutoCocoonRuntime).debugHelperSpawnSettled;
+        final stats = db.isolateStats!;
+        expect(stats.helperState, CocoonHelperState.failed);
+        expect(stats.helperCalls, 0);
+        expect(stats.helperSpawnMs, greaterThanOrEqualTo(300));
+
+        // Still inline and correct after the give-up.
+        await a1.collection(txns).doc('t2').set(txnOf(8, memo: 'later'));
+        expect((await a1.collection(txns).query().get()).docs, hasLength(2));
+        // Closing a degraded database is quiet, and nothing leaks: the
+        // isolate-lifetime group below proves the process can still exit.
+        await db.close();
+      } finally {
+        debugHelperSpawnDelay = Duration.zero;
+        debugHelperGiveUpTimeout = null;
+      }
+    });
+
+    test('close while the spawn is pending completes promptly and shuts the '
+        'late helper down', () async {
+      debugHelperSpawnDelay = const Duration(seconds: 3);
+      try {
+        final db = await openAuto();
+        final sw = Stopwatch()..start();
+        await db.close();
+        expect(
+          sw.elapsed,
+          lessThan(const Duration(seconds: 1)),
+          reason: 'close must not wait for the pending helper spawn',
+        );
+
+        // The late helper arrives after the close and is shut down
+        // cleanly: no leaked isolate, no open ReceivePort, and the -wal
+        // handling (the clean shutdown before the kill) still ran.
+        await (db.runtime as AutoCocoonRuntime).debugHelperSpawnSettled;
+        expect(db.isolateStats!.helperState, CocoonHelperState.closed);
+      } finally {
+        debugHelperSpawnDelay = Duration.zero;
+      }
+    });
+
+    test('a helper attaching while a heavy read is in flight keeps every '
+        'result correct', () async {
+      debugHelperSpawnDelay = const Duration(seconds: 1);
+      try {
+        final db = await openAuto();
+        final a1 = db.collection(accounts).doc('a1');
+        await a1.collection(txns).doc('t1').set(txnOf(1, memo: 'one'));
+        await a1.collection(txns).doc('t2').set(txnOf(2, memo: 'two'));
+
+        // Routed while the helper is still starting (the handshake cannot
+        // complete before the 1 s delay): this read is committed to the
+        // inline path and must finish there, exactly once.
+        final inFlight = a1.collection(txns).query().get();
+
+        await waitHelperReady(db);
+
+        final early = await inFlight;
+        expect({for (final doc in early.docs) doc.id}, {'t1', 't2'});
+        // New requests see the helper.
+        final after = await a1.collection(txns).query().get();
+        expect({for (final doc in after.docs) doc.id}, {'t1', 't2'});
+        expect(db.isolateStats!.helperCalls, greaterThan(0));
+      } finally {
+        debugHelperSpawnDelay = Duration.zero;
+      }
+    });
 
     test('isolateStats is null outside auto mode', () async {
       final callerDb = await Cocoon.open(
@@ -515,7 +652,17 @@ void main() {
           };
           final isolate = await Isolate.spawn(
             _openCloseAndExit,
-            (closed.sendPort, dbPath('exit.db'), mode),
+            (
+              closed.sendPort,
+              dbPath('exit.db'),
+              mode,
+              // In auto mode close() beats the helper spawn: the late
+              // helper must be shut down when it arrives and must not keep
+              // this isolate alive.
+              mode == CocoonIsolate.auto
+                  ? const Duration(milliseconds: 300)
+                  : Duration.zero,
+            ),
             onExit: onExit.sendPort,
             onError: errors.sendPort,
           );
@@ -566,8 +713,15 @@ Future<void> _holdTransaction((SendPort, String) args) async {
 /// The isolate-lifetime fixture: opens the database in [mode], does one
 /// round trip, closes it and ends main. The test's `onExit` port proves the
 /// isolate can actually terminate once its link's listeners are closed.
-Future<void> _openCloseAndExit((SendPort, String, CocoonIsolate) args) async {
-  final (done, path, mode) = args;
+/// The auto case closes while the helper spawn is still pending (the delay
+/// hook is set HERE, inside the child isolate — the hooks are per-isolate
+/// state, so the parent's value never crosses), which is exactly the
+/// close-while-spawning path a fast app startup takes.
+Future<void> _openCloseAndExit(
+  (SendPort, String, CocoonIsolate, Duration) args,
+) async {
+  final (done, path, mode, helperDelay) = args;
+  debugHelperSpawnDelay = helperDelay;
   final db = await Cocoon.open(
     path,
     collections: [accounts, txns],
@@ -576,5 +730,6 @@ Future<void> _openCloseAndExit((SendPort, String, CocoonIsolate) args) async {
   await db.collection(accounts).doc('a1').set(account('Acme'));
   await db.close();
   done.send('closed');
-  // main ends here; the isolate must now be free to exit.
+  // main ends here; the isolate must now be free to exit — also when a
+  // helper spawn is still pending and will be shut down late.
 }

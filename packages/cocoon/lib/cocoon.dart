@@ -18,7 +18,11 @@ export 'src/engine/backup.dart'
 export 'src/engine/batch.dart' show BatchOp, BatchOpKind, WriteBatch;
 export 'src/engine/bulk_writer.dart' show BulkWriter, BulkWriterOptions;
 export 'src/engine/isolate/isolate_options.dart'
-    show CocoonIsolate, CocoonAutoThresholds, CocoonIsolateStats;
+    show
+        CocoonIsolate,
+        CocoonAutoThresholds,
+        CocoonHelperState,
+        CocoonIsolateStats;
 export 'src/engine/isolate/error_envelope.dart' show CocoonIsolateException;
 export 'src/engine/naming.dart' show snakeCase, tableNameFor, validNamePattern;
 export 'src/engine/changes.dart' show Change, ChangeOp, ChangesPrunedException;

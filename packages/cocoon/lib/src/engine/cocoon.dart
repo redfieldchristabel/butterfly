@@ -444,9 +444,9 @@ final class Cocoon {
         options.isolate,
         'options.isolate',
         'openWith runs the engine on the calling isolate: the executor is an '
-        'in-isolate object a worker or helper isolate cannot reach. Pass '
-        'CocoonIsolate.caller here, or use Cocoon.open (a file path) for '
-        'CocoonIsolate.background and CocoonIsolate.auto.',
+            'in-isolate object a worker or helper isolate cannot reach. Pass '
+            'CocoonIsolate.caller here, or use Cocoon.open (a file path) for '
+            'CocoonIsolate.background and CocoonIsolate.auto.',
       );
     }
     return _openOverExecutor(
@@ -497,10 +497,13 @@ final class Cocoon {
   }
 
   /// The auto mode's open path (the isolate host calls it): the engine
-  /// opens on the caller exactly as caller mode does, then the auto runtime
-  /// wraps it with the helper isolate. A helper that fails to spawn
-  /// degrades the database to inline execution; the open itself never
-  /// fails over it.
+  /// opens on the caller exactly as caller mode does, the auto runtime
+  /// wraps it, and the helper isolate spawns IN THE BACKGROUND — the open
+  /// returns as soon as the engine is committed, with everything routing
+  /// inline until the helper's ready handshake completes. A helper that
+  /// fails to spawn (or gives up) degrades the database to inline execution
+  /// with one logged warning; the open itself never fails over it and never
+  /// waits for it.
   @internal
   static Future<Cocoon> openAutoOnCaller(
     String path, {
@@ -533,12 +536,15 @@ final class Cocoon {
       await executor.close();
       rethrow;
     }
-    // The engine is committed; wrap it with the auto router and spawn the
-    // helper next to it (a failed spawn degrades to inline, logged).
-    final helper = await spawnAutoHelper(path, collections);
-    final auto = AutoCocoonRuntime(local, options.autoThresholds, helper);
+    // The engine is committed; wrap it with the auto router and start the
+    // helper spawn in the background. The caller gets the database NOW:
+    // until the helper attaches every call routes inline, exactly as after
+    // a failed spawn, and a closed-while-spawning database shuts its late
+    // helper down instead of attaching it.
+    final auto = AutoCocoonRuntime(local, options.autoThresholds);
     db._runtime = auto;
     auto.host = db;
+    auto.spawnHelperInBackground(path, collections);
     return db;
   }
 
@@ -955,9 +961,12 @@ final class Cocoon {
   Future<int> pruneChanges({required int upToSeq}) =>
       _runtime.pruneChanges(upToSeq: upToSeq);
 
-  /// The auto mode's counters since the database opened (inline vs helper
-  /// calls, approximate helper bytes moved), or `null` outside
-  /// [CocoonIsolate.auto]. See [CocoonIsolateStats].
+  /// The auto mode's live state: the inline vs helper counters, the
+  /// approximate helper bytes moved, the helper's lifecycle
+  /// ([CocoonIsolateStats.helperState] — `starting` until the background
+  /// spawn attaches it, then `ready`/`failed`), and the spawn duration in
+  /// ms once known. `null` outside [CocoonIsolate.auto]. See
+  /// [CocoonIsolateStats].
   CocoonIsolateStats? get isolateStats => _runtime.isolateStats;
 
   /// The hub every live watch registers with.

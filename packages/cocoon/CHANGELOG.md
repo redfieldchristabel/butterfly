@@ -1,3 +1,17 @@
+## Unreleased
+
+- **Fixed: opening a database in auto mode no longer waits for the helper
+  isolate.** A slow helper could stall `Cocoon.open` for up to 60 s (its
+  ready-handshake timeout) before degrading to inline — freezing an app that
+  opens its database at startup. Open now returns as soon as the engine on
+  the caller is committed, and every call runs inline until the helper
+  attaches in the background (heavy work routes to it from then on; a
+  helper that never starts is given up on after 30 s, logged once, without
+  ever blocking the caller). `close()` while a helper is still spawning
+  completes promptly and shuts the late helper down cleanly, and
+  `db.isolateStats` now reports the helper's state (`starting`, `ready`,
+  `failed`, `closed`) plus the spawn duration in ms once known.
+
 ## 0.1.0
 
 First release on pub.dev. The newest changes come first; the full

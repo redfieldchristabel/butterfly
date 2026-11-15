@@ -8,6 +8,7 @@ import 'package:cocoon/src/inspector/service.dart';
 import 'package:test/test.dart';
 
 import 'support/models.dart';
+import 'support/open_db.dart' show waitHelperReady;
 
 /// A collection whose adapter overrides [CollectionAdapter.toInspectorJson]
 /// and that has a blob column (which must refuse to be sorted).
@@ -195,6 +196,9 @@ void main() {
         options: const CocoonOptions(isolate: CocoonIsolate.auto),
       );
       openDbs.add(auto);
+      // The helper attaches in the background; the heavy query below must
+      // reach it, so wait for the ready handshake first.
+      await waitHelperReady(auto);
       await auto
           .collection(accounts)
           .doc('a1')
@@ -226,6 +230,9 @@ void main() {
       expect(stats['inlineCalls'], greaterThan(0));
       expect(stats['helperCalls'], greaterThan(0));
       expect(stats['helperBytesMoved'], greaterThan(0));
+      // The helper's lifecycle and how long it took to spawn.
+      expect(stats['helperState'], 'ready');
+      expect(stats['helperSpawnMs'], isNotNull);
 
       // A caller-mode database reports its mode and carries no stats.
       final caller = await Cocoon.open(

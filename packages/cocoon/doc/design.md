@@ -436,11 +436,23 @@ on the docs site under **Cocoon**:
     with zero round trips; getAll/queries/groupBy/batch above the
     thresholds and bulkWriter always go to the helper; a heavy watch
     re-runs its query in the helper while the notifier stays on the caller.
-    A crashed helper degrades to inline execution with one logged warning —
-    auto never bricks the database — and `db.isolateStats` (inline vs
-    helper calls, bytes moved) surfaces the split, in the DevTools
-    inspector too. Measured outcome (the isolates docs page carries the
-    table): the worker/helper round trip is near-free and read walls
+    The helper spawns in the BACKGROUND: `Cocoon.open` returns as soon as
+    the engine home is committed, with the runtime's helper `null` — every
+    call routes inline until the helper attaches, so a slow helper can never
+    stall the open (on a phone, awaiting the ready handshake stalled open
+    for its full 60 s timeout in 2 of 4 runs; the give-up timeout is now 30
+    s — `autoHelperGiveUpTimeout`, internal — and only bounds the background
+    spawn). A request already routed inline finishes inline exactly once;
+    only new requests see the helper; transactions are inline anyway.
+    `close()` while a spawn is pending completes promptly and shuts the late
+    helper down cleanly (no leaked isolate, no open ReceivePort, the -wal
+    handling intact). A crashed helper degrades to inline execution with one
+    logged warning — auto never bricks the database — and `db.isolateStats`
+    (inline vs helper calls, bytes moved, the helper's
+    `starting`/`ready`/`failed`/`closed` state and its spawn duration in ms)
+    surfaces the split, in the DevTools inspector too. Measured outcome (the
+    isolates docs page carries the table): the worker/helper round trip is
+    near-free and read walls
     improve, but bulk-load caller stalls do not drop yet — the copies of
     the documents crossing the boundary cost about what the encode they
     replaced saved; returning encoded bytes as `TransferableTypedData`
@@ -508,6 +520,7 @@ executor, so it is deferred.
 | pub.dev packaging (both packages at 0.1.0: repository/issue_tracker/topics metadata, install + quick-start README with a runnable generator-free `example/`, CHANGELOG released, `dart pub publish --dry-run` verified) | done |
 | Transactions guard: database calls inside a `runTransaction` body (`DocRef`/`CollectionRef`/query/aggregate/getAll/batch commit/BulkWriter/nested `runTransaction`/`backupTo`) throw `TransactionMisuseError` immediately with the operation and a `Fix:` hint — write lock, stale reads, always on; a second `Cocoon` and `watch()` stay allowed inside a body | done |
 | Isolate modes: `CocoonIsolate.caller` (default, unchanged) / `background` (one worker isolate per database: the whole engine there, a spec-based proxy on the caller, typed results and errors crossing, worker-side watch/tx/bulk sessions, caller-death rollback, worker-crash `CocoonIsolateException`s) / `auto` (engine home on the caller, one read-only helper isolate for heavy reads and bulk encodes, deterministic `AutoRouter` thresholds, `db.isolateStats`, crash-degrades-to-inline); whole suite green in all three modes; measured stall/wall/RSS table in the isolates docs page | done |
+| Non-blocking auto open: the helper spawns in the background (open returns with everything inline until it attaches; a 30 s named give-up timeout that never blocks a caller; close-while-pending shuts the late helper down cleanly; in-flight requests finish exactly once) and `db.isolateStats` reports the helper state (`starting`/`ready`/`failed`/`closed`) + spawn duration, in the DevTools inspector too | done |
 | `tx.query(...)` (read through the write connection, seeing the transaction's own writes — the fix for the stale-read rule's workaround) | planned |
 | Publishing to pub.dev (maintainer: push, then `dart pub publish` in cocoon, then cocoon_generator) | planned |
 | Export/import streams (documents through the public API, NDJSON-shaped) | planned |
