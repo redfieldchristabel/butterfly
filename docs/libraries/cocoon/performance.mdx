@@ -90,6 +90,7 @@ separately: see [Isolates: Caller, Background, Auto](/libraries/cocoon/isolates)
 |---|---|
 | Cocoon, shipped layout, fresh 1M import via `bulkWriter()` | 307.6 MiB |
 | same load, change log pruned (`pruneChanges`/`changeRetention`) | 252.7 MiB |
+| pre-2026-11 layout (with the path column), same data | 374.7 MiB |
 | drift, same data (reference) | 230.9 MiB |
 
 Per row: the document blob (canonical protobuf) averages 125.1 B, the change
@@ -123,6 +124,26 @@ layout variants that were measured and rejected:
   lines to a file; Cocoon commits documents through the write path.
 
 ## The tuning knobs
+
+Every option at once, with its default or a typical value:
+
+```dart
+final db = await Cocoon.open(
+  file,
+  collections: [accounts, txns, splits], // register every collection once
+  options: const CocoonOptions(
+    durability: Durability.full, // PRAGMA synchronous; `normal` for speed
+    cacheSize: 2000, // bounded LRU of decoded hot documents; 0 disables
+    keepChanges: true, // write the change log the watches and sync read
+    changeRetention: null, // or ChangeRetention(...) to bound the log
+    pageCacheMiB: 64, // PRAGMA cache_size on the writer; readers keep the default; <= 0 = default
+    tempStoreInMemory: true, // PRAGMA temp_store = MEMORY
+    walAutoCheckpointPages: 8000, // PRAGMA wal_autocheckpoint; <= 0 = default
+    compactAfterUpgrade: true, // VACUUM once after a storage-format upgrade that left > 1/5 of the file free
+    onMissingIndex: MissingIndexMode.throwError, // or .scanAndWarn: debug-only full-scan fallback (asserts on) that logs once per index and fills db.missingIndexes
+  ),
+);
+```
 
 The knobs of `CocoonOptions`, with their measured trade-offs:
 

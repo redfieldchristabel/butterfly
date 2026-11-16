@@ -1,3 +1,10 @@
+## 0.1.2
+
+- Docs-only release: a new README (a short pitch and on-ramp that makes clear
+  Cocoon is a NoSQL document store, with the deep topics on docs.page) and a
+  new pub.dev description and topics.
+- No API change and no storage change: 0.1.1 databases open as they are.
+
 ## 0.1.1
 
 - **New: prefs, single models and preload.** `db.prefs` is a key-value

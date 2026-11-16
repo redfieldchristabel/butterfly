@@ -188,6 +188,7 @@ Query watches, anchored live ranges and the change log are covered in
   butterfly generate model Txn --cocoon          # scaffold a starter model
   butterfly cocoon migrate                       # same as dart run cocoon_generator:migrate
   butterfly cocoon build                         # same as dart run build_runner build -d
+  butterfly cocoon index add Txn accountId status  # same as dart run cocoon_generator:index add (the fix a MissingIndexException names)
   ```
 
   The CLI only scaffolds and delegates to your project's own pinned tools —

@@ -258,11 +258,145 @@ Build errors say exactly what to fix:
 ## Without code generation
 
 Every generated artifact is a plain class you can write by hand: one
-`CollectionAdapter<T>` per collection, with typed `FieldColumn` handles
-(`FieldColumn.integer`, `.real`, `.boolean`, `.text`, `.dateTime`,
-`.enumerated`, `.blob`), `ParamColumn` handles for path params, `IndexDef`
-declarations and a `WireWriter`/`WireReader` codec. The full hand-written
-example lives in the [package README][cocoon-readme]; the storage contract it
-must satisfy is described in [Internals](/libraries/cocoon/internals).
+`CollectionAdapter<T>` per collection, with typed `FieldColumn` handles,
+`ParamColumn` handles for path params, `IndexDef` declarations and a
+`WireWriter`/`WireReader` codec. The storage contract it must satisfy is
+described in [Internals](/libraries/cocoon/internals).
 
-[cocoon-readme]: https://github.com/redfieldchristabel/butterfly/blob/master/packages/cocoon/README.md
+One adapter per collection model. It declares the table shape, the indexed
+fields copied into typed columns, and the canonical wire codec. This is the
+class the code generator emits from `@Collection` models; you only need this
+when you can't use codegen. The examples below use hand-written handles
+(`txnBookedOn`); generated code exposes the same handles as `Txn$.bookedOn`.
+
+```dart
+enum TxnStatus { pending, posted, failed }
+
+class Txn {
+  const Txn({
+    required this.bookedOn,
+    required this.amountMinor,
+    required this.currency,
+    required this.status,
+    required this.createdAt,
+    this.memo,
+  });
+
+  final int bookedOn; // yyyymmdd
+  final int amountMinor; // minor units; may be negative
+  final String currency;
+  final TxnStatus status;
+  final DateTime createdAt;
+  final String? memo;
+}
+
+// Typed handles, one per indexed field. Used for queries and for the
+// columns the engine mirrors into SQLite.
+final txnBookedOn = FieldColumn.integer<Txn, int>(
+  'bookedOn',
+  read: (t) => t.bookedOn,
+);
+final txnAmountMinor = FieldColumn.integer<Txn, int>(
+  'amountMinor',
+  read: (t) => t.amountMinor,
+);
+final txnCurrency = FieldColumn.text<Txn, String>(
+  'currency',
+  read: (t) => t.currency,
+);
+final txnStatus = FieldColumn.enumerated<Txn, TxnStatus>(
+  'status',
+  read: (t) => t.status,
+  values: TxnStatus.values,
+);
+final txnCreatedAt = FieldColumn.dateTime<Txn, DateTime>(
+  'createdAt',
+  read: (t) => t.createdAt,
+);
+final txnMemo = FieldColumn.text<Txn, String?>(
+  'memo',
+  read: (t) => t.memo,
+  nullable: true,
+);
+final txnAccountId = ParamColumn(txns.pattern, 'accountId');
+
+final class TxnAdapter extends CollectionAdapter<Txn> {
+  @override
+  String get model => 'Txn';
+
+  @override
+  final pattern = CollectionPattern.parse('accounts/{accountId}/txns');
+
+  @override
+  List<FieldColumn<Txn, Object?>> get columns => [
+    txnBookedOn,
+    txnAmountMinor,
+    txnCurrency,
+    txnStatus,
+    txnCreatedAt,
+    txnMemo,
+  ];
+
+  @override
+  List<IndexDef> get indexes => [
+    // '-' prefixes a descending part, like @Index(['accountId', '-bookedOn']).
+    IndexDef.fromFields(['accountId', '-bookedOn']),
+    IndexDef.fromFields(['status', 'bookedOn']),
+  ];
+
+  @override
+  Uint8List encode(Txn value) {
+    final writer = WireWriter();
+    writer.writeInt64(1, value.bookedOn);
+    writer.writeSint64(2, value.amountMinor); // zigzag: safe for negatives
+    writer.writeString(3, value.currency);
+    writer.writeString(4, value.status.name);
+    writer.writeInt64(5, value.createdAt.toUtc().microsecondsSinceEpoch);
+    final memo = value.memo;
+    if (memo != null) writer.writeString(6, memo); // skip nulls
+    return writer.toBytes();
+  }
+
+  @override
+  Txn decode(Uint8List bytes) {
+    final reader = WireReader(bytes);
+    var bookedOn = 0;
+    var amountMinor = 0;
+    var currency = '';
+    var status = TxnStatus.pending;
+    var createdAt = DateTime.utc(1970);
+    String? memo;
+    while (!reader.isAtEnd) {
+      final tag = reader.readTag();
+      switch (tag.field) {
+        case 1: bookedOn = reader.readInt64();
+        case 2: amountMinor = reader.readSint64();
+        case 3: currency = reader.readString();
+        case 4: status = TxnStatus.values.byName(reader.readString());
+        case 5:
+          createdAt = DateTime.fromMicrosecondsSinceEpoch(
+            reader.readInt64(),
+            isUtc: true,
+          );
+        case 6: memo = reader.readString();
+        default: reader.skip(tag.type); // unknown fields from the future
+      }
+    }
+    return Txn(
+      bookedOn: bookedOn,
+      amountMinor: amountMinor,
+      currency: currency,
+      status: status,
+      createdAt: createdAt,
+      memo: memo,
+    );
+  }
+}
+
+final txns = TxnAdapter();
+```
+
+Field numbers are the identity of a field on disk (they will be pinned in
+`cocoon.lock`); write them in ascending order. Ready-made column
+factories: `FieldColumn.integer`, `real`, `boolean` (stored 0/1), `text`,
+`dateTime` (UTC microseconds), `enumerated` (name as text) and `blob`.
