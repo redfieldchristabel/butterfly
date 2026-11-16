@@ -1,5 +1,36 @@
-## Unreleased
+## 0.1.1
 
+- **New: prefs, single models and preload.** `db.prefs` is a key-value
+  store for strings, ints, bools, doubles and bytes, and
+  `db.single(adapter, key:)` keeps one generated model (the signed-in user,
+  say) under one key. Both live in the same database file as your
+  collections, with no collection to register and no index. Reads return
+  `null` when the key is absent, and reading a key as the wrong kind (or a
+  single through the wrong adapter) throws a `PrefsTypeException`. `watch`
+  emits the current value first, then every committed change.
+
+  ```dart
+  await db.prefs.setString('theme', 'dark');
+  final me = db.single(userAdapter, key: 'currentUser');
+  await me.set(user);
+
+  // Preload once (or open with `preloadPrefs: true`), then read
+  // synchronously, for example in a router redirect.
+  await db.prefs.preload();
+  final theme = db.prefs.getStringSync('theme'); // String?
+  final signedIn = me.getSync() != null;
+  ```
+
+  `tx.prefs`, `tx.single` and `batch.prefs` commit atomically with the
+  collection writes in the same transaction or batch. Prefs are device-local:
+  they are in every backup (a restore brings the saved prefs back) and never
+  in the change log. The preload map and the watches always live on the caller
+  isolate; storage runs inline in caller and auto mode (never on the auto
+  helper) and on the engine isolate in background mode. They are not
+  encrypted, so keep tokens and passwords in the platform keystore. Existing
+  databases pick up the one new internal table (`_cocoon_prefs`) on open;
+  there is no storage-format change. Guide:
+  [Prefs & Single Models](https://docs.page/redfieldchristabel/butterfly/libraries/cocoon/prefs).
 - **Fixed: opening a database in auto mode no longer waits for the helper
   isolate.** A slow helper could stall `Cocoon.open` for up to 60 s (its
   ready-handshake timeout) before degrading to inline — freezing an app that
@@ -11,6 +42,8 @@
   completes promptly and shuts the late helper down cleanly, and
   `db.isolateStats` now reports the helper's state (`starting`, `ready`,
   `failed`, `closed`) plus the spawn duration in ms once known.
+- **Docs: the pub.dev page shows Kepo.** The Cocoon mascot is now the
+  package screenshot and sits at the top of the README.
 
 ## 0.1.0
 
