@@ -238,12 +238,12 @@ await db.runTransaction((tx) async {
   file's prefs with the backup's prefs and drops anything newer.
 - **Prefs are never in the change log.** They are device-local state;
   `changesSince` never reports them and syncing them is out of scope.
-- **Prefs always run inline, in every isolate mode** (`caller`, `background`
-  and `auto`): single-key reads and writes are tiny, so they never route to
-  a worker or helper isolate. The preload map and the watch streams live on
-  the isolate that called `Cocoon.open`, in every mode — in `background`
-  mode the storage op still runs on the engine isolate, and the map is
-  written through when the awaited call returns.
+- **Prefs never use the auto helper.** In `caller` and `auto` mode their
+  storage runs inline on the isolate that opened the database (the auto
+  helper isolate never touches them); in `background` mode it runs on the
+  engine isolate like every other call. The preload map and the watch
+  streams always live on the isolate that called `Cocoon.open`, in every
+  mode, and the map is written through when the awaited call returns.
 - After `close()`, every prefs call throws the same closed-database error as
   the collection calls, and the watch streams complete.
 
