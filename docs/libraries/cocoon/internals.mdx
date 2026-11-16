@@ -23,6 +23,16 @@ by hand or reasoning about on-disk data.
   account a1, newest first" without loading the world into RAM; SQLite
   answers it with an index range scan and stays bounded.
 
+## What one write does
+
+<p align="center"><img src="https://raw.githubusercontent.com/redfieldchristabel/butterfly/master/packages/cocoon/doc/gifs/cocoon_set_behind_the_scenes.gif" alt="What set() does, step by step" width="760" /></p>
+
+The object is encoded as canonical protobuf (every `int` as zigzag
+`sint64`, fields in ascending number), then the row, its index entries and
+the change-log row commit in one SQLite transaction. Watches wake after the
+commit, and only for the collection it touched. The sections below take each
+step apart.
+
 ## Table shape
 
 One table per collection model, named `snake_case(model)` (`Txn` → `txn`;

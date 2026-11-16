@@ -113,23 +113,25 @@ Future<void> main() async {
 
 ## 1,000,000 transactions later
 
-On-device engines on the same finance-shaped data (matrix v2, 9-10 Nov 2026):
-one account's latest 50 transactions, and how much extra RAM the process holds
-after the read workloads.
+<p align="center"><img src="https://raw.githubusercontent.com/redfieldchristabel/butterfly/master/packages/cocoon/doc/gifs/cocoon_latest50_race.gif" alt="Latest 50 transactions for one account at 1M: drift 0.5 ms, Cocoon 0.7 ms, ObjectBox 44.4 ms, Isar 55.5 ms, Hive CE 710.5 ms, sembast 796.3 ms" width="720"></p>
 
-| Engine | Latest 50 for one account (p50) | Extra RAM after reads |
-|---|---|---|
-| **Cocoon** | **0.7 ms** | **+2 MB** |
-| ObjectBox | 44 ms | +546 MB |
-| Isar | 55 ms | +305 MB |
-| Hive CE | 711 ms | +2.1 GB |
-| sembast | 796 ms | +2.3 GB |
+Only hand-written SQL (drift) beats it, and drift gives you rows, not typed
+documents. Memory stays flat too: +2 MB after the read workloads, where Hive
+holds 2.1 GB and sembast 2.3 GB.
 
 Where it loses, honestly: bulk import trails Isar 2.2x, and gets by id trail
 Hive's in-RAM lookups. Every workload, with the losses spelled out, is on the
 [Performance page](https://docs.page/redfieldchristabel/butterfly/libraries/cocoon/performance)
 and in
 [benchmarks/cocoon_rivals/RESULTS.md](https://github.com/redfieldchristabel/butterfly/blob/master/benchmarks/cocoon_rivals/RESULTS.md).
+
+## What happens when you write
+
+<p align="center"><img src="https://raw.githubusercontent.com/redfieldchristabel/butterfly/master/packages/cocoon/doc/gifs/cocoon_set_behind_the_scenes.gif" alt="What set() does: your object, canonical protobuf bytes, a row with typed index columns, the index entry, the change log, then watches fire after the commit" width="760"></p>
+
+You call `set()`. Cocoon encodes the object as canonical protobuf, writes the
+row, its index entries and a change-log row in one SQLite transaction, then
+wakes only the watches on that collection.
 
 ## Learn more
 

@@ -15,6 +15,12 @@ timing counts. Full tables and per-workload verdicts:
 
 ## The headline numbers at 1,000,000 transactions
 
+<p align="center"><img src="https://raw.githubusercontent.com/redfieldchristabel/butterfly/master/packages/cocoon/doc/gifs/cocoon_latest50_race.gif" alt="Latest 50 for one account at 1M transactions, as a race against the clock" width="720" /></p>
+
+<p align="center"><img src="https://raw.githubusercontent.com/redfieldchristabel/butterfly/master/packages/cocoon/doc/gifs/cocoon_ram.gif" alt="Extra RAM after the read workloads: drift -25 MB, Cocoon +2 MB, Isar +305 MB, ObjectBox +546 MB, Hive CE +2.1 GB, sembast +2.3 GB" width="720" /></p>
+
+The full table:
+
 | Workload | Cocoon | drift | Isar | ObjectBox | Hive CE | sembast |
 |---|---|---|---|---|---|---|
 | One account's latest 50, p50 (ms) | **0.7** | 0.5 | 55.5 | 44.4 | 710.5 | 796.3 |

@@ -1,7 +1,7 @@
 name: cocoon
 resolution: workspace
 description: "A typed document database for Flutter & Dart: Firestore-style collections, protobuf-packed docs and real indexes on disk. SQLite under the hood, zero SQL."
-version: 0.1.2
+version: 0.1.3
 repository: https://github.com/redfieldchristabel/butterfly/tree/master/packages/cocoon
 issue_tracker: https://github.com/redfieldchristabel/butterfly/issues
 documentation: https://docs.page/redfieldchristabel/butterfly/libraries/cocoon

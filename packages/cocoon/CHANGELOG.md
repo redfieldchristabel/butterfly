@@ -1,3 +1,10 @@
+## 0.1.3
+
+- Docs-only release: the README and the docs pages show the benchmarks and
+  the write path as animations instead of a table (latest-50 race, RAM after
+  reads, what one `set()` does).
+- No API change and no storage change.
+
 ## 0.1.2
 
 - Docs-only release: a new README (a short pitch and on-ramp that makes clear
